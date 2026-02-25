@@ -27,7 +27,7 @@ public class FarmingConfigScreen extends Screen {
 
     // ── Layout ────────────────────────────────────────────────────────────────
     private static final int PANEL_WIDTH   = 310;
-    private static final int PANEL_HEIGHT  = 352;
+    private static final int PANEL_HEIGHT  = 400; // increased to fit new controls
     private static final int HEADER_HEIGHT = 42;
     private static final int BUTTON_WIDTH  = 220;
     private static final int BUTTON_HEIGHT = 20;
@@ -56,6 +56,8 @@ public class FarmingConfigScreen extends Screen {
     private CyclingButtonWidget<Boolean>  toolSwitchButton;
     private SwapDelaySlider               swapDelaySlider;
     private SwapRandomSlider              swapRandomSlider;
+    private CyclingButtonWidget<Boolean>  pestHighlightButton;
+    private ButtonWidget                  freelookButton;
     private ButtonWidget                  setRewarpButton;
     private ButtonWidget                  toggleMacroButton;
     private ButtonWidget                  saveCloseButton;
@@ -124,7 +126,27 @@ public class FarmingConfigScreen extends Screen {
 
         swapRandomSlider = new SwapRandomSlider(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT, config.rewarpDelayRandom);
         this.addDrawableChild(swapRandomSlider);
-        y += BUTTON_HEIGHT + PADDING + 10;
+        y += BUTTON_HEIGHT + PADDING;
+
+        pestHighlightButton = CyclingButtonWidget.builder(
+                        (Boolean val) -> val ? Text.literal("ON") : Text.literal("OFF"))
+                .values(Boolean.TRUE, Boolean.FALSE)
+                .initially(config.pestHighlightEnabled)
+                .build(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT,
+                        Text.translatable("gui.just-farming.pest_highlight_label"));
+        this.addDrawableChild(pestHighlightButton);
+        y += BUTTON_HEIGHT + PADDING;
+
+        freelookButton = ButtonWidget.builder(
+                        getFreelookButtonText(),
+                        btn -> {
+                            macroManager.toggleFreelook();
+                            btn.setMessage(getFreelookButtonText());
+                        })
+                .dimensions(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT)
+                .build();
+        this.addDrawableChild(freelookButton);
+        y += BUTTON_HEIGHT + PADDING + 4;
 
         // ── Action buttons (below separator) ──────────────────────────────────
         actionSeparatorY = y - 4;
@@ -249,12 +271,13 @@ public class FarmingConfigScreen extends Screen {
 
     /** Read widget values back into the config object. */
     private void applyConfig() {
-        config.selectedCrop      = cropButton.getValue();
-        config.farmingPitch      = pitchSlider.getPitchValue();
-        config.farmingYaw        = yawSlider.getYawValue();
-        config.autoToolSwitch    = toolSwitchButton.getValue();
-        config.rewarpDelayMin    = swapDelaySlider.getDelayValue();
-        config.rewarpDelayRandom = swapRandomSlider.getRandomValue();
+        config.selectedCrop        = cropButton.getValue();
+        config.farmingPitch        = pitchSlider.getPitchValue();
+        config.farmingYaw          = yawSlider.getYawValue();
+        config.autoToolSwitch      = toolSwitchButton.getValue();
+        config.rewarpDelayMin      = swapDelaySlider.getDelayValue();
+        config.rewarpDelayRandom   = swapRandomSlider.getRandomValue();
+        config.pestHighlightEnabled = pestHighlightButton.getValue();
         macroManager.setConfig(config);
     }
 
@@ -262,6 +285,12 @@ public class FarmingConfigScreen extends Screen {
         return macroManager.isRunning()
                 ? Text.translatable("gui.just-farming.stop_macro")
                 : Text.translatable("gui.just-farming.start_macro");
+    }
+
+    private Text getFreelookButtonText() {
+        return macroManager.isFreelookEnabled()
+                ? Text.translatable("gui.just-farming.freelook_on")
+                : Text.translatable("gui.just-farming.freelook_off");
     }
 
     private Text getRewarpButtonText() {

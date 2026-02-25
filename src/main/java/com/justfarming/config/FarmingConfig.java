@@ -43,6 +43,12 @@ public class FarmingConfig {
      */
     public boolean autoToolSwitch = true;
 
+    /**
+     * Whether to highlight chunk borders and plot numbers for plots with pests
+     * on Hypixel Skyblock Garden.
+     */
+    public boolean pestHighlightEnabled = false;
+
     // --- Rewarp trigger position ---
 
     /** Whether a rewarp position has been set. */

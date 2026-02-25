@@ -2,10 +2,13 @@ package com.justfarming;
 
 import com.justfarming.config.FarmingConfig;
 import com.justfarming.gui.FarmingConfigScreen;
+import com.justfarming.pest.PestDetector;
+import com.justfarming.render.OverlayRenderer;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.util.Identifier;
@@ -36,6 +39,7 @@ public class JustFarming implements ClientModInitializer {
     // Singleton references shared across the mod
     private static FarmingConfig config;
     private static MacroManager macroManager;
+    private static PestDetector pestDetector;
 
     // Keybindings
     private static KeyBinding toggleMacroKey;
@@ -50,8 +54,10 @@ public class JustFarming implements ClientModInitializer {
         // Load config
         config = FarmingConfig.load();
 
-        // Create macro manager
+        // Create macro manager and pest detector
         macroManager = new MacroManager(net.minecraft.client.MinecraftClient.getInstance(), config);
+        pestDetector = new PestDetector();
+        final OverlayRenderer overlayRenderer = new OverlayRenderer(config, pestDetector);
 
         // Register keybindings
         toggleMacroKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
@@ -128,7 +134,13 @@ public class JustFarming implements ClientModInitializer {
 
             // Run macro tick
             macroManager.onTick();
+
+            // Update pest detection every tick
+            pestDetector.update(client);
         });
+
+        // Register world render event for pest plot overlay
+        WorldRenderEvents.AFTER_ENTITIES.register(overlayRenderer::render);
 
         LOGGER.info("[JustFarming] Ready. Toggle macro: R | Open GUI: I | Freelook: L | Command: /jf rewarp");
     }
@@ -141,5 +153,10 @@ public class JustFarming implements ClientModInitializer {
     /** Returns the shared macro manager instance. */
     public static MacroManager getMacroManager() {
         return macroManager;
+    }
+
+    /** Returns the shared pest detector instance. */
+    public static PestDetector getPestDetector() {
+        return pestDetector;
     }
 }
