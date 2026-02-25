@@ -7,6 +7,7 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
+import net.minecraft.util.Identifier;
 import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,6 +36,7 @@ public class JustFarming implements ClientModInitializer {
     // Keybindings
     private static KeyBinding toggleMacroKey;
     private static KeyBinding openGuiKey;
+    private static final KeyBinding.Category KEY_CATEGORY = KeyBinding.Category.create(Identifier.of("just-farming", "categories"));
 
     @Override
     public void onInitializeClient() {
@@ -51,14 +53,14 @@ public class JustFarming implements ClientModInitializer {
                 "key.just-farming.toggle_macro",
                 InputUtil.Type.KEYSYM,
                 GLFW.GLFW_KEY_R,
-                "key.categories.just-farming"
+                KEY_CATEGORY
         ));
 
         openGuiKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.just-farming.open_gui",
                 InputUtil.Type.KEYSYM,
                 GLFW.GLFW_KEY_I,
-                "key.categories.just-farming"
+                KEY_CATEGORY
         ));
 
         // Register client tick callback
