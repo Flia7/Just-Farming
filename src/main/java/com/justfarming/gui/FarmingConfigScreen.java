@@ -26,23 +26,25 @@ import net.minecraft.text.Text;
 public class FarmingConfigScreen extends Screen {
 
     // ── Layout ────────────────────────────────────────────────────────────────
-    private static final int PANEL_WIDTH   = 310;
-    private static final int PANEL_HEIGHT  = 400; // increased to fit new controls
-    private static final int HEADER_HEIGHT = 42;
-    private static final int BUTTON_WIDTH  = 220;
+    private static final int PANEL_WIDTH   = 320;
+    private static final int PANEL_HEIGHT  = 410;
+    private static final int HEADER_HEIGHT = 46;
+    private static final int BUTTON_WIDTH  = 240;
     private static final int BUTTON_HEIGHT = 20;
     private static final int PADDING       = 6;
 
-    // ── Colour palette (farming / nature theme) ───────────────────────────────
-    private static final int COL_BG             = 0xEE0C110C; // very dark green-black
-    private static final int COL_HEADER_TOP     = 0xFF1B3D0C; // dark forest green
-    private static final int COL_HEADER_BOTTOM  = 0xFF0E2106; // deeper green
-    private static final int COL_BORDER_OUTER   = 0xFF2E5F18; // medium green outer border
-    private static final int COL_BORDER_INNER   = 0xFF55AA30; // bright green inner border
-    private static final int COL_SEPARATOR      = 0xFF3A7020; // section separator
-    private static final int COL_SECTION_BG     = 0x22448833; // subtle section tint
-    private static final int COL_TITLE          = 0xFFEDD14A; // warm wheat/gold
-    private static final int COL_LABEL          = 0xFF90DC5A; // light green label
+    // ── Colour palette (modern dark theme) ────────────────────────────────────
+    private static final int COL_BG             = 0xF00E1018; // near-black with cool tint
+    private static final int COL_HEADER_TOP     = 0xFF1A1040; // deep purple
+    private static final int COL_HEADER_BOTTOM  = 0xFF0D0820; // darker purple
+    private static final int COL_BORDER_OUTER   = 0xFF2D1B69; // dark purple outer
+    private static final int COL_BORDER_INNER   = 0xFF6C3DFF; // vivid purple accent
+    private static final int COL_SEPARATOR      = 0xFF2A1D55; // muted purple separator
+    private static final int COL_SECTION_BG     = 0x18654DFF; // subtle purple tint
+    private static final int COL_TITLE          = 0xFFEEEEFF; // clean white
+    private static final int COL_LABEL          = 0xFFB0A0E0; // soft lavender
+    private static final int COL_ACCENT         = 0xFF7C4DFF; // primary accent
+    private static final int COL_SHADOW         = 0x60000000; // drop shadow
 
     // ── State ─────────────────────────────────────────────────────────────────
     private final Screen parent;
@@ -195,10 +197,13 @@ public class FarmingConfigScreen extends Screen {
         int panelR = panelX + PANEL_WIDTH;
         int panelB = panelY + PANEL_HEIGHT;
 
+        // ── Drop shadow ───────────────────────────────────────────────────────
+        context.fill(panelX + 3, panelY + 3, panelR + 3, panelB + 3, COL_SHADOW);
+
         // ── Outer border (2 px) ───────────────────────────────────────────────
         context.fill(panelX - 2, panelY - 2, panelR + 2, panelB + 2, COL_BORDER_OUTER);
 
-        // ── Inner border (1 px highlight) ─────────────────────────────────────
+        // ── Accent border (1 px) ──────────────────────────────────────────────
         context.fill(panelX - 1, panelY - 1, panelR + 1, panelB + 1, COL_BORDER_INNER);
 
         // ── Panel background ──────────────────────────────────────────────────
@@ -208,51 +213,70 @@ public class FarmingConfigScreen extends Screen {
         context.fillGradient(panelX, panelY, panelR, panelY + HEADER_HEIGHT,
                 COL_HEADER_TOP, COL_HEADER_BOTTOM);
 
-        // ── Header bottom separator ───────────────────────────────────────────
-        context.fill(panelX, panelY + HEADER_HEIGHT, panelR, panelY + HEADER_HEIGHT + 1, COL_BORDER_INNER);
+        // ── Header accent line (bottom) ───────────────────────────────────────
+        context.fillGradient(panelX, panelY + HEADER_HEIGHT - 1, panelR,
+                panelY + HEADER_HEIGHT + 1, COL_ACCENT, COL_BORDER_OUTER);
 
-        // ── Title (with decorative flowers) ───────────────────────────────────
+        // ── Corner accents (top-left / top-right) ─────────────────────────────
+        context.fill(panelX - 2, panelY - 2, panelX + 6, panelY - 1, COL_ACCENT);
+        context.fill(panelX - 2, panelY - 2, panelX - 1, panelY + 6, COL_ACCENT);
+        context.fill(panelR - 6, panelY - 2, panelR + 2, panelY - 1, COL_ACCENT);
+        context.fill(panelR + 1, panelY - 2, panelR + 2, panelY + 6, COL_ACCENT);
+
+        // ── Title ─────────────────────────────────────────────────────────────
         context.drawCenteredTextWithShadow(this.textRenderer,
-                Text.literal("\u273F ").append(this.title).append(" \u273F"),
-                this.width / 2, panelY + 10, COL_TITLE);
+                this.title, this.width / 2, panelY + 10, COL_TITLE);
 
         // ── Status badge ──────────────────────────────────────────────────────
         boolean running = macroManager.isRunning();
         String statusStr   = running ? "\u25CF RUNNING" : "\u25CF STOPPED";
-        int    statusColor = running ? 0xFF55FF55 : 0xFFFF5555;
-        int    badgeW  = this.textRenderer.getWidth(statusStr) + 10;
+        int    statusColor = running ? 0xFF50E890 : 0xFFFF6070;
+        int    badgeGlow   = running ? 0x2030D870 : 0x20FF4050;
+        int    badgeW  = this.textRenderer.getWidth(statusStr) + 14;
         int    badgeX  = this.width / 2 - badgeW / 2;
-        int    badgeY  = panelY + 26;
+        int    badgeY  = panelY + 27;
+
+        // Glow layer behind badge
+        context.fill(badgeX - 2, badgeY - 1, badgeX + badgeW + 2, badgeY + 13, badgeGlow);
+
         // Badge fill
-        context.fill(badgeX + 1, badgeY + 1, badgeX + badgeW - 1, badgeY + 11,
-                running ? 0x4400CC44 : 0x44CC0000);
-        // Badge border (top/bottom/left/right lines)
-        context.fill(badgeX,             badgeY,      badgeX + badgeW, badgeY + 1,      statusColor);
-        context.fill(badgeX,             badgeY + 11, badgeX + badgeW, badgeY + 12,     statusColor);
-        context.fill(badgeX,             badgeY,      badgeX + 1,      badgeY + 12,     statusColor);
-        context.fill(badgeX + badgeW - 1, badgeY,    badgeX + badgeW, badgeY + 12,     statusColor);
+        context.fill(badgeX, badgeY, badgeX + badgeW, badgeY + 12,
+                running ? 0x3020C060 : 0x30D03040);
+
+        // Badge border
+        context.fill(badgeX, badgeY, badgeX + badgeW, badgeY + 1, statusColor);
+        context.fill(badgeX, badgeY + 11, badgeX + badgeW, badgeY + 12, statusColor);
+        context.fill(badgeX, badgeY, badgeX + 1, badgeY + 12, statusColor);
+        context.fill(badgeX + badgeW - 1, badgeY, badgeX + badgeW, badgeY + 12, statusColor);
+
         context.drawCenteredTextWithShadow(this.textRenderer,
                 Text.literal(statusStr).withColor(statusColor),
                 this.width / 2, badgeY + 2, 0xFFFFFF);
 
         // ── Section labels ────────────────────────────────────────────────────
-        drawSectionLabel(context, "\u2B25 Crop",    panelX, sectionCropY,    panelR);
-        drawSectionLabel(context, "\u2B25 Angles",  panelX, sectionAnglesY,  panelR);
-        drawSectionLabel(context, "\u2B25 Options", panelX, sectionOptionsY, panelR);
+        drawSectionLabel(context, "Crop",    panelX, sectionCropY,    panelR);
+        drawSectionLabel(context, "Angles",  panelX, sectionAnglesY,  panelR);
+        drawSectionLabel(context, "Options", panelX, sectionOptionsY, panelR);
 
         // ── Action-area separator ─────────────────────────────────────────────
-        context.fill(panelX + 8, actionSeparatorY, panelR - 8, actionSeparatorY + 1, COL_SEPARATOR);
+        context.fillGradient(panelX + 20, actionSeparatorY,
+                panelR - 20, actionSeparatorY + 1,
+                COL_ACCENT, 0x00000000);
 
         // ── Widgets ───────────────────────────────────────────────────────────
         super.render(context, mouseX, mouseY, delta);
     }
 
-    /** Draws a subtle tint strip and coloured label for a settings section. */
+    /** Draws a section label with an accent bar and subtle background. */
     private void drawSectionLabel(DrawContext context, String label, int panelX, int y, int panelR) {
+        // Subtle background strip
         context.fill(panelX + 4, y, panelR - 4, y + 10, COL_SECTION_BG);
+        // Accent bar on the left
+        context.fill(panelX + 6, y + 1, panelX + 8, y + 9, COL_ACCENT);
+        // Label text
         context.drawTextWithShadow(this.textRenderer,
                 Text.literal(label).withColor(COL_LABEL),
-                panelX + 10, y, COL_LABEL);
+                panelX + 14, y + 1, COL_LABEL);
     }
 
     @Override
