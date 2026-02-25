@@ -60,6 +60,18 @@ public class FarmingConfig {
     /** Radius (in blocks) around the rewarp point that triggers the warp. */
     public double rewarpRange = 3.0;
 
+    /**
+     * Minimum delay in milliseconds between reaching the rewarp trigger and
+     * actually sending {@code /warp garden} (i.e. the lane-swap delay).
+     */
+    public int rewarpDelayMin = 100;
+
+    /**
+     * Extra random milliseconds added on top of {@link #rewarpDelayMin}.
+     * The actual delay will be {@code rewarpDelayMin + random(0, rewarpDelayRandom)}.
+     */
+    public int rewarpDelayRandom = 0;
+
     // --- Load / Save ---
 
     /**
