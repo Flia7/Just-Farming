@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "just-farming",
+  "version": "${version}",
+  "name": "Just Farming",
+  "description": "A Hypixel Skyblock farming macro with GUI for crop selection, keybinds, and automation.",
+  "authors": [],
+  "contact": {},
+  "license": "MIT",
+  "icon": "assets/just-farming/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.justfarming.JustFarming"
+    ]
+  },
+  "mixins": [
+    "just-farming.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.17.2",
+    "fabric-api": "*",
+    "minecraft": "~1.21.10",
+    "java": ">=21"
+  }
+}
