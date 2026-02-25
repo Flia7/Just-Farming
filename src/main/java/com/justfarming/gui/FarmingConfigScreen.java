@@ -15,19 +15,20 @@ import net.minecraft.text.Text;
  *
  * <p>Allows the player to:
  * <ul>
- *   <li>Select the crop type to farm</li>
+ *   <li>Select the crop type to farm (Cocoa Beans only for now)</li>
  *   <li>Adjust macro speed (Slow / Normal / Fast)</li>
- *   <li>Set the pitch angle (look-down angle while farming)</li>
- *   <li>Toggle auto-replant and auto-tool-switch</li>
- *   <li>Set row length</li>
+ *   <li>Set the pitch angle (vertical look angle while farming)</li>
+ *   <li>Set the yaw angle (horizontal rotation while farming)</li>
+ *   <li>Toggle auto-tool-switch</li>
+ *   <li>Set the rewarp trigger position to the player's current location</li>
  *   <li>Start or stop the macro directly from the GUI</li>
  * </ul>
  */
 public class FarmingConfigScreen extends Screen {
 
-    private static final int PANEL_WIDTH = 300;
-    private static final int PANEL_HEIGHT = 310;
-    private static final int BUTTON_WIDTH = 200;
+    private static final int PANEL_WIDTH  = 300;
+    private static final int PANEL_HEIGHT = 300;
+    private static final int BUTTON_WIDTH  = 200;
     private static final int BUTTON_HEIGHT = 20;
     private static final int PADDING = 8;
 
@@ -36,12 +37,12 @@ public class FarmingConfigScreen extends Screen {
     private final MacroManager macroManager;
 
     // Widgets
-    private CyclingButtonWidget<CropType> cropButton;
-    private CyclingButtonWidget<Integer> speedButton;
-    private PitchSlider pitchSlider;
-    private CyclingButtonWidget<Boolean> replantButton;
-    private CyclingButtonWidget<Boolean> toolSwitchButton;
-    private RowLengthSlider rowLengthSlider;
+    private CyclingButtonWidget<CropType>  cropButton;
+    private CyclingButtonWidget<Integer>   speedButton;
+    private PitchSlider  pitchSlider;
+    private YawSlider    yawSlider;
+    private CyclingButtonWidget<Boolean>   toolSwitchButton;
+    private ButtonWidget setRewarpButton;
     private ButtonWidget toggleMacroButton;
     private ButtonWidget saveCloseButton;
 
@@ -54,18 +55,18 @@ public class FarmingConfigScreen extends Screen {
 
     @Override
     protected void init() {
-        int panelX = (this.width - PANEL_WIDTH) / 2;
-        int startY = (this.height - PANEL_HEIGHT) / 2 + 20;
+        int panelX  = (this.width - PANEL_WIDTH) / 2;
+        int startY  = (this.height - PANEL_HEIGHT) / 2 + 20;
         int centerX = panelX + PANEL_WIDTH / 2;
         int widgetX = centerX - BUTTON_WIDTH / 2;
 
         int y = startY;
 
-        // Crop selection
+        // Crop selection – only Cocoa Beans for now
         cropButton = CyclingButtonWidget.builder(
                         (CropType crop) -> Text.translatable(crop.getTranslationKey()))
-                .values(CropType.values())
-                .initially(config.selectedCrop)
+                .values(CropType.COCOA_BEANS)
+                .initially(CropType.COCOA_BEANS)
                 .build(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT,
                         Text.translatable("gui.just-farming.crop_label"));
         this.addDrawableChild(cropButton);
@@ -90,19 +91,9 @@ public class FarmingConfigScreen extends Screen {
         this.addDrawableChild(pitchSlider);
         y += BUTTON_HEIGHT + PADDING;
 
-        // Row length slider
-        rowLengthSlider = new RowLengthSlider(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT, config.rowLength);
-        this.addDrawableChild(rowLengthSlider);
-        y += BUTTON_HEIGHT + PADDING;
-
-        // Auto replant toggle
-        replantButton = CyclingButtonWidget.builder(
-                        (Boolean val) -> val ? Text.literal("ON") : Text.literal("OFF"))
-                .values(Boolean.TRUE, Boolean.FALSE)
-                .initially(config.autoReplant)
-                .build(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT,
-                        Text.translatable("gui.just-farming.replant_label"));
-        this.addDrawableChild(replantButton);
+        // Yaw angle slider
+        yawSlider = new YawSlider(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT, config.farmingYaw);
+        this.addDrawableChild(yawSlider);
         y += BUTTON_HEIGHT + PADDING;
 
         // Auto tool switch toggle
@@ -114,6 +105,24 @@ public class FarmingConfigScreen extends Screen {
                         Text.translatable("gui.just-farming.tool_switch_label"));
         this.addDrawableChild(toolSwitchButton);
         y += BUTTON_HEIGHT + PADDING + 4;
+
+        // Set Rewarp Here button
+        setRewarpButton = ButtonWidget.builder(
+                        getRewarpButtonText(),
+                        btn -> {
+                            if (this.client != null && this.client.player != null) {
+                                config.rewarpX  = this.client.player.getX();
+                                config.rewarpY  = this.client.player.getY();
+                                config.rewarpZ  = this.client.player.getZ();
+                                config.rewarpSet = true;
+                                config.save();
+                                btn.setMessage(Text.literal("§aRewarp Set!"));
+                            }
+                        })
+                .dimensions(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT)
+                .build();
+        this.addDrawableChild(setRewarpButton);
+        y += BUTTON_HEIGHT + PADDING;
 
         // Toggle macro button
         toggleMacroButton = ButtonWidget.builder(
@@ -184,11 +193,10 @@ public class FarmingConfigScreen extends Screen {
 
     /** Read widget values back into the config object. */
     private void applyConfig() {
-        config.selectedCrop = cropButton.getValue();
-        config.macroSpeed = speedButton.getValue();
-        config.farmingPitch = pitchSlider.getPitchValue();
-        config.rowLength = rowLengthSlider.getRowLength();
-        config.autoReplant = replantButton.getValue();
+        config.selectedCrop   = cropButton.getValue();
+        config.macroSpeed     = speedButton.getValue();
+        config.farmingPitch   = pitchSlider.getPitchValue();
+        config.farmingYaw     = yawSlider.getYawValue();
         config.autoToolSwitch = toolSwitchButton.getValue();
         macroManager.setConfig(config);
     }
@@ -197,6 +205,12 @@ public class FarmingConfigScreen extends Screen {
         return macroManager.isRunning()
                 ? Text.translatable("gui.just-farming.stop_macro")
                 : Text.translatable("gui.just-farming.start_macro");
+    }
+
+    private Text getRewarpButtonText() {
+        return config.rewarpSet
+                ? Text.literal(String.format("§7Rewarp: %.1f, %.1f, %.1f", config.rewarpX, config.rewarpY, config.rewarpZ))
+                : Text.translatable("gui.just-farming.set_rewarp");
     }
 
     // -------------------------------------------------------------------------
@@ -234,32 +248,32 @@ public class FarmingConfigScreen extends Screen {
     }
 
     /**
-     * Slider for row length in range [10, 200] blocks.
+     * Slider for yaw angle in range [-180, 180] degrees.
      */
-    private static class RowLengthSlider extends SliderWidget {
+    private static class YawSlider extends SliderWidget {
 
-        private static final int MIN = 10;
-        private static final int MAX = 200;
+        private static final float MIN = -180.0f;
+        private static final float MAX =  180.0f;
 
-        RowLengthSlider(int x, int y, int width, int height, int initialLength) {
+        YawSlider(int x, int y, int width, int height, float initialYaw) {
             super(x, y, width, height,
                     Text.empty(),
-                    (double) (initialLength - MIN) / (MAX - MIN));
+                    (double) (initialYaw - MIN) / (MAX - MIN));
             updateMessage();
         }
 
-        int getRowLength() {
-            return MIN + (int) Math.round(value * (MAX - MIN));
+        float getYawValue() {
+            return MIN + (float) value * (MAX - MIN);
         }
 
         @Override
         protected void updateMessage() {
-            setMessage(Text.literal("Row Length: " + getRowLength() + " blocks"));
+            setMessage(Text.literal(String.format("Yaw: %.0f°", getYawValue())));
         }
 
         @Override
         protected void applyValue() {
-            // value is stored in the parent field; read via getRowLength()
+            // value is stored in the parent field; read via getYawValue()
         }
     }
 }

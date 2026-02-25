@@ -6,38 +6,66 @@ import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.item.HoeItem;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
+import net.minecraft.util.math.Vec3d;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Manages the farming macro state and tick logic.
+ * Manages the cocoa-beans farming macro state and tick logic.
  *
- * <p>The macro runs on the client tick thread. Each tick it:
+ * <p>State machine:
  * <ol>
- *   <li>Optionally switches to the best farming tool in the hotbar.</li>
- *   <li>Sets the player's pitch to the configured farming angle.</li>
- *   <li>Moves the player forward until the configured row length is reached,
- *       then reverses direction (back-and-forth pattern).</li>
+ *   <li>IDLE – macro is not running.</li>
+ *   <li>DETECTING – observes the player for a few ticks to decide the initial
+ *       direction (backward or forward).</li>
+ *   <li>BACKWARD_LEFT – holds back + strafe-left + attack.</li>
+ *   <li>FORWARD_LEFT – holds forward + strafe-left + attack.</li>
+ *   <li>WARPING – releases keys and sends {@code /warp garden}.</li>
  * </ol>
  *
- * <p>Actual block breaking is handled by holding the attack key, which Minecraft
- * processes natively each tick.
+ * <p>Direction switches when the player stops moving (end of row detected by
+ * the player's position not changing for {@value #STUCK_THRESHOLD} ticks).
+ * The rewarp trigger fires when the player enters the configured rewarp radius.
  */
 public class MacroManager {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("just-farming");
 
+    /** Ticks to observe before choosing initial direction. */
+    private static final int DETECT_TICKS = 5;
+
+    /**
+     * Consecutive ticks the player must stay still (while a movement key is held)
+     * before we consider the row to be finished and flip direction.
+     */
+    private static final int STUCK_THRESHOLD = 8;
+
     private final MinecraftClient client;
     private FarmingConfig config;
 
+    // -----------------------------------------------------------------------
+    // State
+    // -----------------------------------------------------------------------
+
+    private enum MacroState { IDLE, DETECTING, BACKWARD_LEFT, FORWARD_LEFT, WARPING }
+
+    private MacroState state = MacroState.IDLE;
     private boolean running = false;
 
-    /** Number of ticks travelled in the current direction */
-    private int ticksInDirection = 0;
-    /** +1 = forward, -1 = backward */
-    private int direction = 1;
-    /** Tick counter used to throttle macro speed */
+    /** Position recorded at the start of the DETECTING phase. */
+    private Vec3d detectStartPos = null;
+    private int detectTicks = 0;
+
+    /** Position recorded at the previous movement tick (for stuck detection). */
+    private Vec3d lastPos = null;
+    private int stuckTicks = 0;
+
+    /** Throttle counter. */
     private int tickCounter = 0;
+
+    // -----------------------------------------------------------------------
+    // Constructor / config
+    // -----------------------------------------------------------------------
 
     public MacroManager(MinecraftClient client, FarmingConfig config) {
         this.client = client;
@@ -49,6 +77,10 @@ public class MacroManager {
         this.config = config;
     }
 
+    // -----------------------------------------------------------------------
+    // Public API
+    // -----------------------------------------------------------------------
+
     /** Returns {@code true} if the macro is currently active. */
     public boolean isRunning() {
         return running;
@@ -58,32 +90,47 @@ public class MacroManager {
     public void start() {
         if (running) return;
         running = true;
-        ticksInDirection = 0;
-        direction = 1;
+        state = MacroState.DETECTING;
+        detectTicks = 0;
+        detectStartPos = null;
+        lastPos = null;
+        stuckTicks = 0;
         tickCounter = 0;
         LOGGER.info("[JustFarming] Macro started. Crop: {}", config.selectedCrop);
     }
 
-    /** Stop the macro and release held keys. */
+    /** Stop the macro and release all held keys. */
     public void stop() {
         if (!running) return;
         running = false;
+        state = MacroState.IDLE;
         releaseKeys();
         LOGGER.info("[JustFarming] Macro stopped.");
     }
 
-    /** Toggle start/stop. */
+    /** Toggle start / stop. */
     public void toggle() {
-        if (running) {
-            stop();
-        } else {
-            start();
-        }
+        if (running) stop();
+        else start();
     }
 
     /**
-     * Called every client tick. Executes one step of the macro if active.
+     * Trigger an immediate rewarp by sending {@code /warp garden} to the server.
+     * This is called both by the {@code /jf rewarp} command and automatically when
+     * the player reaches the configured rewarp position.
      */
+    public void triggerRewarp() {
+        if (client.player != null && client.player.networkHandler != null) {
+            client.player.networkHandler.sendChatCommand("warp garden");
+            LOGGER.info("[JustFarming] Rewarp triggered – sent /warp garden.");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Tick logic
+    // -----------------------------------------------------------------------
+
+    /** Called every client tick. Executes one step of the macro if active. */
     public void onTick() {
         if (!running) return;
 
@@ -96,25 +143,96 @@ public class MacroManager {
         // Throttle by speed setting
         tickCounter++;
         int speedDivisor = switch (config.macroSpeed) {
-            case 1 -> 5;   // slow: act every 5 ticks
-            case 3 -> 1;   // fast: act every tick
-            default -> 2;  // normal: act every 2 ticks
+            case 1 -> 5;   // slow:   every 5 ticks
+            case 3 -> 1;   // fast:   every tick
+            default -> 2;  // normal: every 2 ticks
         };
         if (tickCounter % speedDivisor != 0) return;
 
-        // Optionally switch to best hoe in hotbar
+        // Lock pitch and yaw every active tick
+        player.setPitch(config.farmingPitch);
+        player.setYaw(config.farmingYaw);
+
+        switch (state) {
+            case DETECTING      -> tickDetecting(player);
+            case BACKWARD_LEFT  -> tickMoving(player, false);
+            case FORWARD_LEFT   -> tickMoving(player, true);
+            case WARPING        -> {
+                releaseKeys();
+                triggerRewarp();
+                // Begin a fresh detection cycle after warping back to garden
+                state = MacroState.DETECTING;
+                detectTicks = 0;
+                detectStartPos = new Vec3d(player.getX(), player.getY(), player.getZ());
+                lastPos = null;
+                stuckTicks = 0;
+            }
+            default -> {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // State handlers
+    // -----------------------------------------------------------------------
+
+    /**
+     * Observation phase: no keys are pressed; we watch the player move (or not)
+     * to decide whether to start going backward or forward.
+     */
+    private void tickDetecting(ClientPlayerEntity player) {
+        releaseKeys();
+
+        if (detectStartPos == null) {
+            detectStartPos = new Vec3d(player.getX(), player.getY(), player.getZ());
+        }
+
+        detectTicks++;
+        if (detectTicks < DETECT_TICKS) return;
+
+        // Decide initial direction from observed movement
+        Vec3d currentXYZ = new Vec3d(player.getX(), player.getY(), player.getZ());
+        Vec3d delta = currentXYZ.subtract(detectStartPos);
+        double moved = Math.sqrt(delta.x * delta.x + delta.z * delta.z);
+
+        if (moved > 0.2) {
+            // Project delta onto the player's forward axis
+            double yawRad = Math.toRadians(config.farmingYaw);
+            double fwdX = -Math.sin(yawRad);
+            double fwdZ =  Math.cos(yawRad);
+            double forwardComponent = delta.x * fwdX + delta.z * fwdZ;
+
+            state = (forwardComponent > 0) ? MacroState.FORWARD_LEFT : MacroState.BACKWARD_LEFT;
+            LOGGER.info("[JustFarming] Detected movement – starting {}.", state);
+        } else {
+            // Player is stationary – default to backward
+            state = MacroState.BACKWARD_LEFT;
+            LOGGER.info("[JustFarming] No movement detected – defaulting to BACKWARD_LEFT.");
+        }
+
+        lastPos = new Vec3d(player.getX(), player.getY(), player.getZ());
+        stuckTicks = 0;
+    }
+
+    /**
+     * Movement phase: presses the appropriate directional keys and monitors the
+     * player's position for end-of-row or rewarp-trigger events.
+     *
+     * @param forward {@code true} = moving forward; {@code false} = moving backward.
+     */
+    private void tickMoving(ClientPlayerEntity player, boolean forward) {
+        // Optionally switch to best farming tool
         if (config.autoToolSwitch) {
             switchToBestFarmingTool(player);
         }
 
-        // Set pitch (look angle)
-        player.setPitch(config.farmingPitch);
-
-        // Hold attack key to break blocks in view
+        // Hold attack (breaks cocoa beans in view)
         client.options.attackKey.setPressed(true);
 
-        // Move in current direction
-        if (direction == 1) {
+        // Always strafe left
+        client.options.leftKey.setPressed(true);
+
+        // Set forward / backward
+        if (forward) {
             client.options.forwardKey.setPressed(true);
             client.options.backKey.setPressed(false);
         } else {
@@ -122,30 +240,56 @@ public class MacroManager {
             client.options.forwardKey.setPressed(false);
         }
 
-        ticksInDirection++;
+        // ---- Stuck detection (end of row) ----
+        Vec3d currentPos = new Vec3d(player.getX(), player.getY(), player.getZ());
+        if (lastPos != null) {
+            double dx = currentPos.x - lastPos.x;
+            double dz = currentPos.z - lastPos.z;
+            double moved = Math.sqrt(dx * dx + dz * dz);
 
-        // Reverse direction at the end of the row
-        int rowLengthTicks = config.rowLength * speedDivisor;
-        if (ticksInDirection >= rowLengthTicks) {
-            direction = -direction;
-            ticksInDirection = 0;
-            // Turn 180 degrees
-            float currentYaw = player.getYaw();
-            player.setYaw(currentYaw + 180.0f);
+            if (moved < 0.05) {
+                stuckTicks++;
+            } else {
+                stuckTicks = 0;
+            }
+
+            if (stuckTicks >= STUCK_THRESHOLD) {
+                // End of row reached – flip direction
+                stuckTicks = 0;
+                state = forward ? MacroState.BACKWARD_LEFT : MacroState.FORWARD_LEFT;
+                LOGGER.info("[JustFarming] End of row – switching to {}.", state);
+                return;
+            }
+        }
+        lastPos = currentPos;
+
+        // ---- Rewarp trigger ----
+        if (config.rewarpSet) {
+            double distSq = Math.pow(currentPos.x - config.rewarpX, 2)
+                          + Math.pow(currentPos.z - config.rewarpZ, 2);
+            if (distSq <= config.rewarpRange * config.rewarpRange) {
+                LOGGER.info("[JustFarming] Reached rewarp position – warping.");
+                state = MacroState.WARPING;
+            }
         }
     }
 
-    /** Release all held movement/attack keys. */
+    // -----------------------------------------------------------------------
+    // Helpers
+    // -----------------------------------------------------------------------
+
+    /** Release all held movement / attack keys. */
     private void releaseKeys() {
         if (client.options == null) return;
         client.options.forwardKey.setPressed(false);
         client.options.backKey.setPressed(false);
+        client.options.leftKey.setPressed(false);
         client.options.attackKey.setPressed(false);
     }
 
     /**
-     * Switch the player's selected hotbar slot to the first hoe found,
-     * prioritising higher-tier hoes (diamond/netherite).
+     * Switch the player's selected hotbar slot to the best hoe found,
+     * prioritising higher-tier hoes (netherite > diamond > gold > iron > stone).
      */
     private void switchToBestFarmingTool(ClientPlayerEntity player) {
         int bestSlot = -1;
@@ -173,10 +317,10 @@ public class MacroManager {
     private int getToolTier(Item item) {
         String name = item.getClass().getSimpleName().toLowerCase();
         if (name.contains("netherite")) return 5;
-        if (name.contains("diamond")) return 4;
-        if (name.contains("gold")) return 3;
-        if (name.contains("iron")) return 2;
-        if (name.contains("stone")) return 1;
+        if (name.contains("diamond"))   return 4;
+        if (name.contains("gold"))      return 3;
+        if (name.contains("iron"))      return 2;
+        if (name.contains("stone"))     return 1;
         return 0;
     }
 }

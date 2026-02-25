@@ -3,6 +3,7 @@ package com.justfarming;
 import com.justfarming.config.FarmingConfig;
 import com.justfarming.gui.FarmingConfigScreen;
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.option.KeyBinding;
@@ -12,16 +13,19 @@ import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.literal;
+
 /**
- * Just Farming – Hypixel Skyblock farming macro mod for Fabric 1.21.10.
+ * Just Farming – Hypixel Skyblock cocoa-beans farming macro mod for Fabric 1.21.10.
  *
  * <p>Features:
  * <ul>
- *   <li>GUI to select crop, speed, pitch, row length, and toggle options</li>
+ *   <li>GUI to select crop (Cocoa Beans), speed, pitch, yaw, and rewarp position</li>
  *   <li>Keybind to start/stop the macro (default: R)</li>
  *   <li>Keybind to open the config GUI (default: I)</li>
  *   <li>Auto tool switching to the best hoe in the hotbar</li>
- *   <li>Back-and-forth row pattern with configurable row length</li>
+ *   <li>Back-and-forth row pattern with automatic end-of-row detection</li>
+ *   <li>{@code /jf rewarp} command to send {@code /warp garden} to the server</li>
  * </ul>
  */
 public class JustFarming implements ClientModInitializer {
@@ -63,6 +67,16 @@ public class JustFarming implements ClientModInitializer {
                 KEY_CATEGORY
         ));
 
+        // Register /jf rewarp client command
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) ->
+                dispatcher.register(
+                        literal("jf")
+                                .then(literal("rewarp")
+                                        .executes(ctx -> {
+                                            macroManager.triggerRewarp();
+                                            return 1;
+                                        }))));
+
         // Register client tick callback
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             // Process toggle macro keybind
@@ -90,7 +104,7 @@ public class JustFarming implements ClientModInitializer {
             macroManager.onTick();
         });
 
-        LOGGER.info("[JustFarming] Ready. Toggle macro: R | Open GUI: I");
+        LOGGER.info("[JustFarming] Ready. Toggle macro: R | Open GUI: I | Command: /jf rewarp");
     }
 
     /** Returns the shared config instance. */
