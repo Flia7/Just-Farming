@@ -76,7 +76,7 @@ public class PestDetector {
     private void parseEntry(String text) {
         if (text == null || text.isBlank()) return;
         // Strip Minecraft colour codes (§X)
-        String clean = text.replaceAll("§[0-9a-fk-orA-FK-OR]", "").trim();
+        String clean = text.replaceAll("§[0-9a-fklmnorA-FKLMNOR]", "").trim();
 
         // Try "Plots: X, Y, Z" format (Pests Widget in tab list)
         Matcher plotsMatch = INFESTED_PLOTS_PATTERN.matcher(clean);

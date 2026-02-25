@@ -47,38 +47,49 @@ public final class GardenPlot {
      */
     private static final Map<String, int[]> NAME_TO_GRID = new HashMap<>();
 
+    /**
+     * Reverse lookup: grid key (row * COLS + col) → plot name.
+     * Enables O(1) position-to-name resolution in {@link #getPlotNameAt}.
+     */
+    private static final Map<Integer, String> GRID_TO_NAME = new HashMap<>();
+
     static {
         // Standard Hypixel Garden unlock-spiral numbering.
         // Row 0 (north-most)
-        NAME_TO_GRID.put("21", new int[]{0, 0});
-        NAME_TO_GRID.put("13", new int[]{0, 1});
-        NAME_TO_GRID.put("9",  new int[]{0, 2});
-        NAME_TO_GRID.put("5",  new int[]{0, 3});
-        NAME_TO_GRID.put("17", new int[]{0, 4});
+        putPlot("21", 0, 0);
+        putPlot("13", 0, 1);
+        putPlot("9",  0, 2);
+        putPlot("5",  0, 3);
+        putPlot("17", 0, 4);
         // Row 1
-        NAME_TO_GRID.put("22", new int[]{1, 0});
-        NAME_TO_GRID.put("14", new int[]{1, 1});
-        NAME_TO_GRID.put("3",  new int[]{1, 2});
-        NAME_TO_GRID.put("1",  new int[]{1, 3});
-        NAME_TO_GRID.put("10", new int[]{1, 4});
+        putPlot("22", 1, 0);
+        putPlot("14", 1, 1);
+        putPlot("3",  1, 2);
+        putPlot("1",  1, 3);
+        putPlot("10", 1, 4);
         // Row 2 (barn at col 2)
-        NAME_TO_GRID.put("24", new int[]{2, 0});
-        NAME_TO_GRID.put("4",  new int[]{2, 1});
+        putPlot("24", 2, 0);
+        putPlot("4",  2, 1);
         // (2,2) = barn
-        NAME_TO_GRID.put("2",  new int[]{2, 3});
-        NAME_TO_GRID.put("18", new int[]{2, 4});
+        putPlot("2",  2, 3);
+        putPlot("18", 2, 4);
         // Row 3
-        NAME_TO_GRID.put("20", new int[]{3, 0});
-        NAME_TO_GRID.put("16", new int[]{3, 1});
-        NAME_TO_GRID.put("7",  new int[]{3, 2});
-        NAME_TO_GRID.put("6",  new int[]{3, 3});
-        NAME_TO_GRID.put("11", new int[]{3, 4});
+        putPlot("20", 3, 0);
+        putPlot("16", 3, 1);
+        putPlot("7",  3, 2);
+        putPlot("6",  3, 3);
+        putPlot("11", 3, 4);
         // Row 4 (south-most)
-        NAME_TO_GRID.put("23", new int[]{4, 0});
-        NAME_TO_GRID.put("15", new int[]{4, 1});
-        NAME_TO_GRID.put("12", new int[]{4, 2});
-        NAME_TO_GRID.put("8",  new int[]{4, 3});
-        NAME_TO_GRID.put("19", new int[]{4, 4});
+        putPlot("23", 4, 0);
+        putPlot("15", 4, 1);
+        putPlot("12", 4, 2);
+        putPlot("8",  4, 3);
+        putPlot("19", 4, 4);
+    }
+
+    private static void putPlot(String name, int row, int col) {
+        NAME_TO_GRID.put(name, new int[]{row, col});
+        GRID_TO_NAME.put(row * COLS + col, name);
     }
 
     private GardenPlot() {}
@@ -129,11 +140,6 @@ public final class GardenPlot {
         int col = (int) Math.floor((x + 240) / PLOT_SIZE);
         int row = (int) Math.floor((z + 240) / PLOT_SIZE);
         if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return null;
-        for (Map.Entry<String, int[]> entry : NAME_TO_GRID.entrySet()) {
-            if (entry.getValue()[0] == row && entry.getValue()[1] == col) {
-                return entry.getKey();
-            }
-        }
-        return null; // barn cell
+        return GRID_TO_NAME.get(row * COLS + col); // null for barn cell
     }
 }
