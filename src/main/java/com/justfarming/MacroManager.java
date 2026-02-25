@@ -53,11 +53,6 @@ public class MacroManager {
     private boolean running = false;
     private boolean freelookEnabled = false;
 
-    // Freelook camera state (separate from player movement yaw/pitch)
-    private float freelookCameraYaw = 0.0f;
-    private float freelookCameraPitch = 0.0f;
-    private float freelookZoom = 1.0f;
-
     /** Position recorded at the start of the DETECTING phase. */
     private Vec3d detectStartPos = null;
     private int detectTicks = 0;
@@ -105,35 +100,9 @@ public class MacroManager {
         return freelookEnabled && running;
     }
 
-    /** Returns the freelook camera yaw (degrees). */
-    public float getFreelookCameraYaw() {
-        return freelookCameraYaw;
-    }
-
-    /** Returns the freelook camera pitch (degrees). */
-    public float getFreelookCameraPitch() {
-        return freelookCameraPitch;
-    }
-
-    /** Returns the freelook zoom level (1.0 = normal, >1 = zoomed in). */
-    public float getFreelookZoom() {
-        return freelookZoom;
-    }
-
-    /** Sets the freelook zoom level; clamped to [0.25, 4.0]. */
-    public void setFreelookZoom(float zoom) {
-        this.freelookZoom = Math.max(0.25f, Math.min(4.0f, zoom));
-    }
-
     /** Toggle freelook on/off. */
     public void toggleFreelook() {
         freelookEnabled = !freelookEnabled;
-        if (!freelookEnabled) {
-            // Reset zoom and camera angles to farming values when disabling
-            freelookZoom = 1.0f;
-            freelookCameraYaw = config.farmingYaw;
-            freelookCameraPitch = config.farmingPitch;
-        }
         LOGGER.info("[JustFarming] Freelook {}.", freelookEnabled ? "enabled" : "disabled");
     }
 
@@ -207,17 +176,9 @@ public class MacroManager {
             return;
         }
 
-        // Lock pitch and yaw every active tick (unless freelook is enabled)
-        if (freelookEnabled) {
-            // Capture mouse-driven yaw/pitch as freelook camera angles, then lock movement
-            freelookCameraYaw = player.getYaw();
-            freelookCameraPitch = player.getPitch();
-            player.setYaw(config.farmingYaw);
-            player.setPitch(config.farmingPitch);
-        } else {
-            player.setPitch(config.farmingPitch);
-            player.setYaw(config.farmingYaw);
-        }
+        // Lock pitch and yaw every active tick
+        player.setPitch(config.farmingPitch);
+        player.setYaw(config.farmingYaw);
 
         switch (state) {
             case DETECTING      -> tickDetecting(player);
