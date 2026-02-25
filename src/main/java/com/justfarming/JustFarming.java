@@ -12,7 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Just Farming – Hypixel Skyblock farming macro mod for Fabric 1.21.1.
+ * Just Farming – Hypixel Skyblock farming macro mod for Fabric 1.21.10.
  *
  * <p>Features:
  * <ul>

@@ -1,6 +1,6 @@
 # Just-Farming
 
-A Hypixel Skyblock farming macro mod for **Fabric 1.21.1** (Java Edition).
+A Hypixel Skyblock farming macro mod for **Fabric 1.21.10** (Java Edition).
 
 ## Features
 
@@ -19,7 +19,7 @@ A Hypixel Skyblock farming macro mod for **Fabric 1.21.1** (Java Edition).
 
 ## Installation
 
-1. Install [Fabric Loader](https://fabricmc.net/use/) for Minecraft 1.21.1
+1. Install [Fabric Loader](https://fabricmc.net/use/) for Minecraft 1.21.10
 2. Install [Fabric API](https://modrinth.com/mod/fabric-api)
 3. Drop `just-farming-<version>.jar` into your `mods/` folder
 
