@@ -165,7 +165,7 @@ public class MacroManager {
         }
 
         if (bestSlot >= 0) {
-            player.getInventory().selectedSlot = bestSlot;
+            player.getInventory().setSelectedSlot(bestSlot);
         }
     }
 
