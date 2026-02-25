@@ -6,15 +6,14 @@ A Hypixel Skyblock farming macro mod for **Fabric 1.21.10** (Java Edition).
 
 - **GUI Configuration Screen** – press `I` (default) to open
   - Select which crop to farm (Wheat, Carrot, Potato, Melon, Pumpkin, Sugar Cane, Cactus, Mushroom, Cocoa Beans, Nether Wart)
-  - Choose macro speed (Slow / Normal / Fast)
-  - Adjust pitch angle (how far down the player looks while farming)
-  - Set row length (how many blocks to travel before turning around)
-  - Toggle auto-replant
+  - Adjust pitch/yaw angle (how far down the player looks while farming)
   - Toggle auto-tool-switch (automatically equips the best hoe in your hotbar)
   - Start / Stop the macro directly from the GUI
 - **Keybinds** (all rebindable in Minecraft Controls menu)
   - `R` – Toggle macro on/off
   - `I` – Open config GUI
+  - freelook
+  - autorewarp to start (jf rewarp)
 - **Persistent Config** – settings saved to `config/just-farming.json`
 
 ## Installation
