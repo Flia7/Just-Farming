@@ -40,6 +40,7 @@ public class JustFarming implements ClientModInitializer {
     // Keybindings
     private static KeyBinding toggleMacroKey;
     private static KeyBinding openGuiKey;
+    private static KeyBinding freelookKey;
     private static final KeyBinding.Category KEY_CATEGORY = KeyBinding.Category.create(Identifier.of("just-farming", "categories"));
 
     @Override
@@ -67,13 +68,24 @@ public class JustFarming implements ClientModInitializer {
                 KEY_CATEGORY
         ));
 
+        freelookKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.just-farming.freelook",
+                InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_L,
+                KEY_CATEGORY
+        ));
+
         // Register /jf rewarp client command
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) ->
                 dispatcher.register(
                         literal("jf")
                                 .then(literal("rewarp")
                                         .executes(ctx -> {
-                                            macroManager.triggerRewarp();
+                                            macroManager.setRewarpHere();
+                                            if (ctx.getSource().getPlayer() != null) {
+                                                ctx.getSource().getPlayer().sendMessage(
+                                                        net.minecraft.text.Text.literal("§a[JustFarming] Rewarp position set here."), true);
+                                            }
                                             return 1;
                                         }))));
 
@@ -100,11 +112,25 @@ public class JustFarming implements ClientModInitializer {
                 }
             }
 
+            // Process freelook keybind
+            while (freelookKey.wasPressed()) {
+                macroManager.toggleFreelook();
+                if (client.player != null) {
+                    if (macroManager.isFreelookEnabled()) {
+                        client.player.sendMessage(
+                                net.minecraft.text.Text.literal("§e[JustFarming] Freelook enabled."), true);
+                    } else {
+                        client.player.sendMessage(
+                                net.minecraft.text.Text.literal("§e[JustFarming] Freelook disabled."), true);
+                    }
+                }
+            }
+
             // Run macro tick
             macroManager.onTick();
         });
 
-        LOGGER.info("[JustFarming] Ready. Toggle macro: R | Open GUI: I | Command: /jf rewarp");
+        LOGGER.info("[JustFarming] Ready. Toggle macro: R | Open GUI: I | Freelook: L | Command: /jf rewarp");
     }
 
     /** Returns the shared config instance. */
