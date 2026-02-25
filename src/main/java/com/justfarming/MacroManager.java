@@ -6,6 +6,7 @@ import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.item.HoeItem;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
+import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.Vec3d;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,10 +19,16 @@ import org.slf4j.LoggerFactory;
  *   <li>IDLE – macro is not running.</li>
  *   <li>DETECTING – observes the player for a few ticks to decide the initial
  *       direction (backward or forward).</li>
- *   <li>BACKWARD_LEFT – holds back + strafe-left + attack.</li>
- *   <li>FORWARD_LEFT – holds forward + strafe-left + attack.</li>
- *   <li>WARPING – releases keys and sends {@code /warp garden}.</li>
+ *   <li>BACKWARD_LEFT – moves back + strafe-left + attacks.</li>
+ *   <li>FORWARD_LEFT – moves forward + strafe-left + attacks.</li>
+ *   <li>WARPING – clears movement and sends {@code /warp garden}.</li>
  * </ol>
+ *
+ * <p>Movement is injected directly into the {@code Input} object via
+ * {@link com.justfarming.mixin.KeyboardInputMixin}, so it functions even when
+ * a Minecraft screen (e.g. chat) is open.  Block breaking is triggered by
+ * calling {@code interactionManager.attackBlock()} directly each tick rather
+ * than relying on a simulated key-press.
  *
  * <p>Direction switches when the player stops moving (end of row detected by
  * the player's position not changing for {@value #STUCK_THRESHOLD} ticks).
@@ -35,8 +42,8 @@ public class MacroManager {
     private static final int DETECT_TICKS = 5;
 
     /**
-     * Consecutive ticks the player must stay still (while a movement key is held)
-     * before we consider the row to be finished and flip direction.
+     * Consecutive ticks the player must stay still (while moving) before we
+     * consider the row to be finished and flip direction.
      */
     private static final int STUCK_THRESHOLD = 8;
 
@@ -51,6 +58,20 @@ public class MacroManager {
 
     private MacroState state = MacroState.IDLE;
     private boolean running = false;
+
+    /**
+     * When {@code true}, the macro does NOT lock pitch/yaw, letting the player
+     * look freely while still performing the farming movements.
+     * Toggled with the freelook key (default: L).
+     */
+    private boolean freelookEnabled = false;
+
+    /**
+     * Desired movement values read by {@link com.justfarming.mixin.KeyboardInputMixin}
+     * each tick.  Zero means "no macro movement on this axis."
+     */
+    private float desiredMovementForward   = 0f;
+    private float desiredMovementSideways  = 0f;
 
     /** Position recorded at the start of the DETECTING phase. */
     private Vec3d detectStartPos = null;
@@ -83,6 +104,33 @@ public class MacroManager {
         return running;
     }
 
+    /** Returns {@code true} if freelook mode is currently enabled. */
+    public boolean isFreelookEnabled() {
+        return freelookEnabled;
+    }
+
+    /** Toggle freelook on/off. */
+    public void toggleFreelook() {
+        freelookEnabled = !freelookEnabled;
+        LOGGER.info("[JustFarming] Freelook {}.", freelookEnabled ? "enabled" : "disabled");
+    }
+
+    /**
+     * Returns the forward/backward movement value the mixin should inject.
+     * Positive = forward, negative = backward, zero = no macro input.
+     */
+    public float getDesiredMovementForward() {
+        return desiredMovementForward;
+    }
+
+    /**
+     * Returns the sideways movement value the mixin should inject.
+     * Negative = left (standard Minecraft convention), positive = right.
+     */
+    public float getDesiredMovementSideways() {
+        return desiredMovementSideways;
+    }
+
     /** Start the macro. */
     public void start() {
         if (running) return;
@@ -92,15 +140,18 @@ public class MacroManager {
         detectStartPos = null;
         lastPos = null;
         stuckTicks = 0;
+        desiredMovementForward  = 0f;
+        desiredMovementSideways = 0f;
         LOGGER.info("[JustFarming] Macro started. Crop: {}", config.selectedCrop);
     }
 
-    /** Stop the macro and release all held keys. */
+    /** Stop the macro and clear all injected movement. */
     public void stop() {
         if (!running) return;
         running = false;
         state = MacroState.IDLE;
-        releaseKeys();
+        desiredMovementForward  = 0f;
+        desiredMovementSideways = 0f;
         LOGGER.info("[JustFarming] Macro stopped.");
     }
 
@@ -111,9 +162,8 @@ public class MacroManager {
     }
 
     /**
-     * Trigger an immediate rewarp by sending {@code /warp garden} to the server.
-     * This is called both by the {@code /jf rewarp} command and automatically when
-     * the player reaches the configured rewarp position.
+     * Send {@code /warp garden} to the server.  Called automatically when the
+     * macro enters the WARPING state.
      */
     public void triggerRewarp() {
         if (client.player != null && client.player.networkHandler != null) {
@@ -136,16 +186,19 @@ public class MacroManager {
             return;
         }
 
-        // Lock pitch and yaw every active tick
-        player.setPitch(config.farmingPitch);
-        player.setYaw(config.farmingYaw);
+        // Lock pitch and yaw every active tick (unless freelook is enabled)
+        if (!freelookEnabled) {
+            player.setPitch(config.farmingPitch);
+            player.setYaw(config.farmingYaw);
+        }
 
         switch (state) {
             case DETECTING      -> tickDetecting(player);
             case BACKWARD_LEFT  -> tickMoving(player, false);
             case FORWARD_LEFT   -> tickMoving(player, true);
             case WARPING        -> {
-                releaseKeys();
+                desiredMovementForward  = 0f;
+                desiredMovementSideways = 0f;
                 triggerRewarp();
                 // Begin a fresh detection cycle after warping back to garden
                 state = MacroState.DETECTING;
@@ -163,11 +216,12 @@ public class MacroManager {
     // -----------------------------------------------------------------------
 
     /**
-     * Observation phase: no keys are pressed; we watch the player move (or not)
-     * to decide whether to start going backward or forward.
+     * Observation phase: no movement; we watch the player move (or not) to
+     * decide whether to start going backward or forward.
      */
     private void tickDetecting(ClientPlayerEntity player) {
-        releaseKeys();
+        desiredMovementForward  = 0f;
+        desiredMovementSideways = 0f;
 
         if (detectStartPos == null) {
             detectStartPos = new Vec3d(player.getX(), player.getY(), player.getZ());
@@ -182,7 +236,6 @@ public class MacroManager {
         double moved = Math.sqrt(delta.x * delta.x + delta.z * delta.z);
 
         if (moved > 0.2) {
-            // Project delta onto the player's forward axis
             double yawRad = Math.toRadians(config.farmingYaw);
             double fwdX = -Math.sin(yawRad);
             double fwdZ =  Math.cos(yawRad);
@@ -191,7 +244,6 @@ public class MacroManager {
             state = (forwardComponent > 0) ? MacroState.FORWARD_LEFT : MacroState.BACKWARD_LEFT;
             LOGGER.info("[JustFarming] Detected movement – starting {}.", state);
         } else {
-            // Player is stationary – default to backward
             state = MacroState.BACKWARD_LEFT;
             LOGGER.info("[JustFarming] No movement detected – defaulting to BACKWARD_LEFT.");
         }
@@ -201,8 +253,9 @@ public class MacroManager {
     }
 
     /**
-     * Movement phase: presses the appropriate directional keys and monitors the
-     * player's position for end-of-row or rewarp-trigger events.
+     * Movement phase: sets the desired movement values (read by the mixin),
+     * triggers block breaking via direct interactionManager call, and monitors
+     * for end-of-row or rewarp-trigger events.
      *
      * @param forward {@code true} = moving forward; {@code false} = moving backward.
      */
@@ -212,19 +265,14 @@ public class MacroManager {
             switchToBestFarmingTool(player);
         }
 
-        // Hold attack (breaks cocoa beans in view)
-        client.options.attackKey.setPressed(true);
+        // Set desired movement (injected into Input by KeyboardInputMixin)
+        desiredMovementForward  = forward ? 1.0f : -1.0f;
+        desiredMovementSideways = -1.0f; // strafe left
 
-        // Always strafe left
-        client.options.leftKey.setPressed(true);
-
-        // Set forward / backward
-        if (forward) {
-            client.options.forwardKey.setPressed(true);
-            client.options.backKey.setPressed(false);
-        } else {
-            client.options.backKey.setPressed(true);
-            client.options.forwardKey.setPressed(false);
+        // Break the targeted block directly (works even with chat/screen open)
+        if (client.crosshairTarget instanceof BlockHitResult blockHit
+                && client.interactionManager != null) {
+            client.interactionManager.attackBlock(blockHit.getBlockPos(), blockHit.getSide());
         }
 
         // ---- Stuck detection (end of row) ----
@@ -241,7 +289,6 @@ public class MacroManager {
             }
 
             if (stuckTicks >= STUCK_THRESHOLD) {
-                // End of row reached – flip direction
                 stuckTicks = 0;
                 state = forward ? MacroState.BACKWARD_LEFT : MacroState.FORWARD_LEFT;
                 LOGGER.info("[JustFarming] End of row – switching to {}.", state);
@@ -264,15 +311,6 @@ public class MacroManager {
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
-
-    /** Release all held movement / attack keys. */
-    private void releaseKeys() {
-        if (client.options == null) return;
-        client.options.forwardKey.setPressed(false);
-        client.options.backKey.setPressed(false);
-        client.options.leftKey.setPressed(false);
-        client.options.attackKey.setPressed(false);
-    }
 
     /**
      * Switch the player's selected hotbar slot to the best hoe found,
