@@ -61,6 +61,12 @@ public class MacroManager {
     private Vec3d lastPos = null;
     private int stuckTicks = 0;
 
+    /** System-time (ms) when the WARPING state was entered, used for the swap delay. */
+    private long warpStartTime = 0;
+
+    /** Total delay (ms) to wait in WARPING state before sending /warp garden. */
+    private long warpTargetDelay = 0;
+
     // -----------------------------------------------------------------------
     // Constructor / config
     // -----------------------------------------------------------------------
@@ -177,6 +183,10 @@ public class MacroManager {
             case FORWARD_LEFT   -> tickMoving(player, true);
             case WARPING        -> {
                 releaseKeys();
+                if (System.currentTimeMillis() - warpStartTime < warpTargetDelay) {
+                    // Still waiting for the configured delay – keep keys released
+                    break;
+                }
                 triggerRewarp();
                 // Begin a fresh detection cycle after warping back to garden
                 state = MacroState.DETECTING;
@@ -287,6 +297,9 @@ public class MacroManager {
                           + Math.pow(currentPos.z - config.rewarpZ, 2);
             if (distSq <= config.rewarpRange * config.rewarpRange) {
                 LOGGER.info("[JustFarming] Reached rewarp position – warping.");
+                warpStartTime   = System.currentTimeMillis();
+                warpTargetDelay = config.rewarpDelayMin
+                        + (long) (Math.random() * (config.rewarpDelayRandom + 1));
                 state = MacroState.WARPING;
             }
         }

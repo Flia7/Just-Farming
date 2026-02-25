@@ -27,7 +27,7 @@ public class FarmingConfigScreen extends Screen {
 
     // ── Layout ────────────────────────────────────────────────────────────────
     private static final int PANEL_WIDTH   = 310;
-    private static final int PANEL_HEIGHT  = 300;
+    private static final int PANEL_HEIGHT  = 352;
     private static final int HEADER_HEIGHT = 42;
     private static final int BUTTON_WIDTH  = 220;
     private static final int BUTTON_HEIGHT = 20;
@@ -54,6 +54,8 @@ public class FarmingConfigScreen extends Screen {
     private PitchSlider                   pitchSlider;
     private YawSlider                     yawSlider;
     private CyclingButtonWidget<Boolean>  toolSwitchButton;
+    private SwapDelaySlider               swapDelaySlider;
+    private SwapRandomSlider              swapRandomSlider;
     private ButtonWidget                  setRewarpButton;
     private ButtonWidget                  toggleMacroButton;
     private ButtonWidget                  saveCloseButton;
@@ -114,6 +116,14 @@ public class FarmingConfigScreen extends Screen {
                 .build(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT,
                         Text.translatable("gui.just-farming.tool_switch_label"));
         this.addDrawableChild(toolSwitchButton);
+        y += BUTTON_HEIGHT + PADDING;
+
+        swapDelaySlider = new SwapDelaySlider(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT, config.rewarpDelayMin);
+        this.addDrawableChild(swapDelaySlider);
+        y += BUTTON_HEIGHT + PADDING;
+
+        swapRandomSlider = new SwapRandomSlider(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT, config.rewarpDelayRandom);
+        this.addDrawableChild(swapRandomSlider);
         y += BUTTON_HEIGHT + PADDING + 10;
 
         // ── Action buttons (below separator) ──────────────────────────────────
@@ -239,10 +249,12 @@ public class FarmingConfigScreen extends Screen {
 
     /** Read widget values back into the config object. */
     private void applyConfig() {
-        config.selectedCrop   = cropButton.getValue();
-        config.farmingPitch   = pitchSlider.getPitchValue();
-        config.farmingYaw     = yawSlider.getYawValue();
-        config.autoToolSwitch = toolSwitchButton.getValue();
+        config.selectedCrop      = cropButton.getValue();
+        config.farmingPitch      = pitchSlider.getPitchValue();
+        config.farmingYaw        = yawSlider.getYawValue();
+        config.autoToolSwitch    = toolSwitchButton.getValue();
+        config.rewarpDelayMin    = swapDelaySlider.getDelayValue();
+        config.rewarpDelayRandom = swapRandomSlider.getRandomValue();
         macroManager.setConfig(config);
     }
 
@@ -321,5 +333,61 @@ public class FarmingConfigScreen extends Screen {
         protected void applyValue() {
             // value is stored in the parent field; read via getYawValue()
         }
+    }
+
+    /**
+     * Slider for the minimum lane-swap delay (0–2000 ms).
+     */
+    private static class SwapDelaySlider extends SliderWidget {
+
+        private static final int MIN =    0;
+        private static final int MAX = 2000;
+
+        SwapDelaySlider(int x, int y, int width, int height, int initialValue) {
+            super(x, y, width, height,
+                    Text.empty(),
+                    (double) (initialValue - MIN) / (MAX - MIN));
+            updateMessage();
+        }
+
+        int getDelayValue() {
+            return MIN + (int) Math.round(value * (MAX - MIN));
+        }
+
+        @Override
+        protected void updateMessage() {
+            setMessage(Text.literal(String.format("Min Swap Delay: %d ms", getDelayValue())));
+        }
+
+        @Override
+        protected void applyValue() {}
+    }
+
+    /**
+     * Slider for the random extra lane-swap delay (0–1000 ms).
+     */
+    private static class SwapRandomSlider extends SliderWidget {
+
+        private static final int MIN =    0;
+        private static final int MAX = 1000;
+
+        SwapRandomSlider(int x, int y, int width, int height, int initialValue) {
+            super(x, y, width, height,
+                    Text.empty(),
+                    (double) (initialValue - MIN) / (MAX - MIN));
+            updateMessage();
+        }
+
+        int getRandomValue() {
+            return MIN + (int) Math.round(value * (MAX - MIN));
+        }
+
+        @Override
+        protected void updateMessage() {
+            setMessage(Text.literal(String.format("Swap Randomization: %d ms", getRandomValue())));
+        }
+
+        @Override
+        protected void applyValue() {}
     }
 }
