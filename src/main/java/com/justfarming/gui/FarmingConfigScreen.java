@@ -16,7 +16,6 @@ import net.minecraft.text.Text;
  * <p>Allows the player to:
  * <ul>
  *   <li>Select the crop type to farm (Cocoa Beans only for now)</li>
- *   <li>Adjust macro speed (Slow / Normal / Fast)</li>
  *   <li>Set the pitch angle (vertical look angle while farming)</li>
  *   <li>Set the yaw angle (horizontal rotation while farming)</li>
  *   <li>Toggle auto-tool-switch</li>
@@ -38,7 +37,6 @@ public class FarmingConfigScreen extends Screen {
 
     // Widgets
     private CyclingButtonWidget<CropType>  cropButton;
-    private CyclingButtonWidget<Integer>   speedButton;
     private PitchSlider  pitchSlider;
     private YawSlider    yawSlider;
     private CyclingButtonWidget<Boolean>   toolSwitchButton;
@@ -70,20 +68,6 @@ public class FarmingConfigScreen extends Screen {
                 .build(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT,
                         Text.translatable("gui.just-farming.crop_label"));
         this.addDrawableChild(cropButton);
-        y += BUTTON_HEIGHT + PADDING;
-
-        // Macro speed
-        speedButton = CyclingButtonWidget.builder(
-                        (Integer speed) -> switch (speed) {
-                            case 1 -> Text.literal("Slow");
-                            case 3 -> Text.literal("Fast");
-                            default -> Text.literal("Normal");
-                        })
-                .values(1, 2, 3)
-                .initially(config.macroSpeed)
-                .build(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT,
-                        Text.translatable("gui.just-farming.speed_label"));
-        this.addDrawableChild(speedButton);
         y += BUTTON_HEIGHT + PADDING;
 
         // Pitch angle slider
@@ -137,14 +121,10 @@ public class FarmingConfigScreen extends Screen {
         this.addDrawableChild(toggleMacroButton);
         y += BUTTON_HEIGHT + PADDING;
 
-        // Save & Close button
+        // Close button
         saveCloseButton = ButtonWidget.builder(
-                        Text.translatable("gui.just-farming.save_close"),
-                        btn -> {
-                            applyConfig();
-                            config.save();
-                            close();
-                        })
+                        Text.translatable("gui.just-farming.close"),
+                        btn -> close())
                 .dimensions(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT)
                 .build();
         this.addDrawableChild(saveCloseButton);
@@ -181,6 +161,8 @@ public class FarmingConfigScreen extends Screen {
 
     @Override
     public void close() {
+        applyConfig();
+        config.save();
         if (this.client != null) {
             this.client.setScreen(parent);
         }
@@ -194,7 +176,6 @@ public class FarmingConfigScreen extends Screen {
     /** Read widget values back into the config object. */
     private void applyConfig() {
         config.selectedCrop   = cropButton.getValue();
-        config.macroSpeed     = speedButton.getValue();
         config.farmingPitch   = pitchSlider.getPitchValue();
         config.farmingYaw     = yawSlider.getYawValue();
         config.autoToolSwitch = toolSwitchButton.getValue();
@@ -218,11 +199,11 @@ public class FarmingConfigScreen extends Screen {
     // -------------------------------------------------------------------------
 
     /**
-     * Slider for pitch angle in range [20, 90] degrees.
+     * Slider for pitch angle in range [-90, 90] degrees.
      */
     private static class PitchSlider extends SliderWidget {
 
-        private static final float MIN = 20.0f;
+        private static final float MIN = -90.0f;
         private static final float MAX = 90.0f;
 
         PitchSlider(int x, int y, int width, int height, float initialPitch) {

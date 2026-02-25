@@ -60,9 +60,6 @@ public class MacroManager {
     private Vec3d lastPos = null;
     private int stuckTicks = 0;
 
-    /** Throttle counter. */
-    private int tickCounter = 0;
-
     // -----------------------------------------------------------------------
     // Constructor / config
     // -----------------------------------------------------------------------
@@ -95,7 +92,6 @@ public class MacroManager {
         detectStartPos = null;
         lastPos = null;
         stuckTicks = 0;
-        tickCounter = 0;
         LOGGER.info("[JustFarming] Macro started. Crop: {}", config.selectedCrop);
     }
 
@@ -139,15 +135,6 @@ public class MacroManager {
             stop();
             return;
         }
-
-        // Throttle by speed setting
-        tickCounter++;
-        int speedDivisor = switch (config.macroSpeed) {
-            case 1 -> 5;   // slow:   every 5 ticks
-            case 3 -> 1;   // fast:   every tick
-            default -> 2;  // normal: every 2 ticks
-        };
-        if (tickCounter % speedDivisor != 0) return;
 
         // Lock pitch and yaw every active tick
         player.setPitch(config.farmingPitch);

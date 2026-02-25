@@ -27,11 +27,6 @@ public class FarmingConfig {
     public CropType selectedCrop = CropType.COCOA_BEANS;
 
     /**
-     * Macro speed: 1 = slow, 2 = normal, 3 = fast.
-     */
-    public int macroSpeed = 2;
-
-    /**
      * Pitch angle (vertical look angle, degrees) while farming.
      * Typical range: 30–80 degrees looking down at crops.
      */
