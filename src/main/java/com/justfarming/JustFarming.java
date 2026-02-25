@@ -40,7 +40,12 @@ public class JustFarming implements ClientModInitializer {
     // Keybindings
     private static KeyBinding toggleMacroKey;
     private static KeyBinding openGuiKey;
+    private static KeyBinding freelookKey;
+    private static KeyBinding mouseUngrabKey;
     private static final KeyBinding.Category KEY_CATEGORY = KeyBinding.Category.create(Identifier.of("just-farming", "categories"));
+
+    /** Tracks whether the mouse cursor is currently ungrapped by this mod. */
+    private static boolean mouseUngrapped = false;
 
     @Override
     public void onInitializeClient() {
@@ -67,13 +72,27 @@ public class JustFarming implements ClientModInitializer {
                 KEY_CATEGORY
         ));
 
+        freelookKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.just-farming.freelook",
+                InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_L,
+                KEY_CATEGORY
+        ));
+
+        mouseUngrabKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.just-farming.mouse_ungrab",
+                InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_G,
+                KEY_CATEGORY
+        ));
+
         // Register /jf rewarp client command
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) ->
                 dispatcher.register(
                         literal("jf")
                                 .then(literal("rewarp")
                                         .executes(ctx -> {
-                                            macroManager.triggerRewarp();
+                                            macroManager.setRewarpPosition();
                                             return 1;
                                         }))));
 
@@ -100,11 +119,38 @@ public class JustFarming implements ClientModInitializer {
                 }
             }
 
+            // Process freelook keybind (L)
+            while (freelookKey.wasPressed()) {
+                macroManager.toggleFreelook();
+                if (client.player != null) {
+                    client.player.sendMessage(
+                            net.minecraft.text.Text.literal(macroManager.isFreelookEnabled()
+                                    ? "§a[JustFarming] Freelook enabled."
+                                    : "§c[JustFarming] Freelook disabled."), true);
+                }
+            }
+
+            // Process mouse ungrab keybind (G)
+            while (mouseUngrabKey.wasPressed()) {
+                mouseUngrapped = !mouseUngrapped;
+                if (mouseUngrapped) {
+                    client.mouse.unlockCursor();
+                } else {
+                    client.mouse.lockCursor();
+                }
+                if (client.player != null) {
+                    client.player.sendMessage(
+                            net.minecraft.text.Text.literal(mouseUngrapped
+                                    ? "§e[JustFarming] Mouse ungrapped."
+                                    : "§a[JustFarming] Mouse grabbed."), true);
+                }
+            }
+
             // Run macro tick
             macroManager.onTick();
         });
 
-        LOGGER.info("[JustFarming] Ready. Toggle macro: R | Open GUI: I | Command: /jf rewarp");
+        LOGGER.info("[JustFarming] Ready. Toggle macro: R | Open GUI: I | Freelook: L | Mouse ungrab: G | Command: /jf rewarp");
     }
 
     /** Returns the shared config instance. */

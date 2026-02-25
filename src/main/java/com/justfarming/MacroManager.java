@@ -52,6 +52,9 @@ public class MacroManager {
     private MacroState state = MacroState.IDLE;
     private boolean running = false;
 
+    /** When true the macro does not lock pitch/yaw so the player can look freely. */
+    private boolean freelookEnabled = false;
+
     /** Position recorded at the start of the DETECTING phase. */
     private Vec3d detectStartPos = null;
     private int detectTicks = 0;
@@ -83,6 +86,17 @@ public class MacroManager {
         return running;
     }
 
+    /** Returns {@code true} if freelook is currently enabled. */
+    public boolean isFreelookEnabled() {
+        return freelookEnabled;
+    }
+
+    /** Toggle freelook mode on/off. */
+    public void toggleFreelook() {
+        freelookEnabled = !freelookEnabled;
+        LOGGER.info("[JustFarming] Freelook {}.", freelookEnabled ? "enabled" : "disabled");
+    }
+
     /** Start the macro. */
     public void start() {
         if (running) return;
@@ -111,9 +125,29 @@ public class MacroManager {
     }
 
     /**
+     * Save the player's current position as the rewarp trigger block so that every
+     * time the macro passes over that block it sends {@code /warp garden}.
+     * Called by the {@code /jf rewarp} command.
+     */
+    public void setRewarpPosition() {
+        ClientPlayerEntity player = client.player;
+        if (player != null) {
+            config.rewarpX   = player.getX();
+            config.rewarpY   = player.getY();
+            config.rewarpZ   = player.getZ();
+            config.rewarpSet = true;
+            config.save();
+            LOGGER.info("[JustFarming] Rewarp position set to {}, {}, {}.",
+                    config.rewarpX, config.rewarpY, config.rewarpZ);
+            player.sendMessage(net.minecraft.text.Text.literal(String.format(
+                    "§a[JustFarming] Rewarp trigger set at §e%.1f, %.1f, %.1f§a. Macro will warp here every pass.",
+                    config.rewarpX, config.rewarpY, config.rewarpZ)), false);
+        }
+    }
+
+    /**
      * Trigger an immediate rewarp by sending {@code /warp garden} to the server.
-     * This is called both by the {@code /jf rewarp} command and automatically when
-     * the player reaches the configured rewarp position.
+     * Called automatically when the player reaches the configured rewarp position.
      */
     public void triggerRewarp() {
         if (client.player != null && client.player.networkHandler != null) {
@@ -136,9 +170,18 @@ public class MacroManager {
             return;
         }
 
-        // Lock pitch and yaw every active tick
-        player.setPitch(config.farmingPitch);
-        player.setYaw(config.farmingYaw);
+        // When a screen (chat, inventory, etc.) is open, pause key input but keep
+        // the macro state so it resumes as soon as the screen is closed.
+        if (client.currentScreen != null) {
+            releaseKeys();
+            return;
+        }
+
+        // Lock pitch and yaw every active tick unless freelook is enabled
+        if (!freelookEnabled) {
+            player.setPitch(config.farmingPitch);
+            player.setYaw(config.farmingYaw);
+        }
 
         switch (state) {
             case DETECTING      -> tickDetecting(player);
