@@ -47,7 +47,7 @@ public class FarmingConfig {
      * Whether to highlight chunk borders and plot numbers for plots with pests
      * on Hypixel Skyblock Garden.
      */
-    public boolean pestHighlightEnabled = false;
+    public boolean pestHighlightEnabled = true;
 
     // --- Rewarp trigger position ---
 

@@ -5,30 +5,41 @@ import com.justfarming.pest.GardenPlot;
 import com.justfarming.pest.PestDetector;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
 import net.minecraft.client.render.Camera;
+import net.minecraft.client.render.RenderLayer;
+import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.debug.DebugRenderer;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.Vec3d;
+import org.joml.Matrix4f;
 
 import java.util.Set;
 
 /**
- * Renders highlighted plot borders (chunk-level grid) and floating plot-number
- * labels for Hypixel Skyblock Garden plots that contain pests.
+ * Renders highlighted plot borders for Hypixel Skyblock Garden plots that
+ * contain pests, following SkyHanni's rendering approach:
+ * <ul>
+ *   <li>3D line borders around each infested plot</li>
+ *   <li>Corner vertical lines at the 4 corners of each plot</li>
+ *   <li>Horizontal border lines every 4 blocks in height</li>
+ *   <li>Vertical edge lines every 4 blocks along the borders</li>
+ *   <li>Red/DarkRed colours when the player is inside an infested plot,
+ *       Gold/Red when outside</li>
+ * </ul>
  *
- * <p>Registered as a {@link net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents#AFTER_ENTITIES}
+ * <p>Registered as a
+ * {@link net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents#AFTER_ENTITIES}
  * callback in {@link com.justfarming.JustFarming}.
  */
 public class OverlayRenderer {
 
-    // ARGB colour for pest plot outlines (vivid red)
-    private static final int BORDER_COLOR = 0xFFFF3333;
+    // Colours as packed ARGB ints
+    private static final int COLOR_RED      = 0xFFFF0000;
+    private static final int COLOR_DARK_RED = 0xFF8B0000;
+    private static final int COLOR_GOLD     = 0xFFFFAD00;
 
-    // RGBA floats for DebugRenderer.drawBox (red-ish with high alpha)
-    private static final float R = 1.0f;
-    private static final float G = 0.2f;
-    private static final float B = 0.2f;
-    private static final float A = 0.9f;
+    // Label colour (ARGB)
+    private static final int LABEL_COLOR = 0xFFFF3333;
 
     private final FarmingConfig config;
     private final PestDetector  pestDetector;
@@ -42,60 +53,113 @@ public class OverlayRenderer {
     public void render(WorldRenderContext context) {
         if (!config.pestHighlightEnabled) return;
 
-        Set<Integer> pestPlots = pestDetector.getPestPlots();
+        Set<String> pestPlots = pestDetector.getPestPlots();
         if (pestPlots.isEmpty()) return;
 
-        Camera   camera    = context.gameRenderer().getCamera();
+        Camera camera = context.gameRenderer().getCamera();
         if (camera == null) return;
-        Vec3d    camPos    = camera.getPos();
+        Vec3d camPos = camera.getPos();
 
-        MatrixStack           matrices  = context.matrices();
+        MatrixStack matrices = context.matrices();
         VertexConsumerProvider consumers = context.consumers();
         if (matrices == null || consumers == null) return;
 
         double cx = camPos.x, cy = camPos.y, cz = camPos.z;
 
-        for (int plotNum : pestPlots) {
-            double[] b = GardenPlot.getBounds(plotNum);
+        // Determine which plot the player is in (if any)
+        String playerPlot = GardenPlot.getPlotNameAt(camPos.x, camPos.z);
+
+        VertexConsumer lineBuffer = consumers.getBuffer(RenderLayer.getLines());
+
+        for (String plotName : pestPlots) {
+            double[] b = GardenPlot.getBounds(plotName);
             if (b == null) continue;
 
-            // Draw a box for the overall plot boundary
-            DebugRenderer.drawBox(matrices, consumers,
-                    b[0] - cx, b[1] - cy, b[2] - cz,
-                    b[3] - cx, b[4] - cy, b[5] - cz,
-                    R, G, B, A);
+            boolean playerInside = plotName.equals(playerPlot);
+            int lineColor   = playerInside ? COLOR_RED      : COLOR_GOLD;
+            int cornerColor = playerInside ? COLOR_DARK_RED  : COLOR_RED;
 
-            // Draw 16-block chunk-grid boxes inside the plot
-            drawChunkGrid(matrices, consumers, b, cx, cy, cz);
+            renderPlotBorders(matrices, lineBuffer, b, cx, cy, cz,
+                    lineColor, cornerColor);
 
-            // Draw the plot number label at the centre-top of the plot
+            // Draw floating plot-number label at top-centre
             double labelX = (b[0] + b[3]) / 2.0 - cx;
-            double labelY =  b[4] + 2.0         - cy;
+            double labelY =  b[4] + 2.0          - cy;
             double labelZ = (b[2] + b[5]) / 2.0 - cz;
             DebugRenderer.drawString(matrices, consumers,
-                    "Plot " + plotNum, labelX, labelY, labelZ, BORDER_COLOR);
+                    "Plot " + plotName, labelX, labelY, labelZ, LABEL_COLOR);
         }
     }
 
     /**
-     * Draws a 16-block Minecraft chunk grid inside the given plot boundary.
-     * Each 16x16 cell of the plot is outlined as a box.
+     * Renders SkyHanni-style plot borders with 3D lines.
      */
-    private void drawChunkGrid(MatrixStack matrices, VertexConsumerProvider consumers,
-                               double[] b, double cx, double cy, double cz) {
-        double plotMinX = b[0], plotMinY = b[1], plotMinZ = b[2];
-        double plotMaxX = b[3], plotMaxY = b[4], plotMaxZ = b[5];
+    private void renderPlotBorders(MatrixStack matrices, VertexConsumer lines,
+                                   double[] b, double cx, double cy, double cz,
+                                   int lineColor, int cornerColor) {
+        int plotSize = GardenPlot.PLOT_SIZE;
+        int minH = GardenPlot.MIN_Y;
+        int maxH = GardenPlot.MAX_Y;
 
-        // Iterate over 16-block cells within the plot
-        for (double z = plotMinZ; z < plotMaxZ; z += 16.0) {
-            for (double x = plotMinX; x < plotMaxX; x += 16.0) {
-                double cellMaxX = Math.min(x + 16.0, plotMaxX);
-                double cellMaxZ = Math.min(z + 16.0, plotMaxZ);
-                DebugRenderer.drawBox(matrices, consumers,
-                        x - cx, plotMinY - cy, z - cz,
-                        cellMaxX - cx, plotMaxY - cy, cellMaxZ - cz,
-                        R, G, B, A * 0.5f); // dimmer for inner cells
-            }
+        double minX = b[0] - cx;
+        double minZ = b[2] - cz;
+        double maxX = b[3] - cx;
+        double maxZ = b[5] - cz;
+
+        MatrixStack.Entry entry = matrices.peek();
+
+        // --- Corner vertical lines (thick appearance via 4 corners) ---
+        drawLine(entry, lines, minX, minH - cy, minZ, minX, maxH - cy, minZ, cornerColor);
+        drawLine(entry, lines, maxX, minH - cy, minZ, maxX, maxH - cy, minZ, cornerColor);
+        drawLine(entry, lines, minX, minH - cy, maxZ, minX, maxH - cy, maxZ, cornerColor);
+        drawLine(entry, lines, maxX, minH - cy, maxZ, maxX, maxH - cy, maxZ, cornerColor);
+
+        // --- Vertical edge lines every 4 blocks along X on front/back edges ---
+        for (int dx = 4; dx < plotSize; dx += 4) {
+            double x = minX + dx;
+            drawLine(entry, lines, x, minH - cy, minZ, x, maxH - cy, minZ, lineColor);
+            drawLine(entry, lines, x, minH - cy, maxZ, x, maxH - cy, maxZ, lineColor);
         }
+
+        // --- Vertical edge lines every 4 blocks along Z on left/right edges ---
+        for (int dz = 4; dz < plotSize; dz += 4) {
+            double z = minZ + dz;
+            drawLine(entry, lines, minX, minH - cy, z, minX, maxH - cy, z, lineColor);
+            drawLine(entry, lines, maxX, minH - cy, z, maxX, maxH - cy, z, lineColor);
+        }
+
+        // --- Horizontal border rectangles every 4 blocks in height ---
+        for (int y = minH; y <= maxH; y += 4) {
+            double ry = y - cy;
+            drawLine(entry, lines, minX, ry, minZ, minX, ry, maxZ, lineColor);
+            drawLine(entry, lines, minX, ry, maxZ, maxX, ry, maxZ, lineColor);
+            drawLine(entry, lines, maxX, ry, maxZ, maxX, ry, minZ, lineColor);
+            drawLine(entry, lines, maxX, ry, minZ, minX, ry, minZ, lineColor);
+        }
+    }
+
+    /**
+     * Draws a single 3D line segment using the LINES render layer.
+     */
+    private void drawLine(MatrixStack.Entry entry, VertexConsumer lines,
+                          double x1, double y1, double z1,
+                          double x2, double y2, double z2,
+                          int color) {
+        // Compute direction for the normal
+        float dx = (float) (x2 - x1);
+        float dy = (float) (y2 - y1);
+        float dz = (float) (z2 - z1);
+        float len = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (len < 1e-6f) return;
+        float nx = dx / len;
+        float ny = dy / len;
+        float nz = dz / len;
+
+        lines.vertex(entry, (float) x1, (float) y1, (float) z1)
+                .color(color)
+                .normal(entry, nx, ny, nz);
+        lines.vertex(entry, (float) x2, (float) y2, (float) z2)
+                .color(color)
+                .normal(entry, nx, ny, nz);
     }
 }

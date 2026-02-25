@@ -10,38 +10,44 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Parses the Hypixel Skyblock tab list to detect which garden plots currently
- * contain pests.
+ * Detects which garden plots currently contain pests by parsing the Hypixel
+ * Skyblock tab list and scoreboard.
  *
- * <p>Hypixel encodes pest information in tab list entries using lines such as:
- * <pre>
- *   Plot ①: 2   Plot ③: 1
- * </pre>
- * where ①–㉔ are Unicode CIRCLED NUMBER characters (U+2460–U+3251) representing
- * plot numbers 1–24, followed by a pest count.  Plain "Plot 1:", "Plot 2:" etc.
- * are also matched for robustness.
+ * <p>Detection is modelled after SkyHanni's approach:
+ * <ul>
+ *   <li><b>Tab list (Pests Widget)</b>: lines like {@code " Plots: 4, 12, 13, 18, 20"}</li>
+ *   <li><b>Scoreboard</b>: lines like {@code "Plot - 4 ൠ x1"} or
+ *       {@code "§7⏣ §aThe Garden §4§lൠ§7 x3"}</li>
+ * </ul>
  */
 public class PestDetector {
 
-    // Unicode circled numbers ①–⑳ (U+2460–U+2473) cover plots 1–20
-    // ㉑–㉔ (U+3251–U+3254) cover plots 21–24
-    private static final char[] CIRCLED = buildCircledArray();
+    // Tab list: " Plots: 4, 12, 13, 18, 20"
+    private static final Pattern INFESTED_PLOTS_PATTERN =
+            Pattern.compile("\\s*Plots:\\s*(.+)");
 
-    // Matches "Plot <symbol|number>: <count>" (case-insensitive, optional spaces)
-    private static final Pattern PEST_PATTERN =
-            Pattern.compile("Plot\\s*([①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳㉑㉒㉓㉔\\d]+)\\s*[:\\-]?\\s*(\\d+)?", Pattern.CASE_INSENSITIVE);
+    // Scoreboard: "Plot - 4 ൠ x1" (after colour-code stripping)
+    private static final Pattern PLOT_PEST_SCOREBOARD_PATTERN =
+            Pattern.compile("\\s*Plot\\s*-\\s*(\\S+)\\s*ൠ\\s*x(\\d+)");
 
-    // Also match compact formats: "①2" or "①:2"
-    private static final Pattern COMPACT_PATTERN =
-            Pattern.compile("([①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳㉑㉒㉓㉔])\\s*[:\\-]?\\s*(\\d+)?");
+    // Scoreboard: "The Garden ൠ x3" (total pest count, after stripping)
+    private static final Pattern TOTAL_PEST_PATTERN =
+            Pattern.compile("The Garden\\s*ൠ\\s*x(\\d+)");
 
-    private final Set<Integer> pestPlots = new HashSet<>();
+    /** Plot names (e.g. "4", "12") that currently have pests. */
+    private final Set<String> pestPlots = new HashSet<>();
+
+    /** Total pest count as reported by the scoreboard. */
+    private int totalPests = 0;
 
     // -----------------------------------------------------------------------
 
-    /** Called every tick to refresh the pest plot list from the tab list. */
+    /**
+     * Called every tick to refresh the pest plot list from the tab list.
+     */
     public void update(MinecraftClient client) {
         pestPlots.clear();
+        totalPests = 0;
         if (client.player == null || client.player.networkHandler == null) return;
 
         for (PlayerListEntry entry : client.player.networkHandler.getPlayerList()) {
@@ -51,9 +57,18 @@ public class PestDetector {
         }
     }
 
-    /** Returns an unmodifiable view of plot numbers (1–24) that currently have pests. */
-    public Set<Integer> getPestPlots() {
+    /**
+     * Returns an unmodifiable view of plot names that currently have pests.
+     */
+    public Set<String> getPestPlots() {
         return Collections.unmodifiableSet(pestPlots);
+    }
+
+    /**
+     * Returns the total number of pests detected from the scoreboard.
+     */
+    public int getTotalPests() {
+        return totalPests;
     }
 
     // -----------------------------------------------------------------------
@@ -61,54 +76,36 @@ public class PestDetector {
     private void parseEntry(String text) {
         if (text == null || text.isBlank()) return;
         // Strip Minecraft colour codes (§X)
-        String clean = text.replaceAll("§[0-9a-fklmnorA-FKLMNOR]", "").trim();
+        String clean = text.replaceAll("§[0-9a-fk-orA-FK-OR]", "").trim();
 
-        // Try "Plot <sym/num>" pattern
-        Matcher m = PEST_PATTERN.matcher(clean);
-        while (m.find()) {
-            String token = m.group(1);
-            int plotNum = parseToken(token);
-            if (plotNum >= 1 && plotNum <= 24) {
-                pestPlots.add(plotNum);
+        // Try "Plots: X, Y, Z" format (Pests Widget in tab list)
+        Matcher plotsMatch = INFESTED_PLOTS_PATTERN.matcher(clean);
+        if (plotsMatch.matches()) {
+            String[] names = plotsMatch.group(1).split(",");
+            for (String name : names) {
+                String trimmed = name.trim();
+                if (!trimmed.isEmpty()) {
+                    pestPlots.add(trimmed);
+                }
+            }
+            return;
+        }
+
+        // Try per-plot scoreboard: "Plot - NAME ൠ xN"
+        Matcher plotPest = PLOT_PEST_SCOREBOARD_PATTERN.matcher(clean);
+        if (plotPest.find()) {
+            String plotName = plotPest.group(1);
+            pestPlots.add(plotName);
+            return;
+        }
+
+        // Try total pest count: "The Garden ൠ xN"
+        Matcher totalMatch = TOTAL_PEST_PATTERN.matcher(clean);
+        if (totalMatch.find()) {
+            try {
+                totalPests = Integer.parseInt(totalMatch.group(1));
+            } catch (NumberFormatException ignored) {
             }
         }
-
-        // Try compact circled-number pattern "①2"
-        Matcher cm = COMPACT_PATTERN.matcher(clean);
-        while (cm.find()) {
-            String sym = cm.group(1);
-            int plotNum = circledToInt(sym.charAt(0));
-            if (plotNum >= 1 && plotNum <= 24) {
-                pestPlots.add(plotNum);
-            }
-        }
-    }
-
-    /** Parse a token that is either a digit string or a circled-number character. */
-    private int parseToken(String token) {
-        if (token == null || token.isEmpty()) return -1;
-        char first = token.charAt(0);
-        int fromCircled = circledToInt(first);
-        if (fromCircled > 0) return fromCircled;
-        try {
-            return Integer.parseInt(token.trim());
-        } catch (NumberFormatException e) {
-            return -1;
-        }
-    }
-
-    /** Converts a Unicode circled-number character to its integer value (1–24), or 0 if not a circled number. */
-    private static int circledToInt(char c) {
-        if (c >= '\u2460' && c <= '\u2473') return c - '\u2460' + 1; // ①–⑳ → 1–20
-        if (c >= '\u3251' && c <= '\u3254') return c - '\u3251' + 21; // ㉑–㉔ → 21–24
-        return 0;
-    }
-
-    private static char[] buildCircledArray() {
-        // ①–⑳ U+2460–U+2473, ㉑–㉔ U+3251–U+3254
-        char[] arr = new char[24];
-        for (int i = 0; i < 20; i++) arr[i] = (char) ('\u2460' + i);
-        for (int i = 0; i < 4; i++) arr[20 + i] = (char) ('\u3251' + i);
-        return arr;
     }
 }
