@@ -23,35 +23,47 @@ public class FarmingConfig {
 
     // --- Config fields ---
 
-    /** The crop type currently selected for farming */
-    public CropType selectedCrop = CropType.WHEAT;
+    /** The crop type currently selected for farming (only COCOA_BEANS for now). */
+    public CropType selectedCrop = CropType.COCOA_BEANS;
 
     /**
-     * Macro speed: 1 = slow (100 ms tick), 2 = normal (50 ms tick), 3 = fast (20 ms tick).
-     * Higher values move faster but may cause more desync on Hypixel.
+     * Macro speed: 1 = slow, 2 = normal, 3 = fast.
      */
     public int macroSpeed = 2;
 
     /**
-     * The player pitch (vertical look angle, degrees) used while farming.
+     * Pitch angle (vertical look angle, degrees) while farming.
      * Typical range: 30–80 degrees looking down at crops.
      */
     public float farmingPitch = 55.0f;
 
     /**
-     * Whether to automatically replant crops after harvesting.
+     * Yaw angle (horizontal rotation, degrees) while farming.
+     * Range: -180 to 180. Locks the player's horizontal facing direction.
      */
-    public boolean autoReplant = true;
+    public float farmingYaw = 0.0f;
 
     /**
      * Whether to automatically switch to the best farming tool in the hotbar.
      */
     public boolean autoToolSwitch = true;
 
-    /**
-     * Number of blocks to travel in one direction before turning around.
-     */
-    public int rowLength = 50;
+    // --- Rewarp trigger position ---
+
+    /** Whether a rewarp position has been set. */
+    public boolean rewarpSet = false;
+
+    /** Rewarp trigger X coordinate. */
+    public double rewarpX = 0.0;
+
+    /** Rewarp trigger Y coordinate. */
+    public double rewarpY = 0.0;
+
+    /** Rewarp trigger Z coordinate. */
+    public double rewarpZ = 0.0;
+
+    /** Radius (in blocks) around the rewarp point that triggers the warp. */
+    public double rewarpRange = 3.0;
 
     // --- Load / Save ---
 
@@ -83,14 +95,5 @@ public class FarmingConfig {
         } catch (IOException e) {
             LoggerFactory.getLogger("just-farming").warn("Failed to save config: {}", e.getMessage());
         }
-    }
-
-    /** Returns the tick delay in milliseconds based on macroSpeed. */
-    public int getTickDelayMs() {
-        return switch (macroSpeed) {
-            case 1 -> 100;
-            case 3 -> 20;
-            default -> 50;
-        };
     }
 }
