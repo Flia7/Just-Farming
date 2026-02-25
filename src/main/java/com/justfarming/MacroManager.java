@@ -51,6 +51,7 @@ public class MacroManager {
 
     private MacroState state = MacroState.IDLE;
     private boolean running = false;
+    private boolean freelookEnabled = false;
 
     /** Position recorded at the start of the DETECTING phase. */
     private Vec3d detectStartPos = null;
@@ -83,6 +84,17 @@ public class MacroManager {
         return running;
     }
 
+    /** Returns {@code true} if freelook mode is enabled. */
+    public boolean isFreelookEnabled() {
+        return freelookEnabled;
+    }
+
+    /** Toggle freelook on/off. */
+    public void toggleFreelook() {
+        freelookEnabled = !freelookEnabled;
+        LOGGER.info("[JustFarming] Freelook {}.", freelookEnabled ? "enabled" : "disabled");
+    }
+
     /** Start the macro. */
     public void start() {
         if (running) return;
@@ -111,9 +123,26 @@ public class MacroManager {
     }
 
     /**
-     * Trigger an immediate rewarp by sending {@code /warp garden} to the server.
-     * This is called both by the {@code /jf rewarp} command and automatically when
-     * the player reaches the configured rewarp position.
+     * Save the player's current position as the rewarp waypoint.
+     * Every time the macro reaches this position it will automatically
+     * send {@code /warp garden}.  This is called by the {@code /jf rewarp}
+     * command.
+     */
+    public void setRewarpHere() {
+        if (client.player != null) {
+            config.rewarpX   = client.player.getX();
+            config.rewarpY   = client.player.getY();
+            config.rewarpZ   = client.player.getZ();
+            config.rewarpSet = true;
+            config.save();
+            LOGGER.info("[JustFarming] Rewarp position set to {}, {}, {}.",
+                    config.rewarpX, config.rewarpY, config.rewarpZ);
+        }
+    }
+
+    /**
+     * Send {@code /warp garden} to the server.
+     * Called automatically by the macro when the player reaches the rewarp position.
      */
     public void triggerRewarp() {
         if (client.player != null && client.player.networkHandler != null) {
@@ -136,9 +165,11 @@ public class MacroManager {
             return;
         }
 
-        // Lock pitch and yaw every active tick
-        player.setPitch(config.farmingPitch);
-        player.setYaw(config.farmingYaw);
+        // Lock pitch and yaw every active tick (unless freelook is enabled)
+        if (!freelookEnabled) {
+            player.setPitch(config.farmingPitch);
+            player.setYaw(config.farmingYaw);
+        }
 
         switch (state) {
             case DETECTING      -> tickDetecting(player);
