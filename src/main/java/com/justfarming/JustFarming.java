@@ -156,6 +156,16 @@ public class JustFarming implements ClientModInitializer {
 
             // Update pest detection every tick
             pestDetector.update(client);
+
+            // Notify the player when pests appear in new plots
+            if (client.player != null) {
+                for (String plot : pestDetector.getNewlyInfestedPlots()) {
+                    int count = pestDetector.getPestCounts().getOrDefault(plot, 0);
+                    String suffix = count > 0 ? " " + PestDetector.formatPestCount(count) : "";
+                    client.player.sendMessage(net.minecraft.text.Text.literal(
+                            "§c[JustFarming] Pests detected in Plot " + plot + suffix), false);
+                }
+            }
         });
 
         // Register world render event for pest plot overlay
