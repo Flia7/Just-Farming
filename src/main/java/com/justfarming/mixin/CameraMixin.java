@@ -21,6 +21,9 @@ public abstract class CameraMixin {
     private boolean firstTime = true;
 
     @Shadow
+    private boolean thirdPerson;
+
+    @Shadow
     protected abstract void setRotation(float yaw, float pitch);
 
     @Shadow
@@ -49,5 +52,8 @@ public abstract class CameraMixin {
         // instead of snapping/glitching when walls are nearby.
         float dist = (float) mm.getFreelookZoom();
         this.moveBy(-dist, 0.0f, 0.0f);
+        // Mark the camera as third-person so Minecraft renders the player entity
+        // instead of hiding it (which happens in first-person mode).
+        this.thirdPerson = true;
     }
 }
