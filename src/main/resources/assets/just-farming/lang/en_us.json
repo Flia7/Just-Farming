@@ -9,6 +9,7 @@
   "gui.just-farming.pitch_label": "Pitch Angle:",
   "gui.just-farming.yaw_label": "Yaw Angle:",
   "gui.just-farming.pest_highlight_label": "Pest Plot Highlight:",
+  "gui.just-farming.pest_labels_label": "Pest Plot Labels:",
   "gui.just-farming.freelook_on": "Freelook: ON  (L to toggle)",
   "gui.just-farming.freelook_off": "Freelook: OFF  (L to toggle)",
   "gui.just-farming.set_rewarp": "Set Rewarp Here",

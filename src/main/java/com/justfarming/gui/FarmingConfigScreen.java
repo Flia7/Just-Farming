@@ -27,7 +27,7 @@ public class FarmingConfigScreen extends Screen {
 
     // ── Layout ────────────────────────────────────────────────────────────────
     private static final int PANEL_WIDTH   = 320;
-    private static final int PANEL_HEIGHT  = 384;
+    private static final int PANEL_HEIGHT  = 410;
     private static final int HEADER_HEIGHT = 46;
     private static final int BUTTON_WIDTH  = 240;
     private static final int BUTTON_HEIGHT = 20;
@@ -58,6 +58,7 @@ public class FarmingConfigScreen extends Screen {
     private SwapDelaySlider               swapDelaySlider;
     private SwapRandomSlider              swapRandomSlider;
     private CyclingButtonWidget<Boolean>  pestHighlightButton;
+    private CyclingButtonWidget<Boolean>  pestLabelsButton;
     private ButtonWidget                  freelookButton;
     private ButtonWidget                  setRewarpButton;
     private ButtonWidget                  toggleMacroButton;
@@ -127,6 +128,15 @@ public class FarmingConfigScreen extends Screen {
                 .build(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT,
                         Text.translatable("gui.just-farming.pest_highlight_label"));
         this.addDrawableChild(pestHighlightButton);
+        y += BUTTON_HEIGHT + PADDING;
+
+        pestLabelsButton = CyclingButtonWidget.builder(
+                        (Boolean val) -> val ? Text.literal("ON") : Text.literal("OFF"))
+                .values(Boolean.TRUE, Boolean.FALSE)
+                .initially(config.pestLabelsEnabled)
+                .build(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT,
+                        Text.translatable("gui.just-farming.pest_labels_label"));
+        this.addDrawableChild(pestLabelsButton);
         y += BUTTON_HEIGHT + PADDING;
 
         freelookButton = ButtonWidget.builder(
@@ -291,6 +301,7 @@ public class FarmingConfigScreen extends Screen {
         config.rewarpDelayMin      = swapDelaySlider.getDelayValue();
         config.rewarpDelayRandom   = swapRandomSlider.getRandomValue();
         config.pestHighlightEnabled = pestHighlightButton.getValue();
+        config.pestLabelsEnabled    = pestLabelsButton.getValue();
         macroManager.setConfig(config);
     }
 

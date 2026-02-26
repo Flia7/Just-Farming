@@ -44,6 +44,13 @@ public class FarmingConfig {
      */
     public boolean pestHighlightEnabled = true;
 
+    /**
+     * Whether to display floating labels (plot name + pest count) above
+     * infested garden plots. Only effective when {@link #pestHighlightEnabled}
+     * is also {@code true}.
+     */
+    public boolean pestLabelsEnabled = true;
+
     // --- Rewarp trigger position ---
 
     /** Whether a rewarp position has been set. */
