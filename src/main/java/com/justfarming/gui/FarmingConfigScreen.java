@@ -27,7 +27,7 @@ public class FarmingConfigScreen extends Screen {
 
     // ── Layout ────────────────────────────────────────────────────────────────
     private static final int PANEL_WIDTH   = 320;
-    private static final int PANEL_HEIGHT  = 410;
+    private static final int PANEL_HEIGHT  = 384;
     private static final int HEADER_HEIGHT = 46;
     private static final int BUTTON_WIDTH  = 240;
     private static final int BUTTON_HEIGHT = 20;
@@ -55,7 +55,6 @@ public class FarmingConfigScreen extends Screen {
     private CyclingButtonWidget<CropType> cropButton;
     private PitchSlider                   pitchSlider;
     private YawSlider                     yawSlider;
-    private CyclingButtonWidget<Boolean>  toolSwitchButton;
     private SwapDelaySlider               swapDelaySlider;
     private SwapRandomSlider              swapRandomSlider;
     private CyclingButtonWidget<Boolean>  pestHighlightButton;
@@ -113,15 +112,6 @@ public class FarmingConfigScreen extends Screen {
         // ── Options section ───────────────────────────────────────────────────
         sectionOptionsY = y;
         y += 10;
-        toolSwitchButton = CyclingButtonWidget.builder(
-                        (Boolean val) -> val ? Text.literal("ON") : Text.literal("OFF"))
-                .values(Boolean.TRUE, Boolean.FALSE)
-                .initially(config.autoToolSwitch)
-                .build(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT,
-                        Text.translatable("gui.just-farming.tool_switch_label"));
-        this.addDrawableChild(toolSwitchButton);
-        y += BUTTON_HEIGHT + PADDING;
-
         swapDelaySlider = new SwapDelaySlider(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT, config.rewarpDelayMin);
         this.addDrawableChild(swapDelaySlider);
         y += BUTTON_HEIGHT + PADDING;
@@ -298,7 +288,6 @@ public class FarmingConfigScreen extends Screen {
         config.selectedCrop        = cropButton.getValue();
         config.farmingPitch        = pitchSlider.getPitchValue();
         config.farmingYaw          = yawSlider.getYawValue();
-        config.autoToolSwitch      = toolSwitchButton.getValue();
         config.rewarpDelayMin      = swapDelaySlider.getDelayValue();
         config.rewarpDelayRandom   = swapRandomSlider.getRandomValue();
         config.pestHighlightEnabled = pestHighlightButton.getValue();

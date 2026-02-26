@@ -39,11 +39,6 @@ public class FarmingConfig {
     public float farmingYaw = 0.0f;
 
     /**
-     * Whether to automatically switch to the best farming tool in the hotbar.
-     */
-    public boolean autoToolSwitch = true;
-
-    /**
      * Whether to highlight chunk borders and plot numbers for plots with pests
      * on Hypixel Skyblock Garden.
      */

@@ -95,9 +95,19 @@ public class JustFarming implements ClientModInitializer {
                                             return 1;
                                         }))));
 
+        // Block the F5 perspective toggle while freelook is active.
+        // START_CLIENT_TICK fires before handleKeyBindings(), so consuming
+        // the key press here prevents Minecraft from acting on it.
+        ClientTickEvents.START_CLIENT_TICK.register(client -> {
+            if (macroManager.isFreelookActive() && client.options != null) {
+                // Consume all queued perspective-toggle key presses before Minecraft's
+                // handleKeyBindings() processes them, so F5 has no effect during freelook.
+                while (client.options.togglePerspectiveKey.wasPressed()) { /* suppress */ }
+            }
+        });
+
         // Register client tick callback
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            // Process toggle macro keybind
             while (toggleMacroKey.wasPressed()) {
                 macroManager.toggle();
                 if (client.player != null) {

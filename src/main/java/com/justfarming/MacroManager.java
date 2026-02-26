@@ -3,9 +3,6 @@ package com.justfarming;
 import com.justfarming.config.FarmingConfig;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.item.HoeItem;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.Vec3d;
 import org.slf4j.Logger;
@@ -27,6 +24,11 @@ import org.slf4j.LoggerFactory;
  * <p>Direction switches when the player stops moving (end of row detected by
  * the player's position not changing for {@value #STUCK_THRESHOLD} ticks).
  * The rewarp trigger fires when the player enters the configured rewarp radius.
+ *
+ * <p>Freelook mode offsets the camera behind the player at a configurable zoom
+ * distance ({@value #DEFAULT_ZOOM} blocks by default). Scroll wheel adjusts the
+ * distance between {@value #MIN_ZOOM} and {@value #MAX_ZOOM} blocks. While
+ * freelook is active, the F5 perspective toggle and hotbar scroll are suppressed.
  */
 public class MacroManager {
 
@@ -41,6 +43,15 @@ public class MacroManager {
      */
     private static final int STUCK_THRESHOLD = 8;
 
+    /** Default freelook camera distance from the player's eye (blocks). */
+    private static final double DEFAULT_ZOOM = 4.0;
+
+    /** Minimum freelook camera distance (blocks). */
+    private static final double MIN_ZOOM = 1.5;
+
+    /** Maximum freelook camera distance (blocks). */
+    private static final double MAX_ZOOM = 20.0;
+
     private final MinecraftClient client;
     private FarmingConfig config;
 
@@ -53,6 +64,7 @@ public class MacroManager {
     private MacroState state = MacroState.IDLE;
     private boolean running = false;
     private boolean freelookEnabled = false;
+    private double freelookZoom = DEFAULT_ZOOM;
 
     /** Position recorded at the start of the DETECTING phase. */
     private Vec3d detectStartPos = null;
@@ -99,6 +111,21 @@ public class MacroManager {
     /** Returns {@code true} if freelook is active (enabled regardless of macro state). */
     public boolean isFreelookActive() {
         return freelookEnabled;
+    }
+
+    /** Returns the current freelook camera distance from the player's eye (blocks). */
+    public double getFreelookZoom() {
+        return freelookZoom;
+    }
+
+    /**
+     * Adjust the freelook zoom distance by {@code delta} blocks.
+     * The distance is clamped to [{@value #MIN_ZOOM}, {@value #MAX_ZOOM}].
+     *
+     * @param delta positive = farther, negative = closer
+     */
+    public void adjustFreelookZoom(double delta) {
+        freelookZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, freelookZoom + delta));
     }
 
     /** Toggle freelook on/off. */
@@ -252,11 +279,6 @@ public class MacroManager {
      * @param forward {@code true} = moving forward; {@code false} = moving backward.
      */
     private void tickMoving(ClientPlayerEntity player, boolean forward) {
-        // Optionally switch to best farming tool
-        if (config.autoToolSwitch) {
-            switchToBestFarmingTool(player);
-        }
-
         // Hold attack (breaks cocoa beans in view)
         client.options.attackKey.setPressed(true);
 
@@ -317,10 +339,6 @@ public class MacroManager {
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Helpers
-    // -----------------------------------------------------------------------
-
     /** Release all held movement / attack keys. */
     private void releaseKeys() {
         if (client.options == null) return;
@@ -328,42 +346,5 @@ public class MacroManager {
         client.options.backKey.setPressed(false);
         client.options.leftKey.setPressed(false);
         client.options.attackKey.setPressed(false);
-    }
-
-    /**
-     * Switch the player's selected hotbar slot to the best hoe found,
-     * prioritising higher-tier hoes (netherite > diamond > gold > iron > stone).
-     */
-    private void switchToBestFarmingTool(ClientPlayerEntity player) {
-        int bestSlot = -1;
-        int bestTier = -1;
-
-        for (int i = 0; i < 9; i++) {
-            ItemStack stack = player.getInventory().getStack(i);
-            if (stack.isEmpty()) continue;
-            Item item = stack.getItem();
-            if (item instanceof HoeItem) {
-                int tier = getToolTier(item);
-                if (tier > bestTier) {
-                    bestTier = tier;
-                    bestSlot = i;
-                }
-            }
-        }
-
-        if (bestSlot >= 0) {
-            player.getInventory().setSelectedSlot(bestSlot);
-        }
-    }
-
-    /** Simple tier ranking for hoe items. */
-    private int getToolTier(Item item) {
-        String name = item.getClass().getSimpleName().toLowerCase();
-        if (name.contains("netherite")) return 5;
-        if (name.contains("diamond"))   return 4;
-        if (name.contains("gold"))      return 3;
-        if (name.contains("iron"))      return 2;
-        if (name.contains("stone"))     return 1;
-        return 0;
     }
 }
