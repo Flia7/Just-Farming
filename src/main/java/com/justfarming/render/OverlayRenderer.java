@@ -100,9 +100,11 @@ public class OverlayRenderer {
         Map<String, Integer> pestCounts = pestDetector.getPestCounts();
         for (Map.Entry<String, double[]> e : validPlots) {
             double[] b = e.getValue();
-            double labelX = (b[0] + b[3]) / 2.0 - cx;
-            double labelY = (b[1] + b[4]) / 2.0 - cy;
-            double labelZ = (b[2] + b[5]) / 2.0 - cz;
+            // DebugRenderer.drawString expects world-space coordinates and internally
+            // subtracts the camera position — do NOT subtract camPos here.
+            double labelX = (b[0] + b[3]) / 2.0;
+            double labelY = (b[1] + b[4]) / 2.0;
+            double labelZ = (b[2] + b[5]) / 2.0;
             Integer count = pestCounts.get(e.getKey());
             String label = "Plot " + e.getKey()
                     + (count != null ? " " + PestDetector.formatPestCount(count) : "");
