@@ -97,13 +97,17 @@ public class OverlayRenderer {
         // Draw floating plot-number labels after all border geometry is submitted
         // so that requesting a text render layer does not prematurely flush the
         // LINES buffer that was used above.
+        Map<String, Integer> pestCounts = pestDetector.getPestCounts();
         for (Map.Entry<String, double[]> e : validPlots) {
             double[] b = e.getValue();
             double labelX = (b[0] + b[3]) / 2.0 - cx;
             double labelY =  b[4] + 2.0          - cy;
             double labelZ = (b[2] + b[5]) / 2.0 - cz;
+            Integer count = pestCounts.get(e.getKey());
+            String label = "Plot " + e.getKey()
+                    + (count != null ? " " + PestDetector.formatPestCount(count) : "");
             DebugRenderer.drawString(matrices, consumers,
-                    "Plot " + e.getKey(), labelX, labelY, labelZ, LABEL_COLOR);
+                    label, labelX, labelY, labelZ, LABEL_COLOR);
         }
     }
 

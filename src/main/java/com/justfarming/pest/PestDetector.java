@@ -4,7 +4,9 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.PlayerListEntry;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -37,6 +39,12 @@ public class PestDetector {
     /** Plot names (e.g. "4", "12") that currently have pests. */
     private final Set<String> pestPlots = new HashSet<>();
 
+    /** Per-plot pest counts (plot name → pest count) from the scoreboard. */
+    private final Map<String, Integer> pestCounts = new HashMap<>();
+
+    /** Plots that newly gained pests in the most recent {@link #update} call. */
+    private Set<String> newlyInfestedPlots = new HashSet<>();
+
     /** Total pest count as reported by the scoreboard. */
     private int totalPests = 0;
 
@@ -46,7 +54,9 @@ public class PestDetector {
      * Called every tick to refresh the pest plot list from the tab list.
      */
     public void update(MinecraftClient client) {
+        Set<String> previousPlots = new HashSet<>(pestPlots);
         pestPlots.clear();
+        pestCounts.clear();
         totalPests = 0;
         if (client.player == null || client.player.networkHandler == null) return;
 
@@ -55,6 +65,10 @@ public class PestDetector {
             String text = entry.getDisplayName().getString();
             parseEntry(text);
         }
+
+        // Detect plots that have newly gained pests since the last tick
+        newlyInfestedPlots = new HashSet<>(pestPlots);
+        newlyInfestedPlots.removeAll(previousPlots);
     }
 
     /**
@@ -65,10 +79,33 @@ public class PestDetector {
     }
 
     /**
+     * Returns an unmodifiable map of plot name → pest count for plots whose
+     * per-plot count was reported by the scoreboard this tick.
+     */
+    public Map<String, Integer> getPestCounts() {
+        return Collections.unmodifiableMap(pestCounts);
+    }
+
+    /**
+     * Returns the set of plots that newly gained pests in the most recent
+     * {@link #update} call (i.e. plots not present in the previous tick).
+     */
+    public Set<String> getNewlyInfestedPlots() {
+        return Collections.unmodifiableSet(newlyInfestedPlots);
+    }
+
+    /**
      * Returns the total number of pests detected from the scoreboard.
      */
     public int getTotalPests() {
         return totalPests;
+    }
+
+    /**
+     * Formats a pest count as e.g. {@code "(1 pest)"} or {@code "(3 pests)"}.
+     */
+    public static String formatPestCount(int count) {
+        return "(" + count + (count == 1 ? " pest)" : " pests)");
     }
 
     // -----------------------------------------------------------------------
@@ -96,6 +133,13 @@ public class PestDetector {
         if (plotPest.find()) {
             String plotName = plotPest.group(1);
             pestPlots.add(plotName);
+            String countStr = plotPest.group(2);
+            if (countStr != null) {
+                try {
+                    pestCounts.put(plotName, Integer.parseInt(countStr));
+                } catch (NumberFormatException ignored) {
+                }
+            }
             return;
         }
 
