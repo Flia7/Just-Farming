@@ -97,19 +97,25 @@ public class OverlayRenderer {
         // Draw floating plot-number labels after all border geometry is submitted
         // so that requesting a text render layer does not prematurely flush the
         // LINES buffer that was used above.
-        Map<String, Integer> pestCounts = pestDetector.getPestCounts();
-        for (Map.Entry<String, double[]> e : validPlots) {
-            double[] b = e.getValue();
-            // DebugRenderer.drawString expects world-space coordinates and internally
-            // subtracts the camera position — do NOT subtract camPos here.
-            double labelX = (b[0] + b[3]) / 2.0;
-            double labelY = (b[1] + b[4]) / 2.0;
-            double labelZ = (b[2] + b[5]) / 2.0;
-            Integer count = pestCounts.get(e.getKey());
-            String label = "Plot " + e.getKey()
-                    + (count != null ? " " + PestDetector.formatPestCount(count) : "");
-            DebugRenderer.drawString(matrices, consumers,
-                    label, labelX, labelY, labelZ, LABEL_COLOR);
+        if (config.pestLabelsEnabled) {
+            // DebugRenderer.drawString internally subtracts the camera position,
+            // but the context's MatrixStack already contains the camera
+            // translation.  Using it would double-subtract the offset, placing
+            // labels at the wrong location.  A fresh (identity) MatrixStack
+            // avoids this.
+            MatrixStack labelMatrices = new MatrixStack();
+            Map<String, Integer> pestCounts = pestDetector.getPestCounts();
+            for (Map.Entry<String, double[]> e : validPlots) {
+                double[] b = e.getValue();
+                double labelX = (b[0] + b[3]) / 2.0;
+                double labelY = b[4] + 3.0; // slightly above the plot top
+                double labelZ = (b[2] + b[5]) / 2.0;
+                Integer count = pestCounts.get(e.getKey());
+                String label = "Plot " + e.getKey()
+                        + (count != null ? " " + PestDetector.formatPestCount(count) : "");
+                DebugRenderer.drawString(labelMatrices, consumers,
+                        label, labelX, labelY, labelZ, LABEL_COLOR, 0.03f);
+            }
         }
     }
 
