@@ -12,6 +12,9 @@ import net.minecraft.client.render.debug.DebugRenderer;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.Vec3d;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -68,25 +71,39 @@ public class OverlayRenderer {
         // Determine which plot the player is in (if any)
         String playerPlot = GardenPlot.getPlotNameAt(camPos.x, camPos.z);
 
-        VertexConsumer lineBuffer = consumers.getBuffer(RenderLayer.getLines());
-
+        List<Map.Entry<String, double[]>> validPlots = new ArrayList<>();
         for (String plotName : pestPlots) {
             double[] b = GardenPlot.getBounds(plotName);
-            if (b == null) continue;
+            if (b != null) validPlots.add(Map.entry(plotName, b));
+        }
+        if (validPlots.isEmpty()) return;
 
-            boolean playerInside = plotName.equals(playerPlot);
+        // Render all plot borders first using a single LINES buffer, then render
+        // all labels. Mixing consumers.getBuffer(otherLayer) calls (e.g. text)
+        // inside the same loop would cause the Immediate provider to flush and
+        // end the LINES BufferBuilder, leading to "Not building!" crashes on
+        // subsequent iterations.
+        VertexConsumer lineBuffer = consumers.getBuffer(RenderLayer.getLines());
+
+        for (Map.Entry<String, double[]> e : validPlots) {
+            double[] b = e.getValue();
+            boolean playerInside = e.getKey().equals(playerPlot);
             int lineColor   = playerInside ? COLOR_RED      : COLOR_GOLD;
             int cornerColor = playerInside ? COLOR_DARK_RED  : COLOR_RED;
-
             renderPlotBorders(matrices, lineBuffer, b, cx, cy, cz,
                     lineColor, cornerColor);
+        }
 
-            // Draw floating plot-number label at top-centre
+        // Draw floating plot-number labels after all border geometry is submitted
+        // so that requesting a text render layer does not prematurely flush the
+        // LINES buffer that was used above.
+        for (Map.Entry<String, double[]> e : validPlots) {
+            double[] b = e.getValue();
             double labelX = (b[0] + b[3]) / 2.0 - cx;
             double labelY =  b[4] + 2.0          - cy;
             double labelZ = (b[2] + b[5]) / 2.0 - cz;
             DebugRenderer.drawString(matrices, consumers,
-                    "Plot " + plotName, labelX, labelY, labelZ, LABEL_COLOR);
+                    "Plot " + e.getKey(), labelX, labelY, labelZ, LABEL_COLOR);
         }
     }
 
