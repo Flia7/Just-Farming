@@ -95,9 +95,9 @@ public class MacroManager {
         return freelookEnabled;
     }
 
-    /** Returns {@code true} if freelook is active (enabled AND macro running). */
+    /** Returns {@code true} if freelook is active (enabled regardless of macro state). */
     public boolean isFreelookActive() {
-        return freelookEnabled && running;
+        return freelookEnabled;
     }
 
     /** Toggle freelook on/off. */

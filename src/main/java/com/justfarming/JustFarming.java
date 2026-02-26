@@ -10,6 +10,7 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 import net.minecraft.client.option.KeyBinding;
+import net.minecraft.client.option.Perspective;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.util.Identifier;
 import org.lwjgl.glfw.GLFW;
@@ -46,6 +47,9 @@ public class JustFarming implements ClientModInitializer {
     private static KeyBinding openGuiKey;
     private static KeyBinding freelookKey;
     private static final KeyBinding.Category KEY_CATEGORY = KeyBinding.Category.create(Identifier.of("just-farming", "categories"));
+
+    /** Saved perspective before freelook was enabled, used to restore on disable. */
+    private static Perspective lastPerspective = null;
 
     @Override
     public void onInitializeClient() {
@@ -121,11 +125,26 @@ public class JustFarming implements ClientModInitializer {
             // Process freelook keybind
             while (freelookKey.wasPressed()) {
                 macroManager.toggleFreelook();
-                if (client.player != null) {
-                    if (macroManager.isFreelookEnabled()) {
+                if (macroManager.isFreelookEnabled()) {
+                    // Save current perspective only once (in case it was not cleared properly)
+                    if (lastPerspective == null) {
+                        lastPerspective = client.options.getPerspective();
+                    }
+                    // Switch to third-person-back when entering freelook from first person
+                    if (lastPerspective == Perspective.FIRST_PERSON) {
+                        client.options.setPerspective(Perspective.THIRD_PERSON_BACK);
+                    }
+                    if (client.player != null) {
                         client.player.sendMessage(
                                 net.minecraft.text.Text.literal("§e[JustFarming] Freelook enabled."), true);
-                    } else {
+                    }
+                } else {
+                    // Restore the saved perspective
+                    if (lastPerspective != null) {
+                        client.options.setPerspective(lastPerspective);
+                        lastPerspective = null;
+                    }
+                    if (client.player != null) {
                         client.player.sendMessage(
                                 net.minecraft.text.Text.literal("§e[JustFarming] Freelook disabled."), true);
                     }
