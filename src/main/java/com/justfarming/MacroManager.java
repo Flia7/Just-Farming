@@ -3,6 +3,7 @@ package com.justfarming;
 import com.justfarming.config.FarmingConfig;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.Vec3d;
 import org.slf4j.Logger;
@@ -282,14 +283,15 @@ public class MacroManager {
         // Hold attack (breaks cocoa beans in view)
         client.options.attackKey.setPressed(true);
 
-        // When the chat or game-menu (ESC) screen is open, the attack key is not
-        // processed normally.  Directly trigger block breaking so crops continue
-        // to be harvested while the player is chatting or has the ESC menu open.
-        if ((client.currentScreen instanceof net.minecraft.client.gui.screen.ChatScreen
-                || client.currentScreen instanceof net.minecraft.client.gui.screen.GameMenuScreen)
+        // When any screen is open (chat, ESC menu, inventory, etc.) the attack
+        // key is not processed by Minecraft's normal input loop.  Directly
+        // trigger block breaking so crops continue to be harvested, and swing
+        // the player's hand to keep the axe animation playing.
+        if (client.currentScreen != null
                 && client.interactionManager != null
                 && client.crosshairTarget instanceof BlockHitResult blockHit) {
             client.interactionManager.attackBlock(blockHit.getBlockPos(), blockHit.getSide());
+            player.swingHand(Hand.MAIN_HAND);
         }
 
         // Always strafe left
