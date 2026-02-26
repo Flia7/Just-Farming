@@ -1,22 +1,27 @@
 package com.justfarming.pest;
 
+import java.util.HashMap;
+import java.util.Map;
+
 /**
  * Provides world-space coordinate bounds for each of the 24 Hypixel Skyblock
  * Garden plots.
  *
- * <p>Garden layout (community-standard values):
+ * <p>Garden layout (5×5 grid, barn at centre):
  * <ul>
- *   <li>24 plots in a 6-column × 4-row grid.</li>
+ *   <li>25 cells in a 5-column × 5-row grid; the barn occupies the centre cell.</li>
  *   <li>Each plot is {@value #PLOT_SIZE} × {@value #PLOT_SIZE} blocks.</li>
- *   <li>Grid origin (north-west corner of plot 1) is at X={@value #ORIGIN_X}, Z={@value #ORIGIN_Z}.</li>
+ *   <li>Grid spans X ∈ [−240, 240], Z ∈ [−240, 240].</li>
  * </ul>
  *
- * <p>Plots are numbered left-to-right, top-to-bottom:
+ * <p>Plot names (1–24) mapped to grid positions (row, col) following the
+ * standard Hypixel unlock-spiral order:
  * <pre>
- *  1  2  3  4  5  6
- *  7  8  9 10 11 12
- * 13 14 15 16 17 18
- * 19 20 21 22 23 24
+ *  21  13   9   5  17
+ *  22  14   3   1  10
+ *  24   4  [B]  2  18
+ *  20  16   7   6  11
+ *  23  15  12   8  19
  * </pre>
  */
 public final class GardenPlot {
@@ -25,55 +30,116 @@ public final class GardenPlot {
     public static final int PLOT_SIZE = 96;
 
     /** Number of plot columns in the garden grid. */
-    public static final int COLS = 6;
+    public static final int COLS = 5;
 
     /** Number of plot rows in the garden grid. */
-    public static final int ROWS = 4;
+    public static final int ROWS = 5;
 
-    /** X coordinate of the north-west corner of plot 1 (approximate). */
-    public static final int ORIGIN_X = -240;
+    /** Minimum Y for rendering plot borders (matching SkyHanni). */
+    public static final int MIN_Y = 66;
 
-    /** Z coordinate of the north-west corner of plot 1 (approximate). */
-    public static final int ORIGIN_Z = -160;
+    /** Maximum Y for rendering plot borders (MIN_Y + 36, matching SkyHanni). */
+    public static final int MAX_Y = 102;
 
-    /** Minimum Y for rendering plot borders (just below farm surface). */
-    public static final int MIN_Y = 63;
+    /**
+     * Maps plot name (String "1"–"24") → grid index {row, col} in the 5×5 grid.
+     * The barn is at (2, 2) and has no plot number.
+     */
+    private static final Map<String, int[]> NAME_TO_GRID = new HashMap<>();
 
-    /** Maximum Y for rendering plot borders (above typical crop height). */
-    public static final int MAX_Y = 128;
+    /**
+     * Reverse lookup: grid key (row * COLS + col) → plot name.
+     * Enables O(1) position-to-name resolution in {@link #getPlotNameAt}.
+     */
+    private static final Map<Integer, String> GRID_TO_NAME = new HashMap<>();
+
+    static {
+        // Standard Hypixel Garden unlock-spiral numbering.
+        // Row 0 (north-most)
+        putPlot("21", 0, 0);
+        putPlot("13", 0, 1);
+        putPlot("9",  0, 2);
+        putPlot("5",  0, 3);
+        putPlot("17", 0, 4);
+        // Row 1
+        putPlot("22", 1, 0);
+        putPlot("14", 1, 1);
+        putPlot("3",  1, 2);
+        putPlot("1",  1, 3);
+        putPlot("10", 1, 4);
+        // Row 2 (barn at col 2)
+        putPlot("24", 2, 0);
+        putPlot("4",  2, 1);
+        // (2,2) = barn
+        putPlot("2",  2, 3);
+        putPlot("18", 2, 4);
+        // Row 3
+        putPlot("20", 3, 0);
+        putPlot("16", 3, 1);
+        putPlot("7",  3, 2);
+        putPlot("6",  3, 3);
+        putPlot("11", 3, 4);
+        // Row 4 (south-most)
+        putPlot("23", 4, 0);
+        putPlot("15", 4, 1);
+        putPlot("12", 4, 2);
+        putPlot("8",  4, 3);
+        putPlot("19", 4, 4);
+    }
+
+    private static void putPlot(String name, int row, int col) {
+        NAME_TO_GRID.put(name, new int[]{row, col});
+        GRID_TO_NAME.put(row * COLS + col, name);
+    }
 
     private GardenPlot() {}
 
     /**
-     * Returns the axis-aligned bounding box for {@code plotNum} (1–24) as
+     * Returns the axis-aligned bounding box for the plot identified by
+     * {@code plotName} (e.g. "1", "12") as
      * {@code [minX, minY, minZ, maxX, maxY, maxZ]}, or {@code null} if
-     * {@code plotNum} is out of range.
+     * the name is unknown.
      */
-    public static double[] getBounds(int plotNum) {
-        if (plotNum < 1 || plotNum > COLS * ROWS) return null;
-        int idx  = plotNum - 1;
-        int col  = idx % COLS;
-        int row  = idx / COLS;
-        double minX = ORIGIN_X + (double) col * PLOT_SIZE;
-        double minZ = ORIGIN_Z + (double) row * PLOT_SIZE;
-        double maxX = minX + PLOT_SIZE;
-        double maxZ = minZ + PLOT_SIZE;
-        return new double[]{minX, MIN_Y, minZ, maxX, MAX_Y, maxZ};
+    public static double[] getBounds(String plotName) {
+        int[] rc = NAME_TO_GRID.get(plotName);
+        if (rc == null) return null;
+        int col = rc[1];
+        int row = rc[0];
+        double minX = -240.0 + col * PLOT_SIZE;
+        double minZ = -240.0 + row * PLOT_SIZE;
+        return new double[]{minX, MIN_Y, minZ, minX + PLOT_SIZE, MAX_Y, minZ + PLOT_SIZE};
     }
 
     /**
-     * Returns the centre X coordinate of a plot's top face (used for label placement).
+     * Returns the centre X coordinate of the given plot (used for label
+     * placement), or {@code Double.NaN} if the name is unknown.
      */
-    public static double getCentreX(int plotNum) {
-        int col = (plotNum - 1) % COLS;
-        return ORIGIN_X + col * PLOT_SIZE + PLOT_SIZE / 2.0;
+    public static double getCentreX(String plotName) {
+        int[] rc = NAME_TO_GRID.get(plotName);
+        if (rc == null) return Double.NaN;
+        return -240.0 + rc[1] * PLOT_SIZE + PLOT_SIZE / 2.0;
     }
 
     /**
-     * Returns the centre Z coordinate of a plot's top face (used for label placement).
+     * Returns the centre Z coordinate of the given plot, or
+     * {@code Double.NaN} if the name is unknown.
      */
-    public static double getCentreZ(int plotNum) {
-        int row = (plotNum - 1) / COLS;
-        return ORIGIN_Z + row * PLOT_SIZE + PLOT_SIZE / 2.0;
+    public static double getCentreZ(String plotName) {
+        int[] rc = NAME_TO_GRID.get(plotName);
+        if (rc == null) return Double.NaN;
+        return -240.0 + rc[0] * PLOT_SIZE + PLOT_SIZE / 2.0;
+    }
+
+    /**
+     * Returns the plot name for the grid cell that contains the given
+     * world X/Z coordinates, or {@code null} if outside the garden or on
+     * the barn.
+     */
+    public static String getPlotNameAt(double x, double z) {
+        if (x < -240 || x > 240 || z < -240 || z > 240) return null;
+        int col = (int) Math.floor((x + 240) / PLOT_SIZE);
+        int row = (int) Math.floor((z + 240) / PLOT_SIZE);
+        if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return null;
+        return GRID_TO_NAME.get(row * COLS + col); // null for barn cell
     }
 }
