@@ -101,7 +101,7 @@ public class OverlayRenderer {
         for (Map.Entry<String, double[]> e : validPlots) {
             double[] b = e.getValue();
             double labelX = (b[0] + b[3]) / 2.0 - cx;
-            double labelY =  b[4] + 2.0          - cy;
+            double labelY = (b[1] + b[4]) / 2.0 - cy;
             double labelZ = (b[2] + b[5]) / 2.0 - cz;
             Integer count = pestCounts.get(e.getKey());
             String label = "Plot " + e.getKey()

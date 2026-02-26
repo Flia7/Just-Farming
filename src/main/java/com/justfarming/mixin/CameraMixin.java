@@ -24,9 +24,6 @@ public abstract class CameraMixin {
     protected abstract void setRotation(float yaw, float pitch);
 
     @Shadow
-    protected abstract float clipToSpace(float desiredCameraDistance);
-
-    @Shadow
     protected abstract void moveBy(float x, float y, float z);
 
     @Inject(method = "update", at = @At("TAIL"))
@@ -48,8 +45,9 @@ public abstract class CameraMixin {
         }
         this.setRotation(coe.freelook$getCameraYaw(), coe.freelook$getCameraPitch());
         // Offset camera behind the player at the configured zoom distance.
-        // clipToSpace prevents the camera from clipping through walls.
-        float dist = this.clipToSpace((float) mm.getFreelookZoom());
+        // Use the raw zoom value so the camera passes through blocks smoothly
+        // instead of snapping/glitching when walls are nearby.
+        float dist = (float) mm.getFreelookZoom();
         this.moveBy(-dist, 0.0f, 0.0f);
     }
 }
