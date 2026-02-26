@@ -282,9 +282,11 @@ public class MacroManager {
         // Hold attack (breaks cocoa beans in view)
         client.options.attackKey.setPressed(true);
 
-        // When a chat screen is open, the attack key is not processed normally.
-        // Directly trigger block breaking so crops continue to be harvested.
-        if (client.currentScreen instanceof net.minecraft.client.gui.screen.ChatScreen
+        // When the chat or game-menu (ESC) screen is open, the attack key is not
+        // processed normally.  Directly trigger block breaking so crops continue
+        // to be harvested while the player is chatting or has the ESC menu open.
+        if ((client.currentScreen instanceof net.minecraft.client.gui.screen.ChatScreen
+                || client.currentScreen instanceof net.minecraft.client.gui.screen.GameMenuScreen)
                 && client.interactionManager != null
                 && client.crosshairTarget instanceof BlockHitResult blockHit) {
             client.interactionManager.attackBlock(blockHit.getBlockPos(), blockHit.getSide());
