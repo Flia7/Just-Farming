@@ -27,7 +27,7 @@ public abstract class CameraMixin {
     protected abstract float clipToSpace(float desiredCameraDistance);
 
     @Shadow
-    protected abstract void moveBy(double x, double y, double z);
+    protected abstract void moveBy(float x, float y, float z);
 
     @Inject(method = "update", at = @At("TAIL"))
     private void lockRotation(BlockView area, Entity cameraEntity, boolean thirdPerson, boolean inverseView, float tickDelta, CallbackInfo ci) {
@@ -50,6 +50,6 @@ public abstract class CameraMixin {
         // Offset camera behind the player at the configured zoom distance.
         // clipToSpace prevents the camera from clipping through walls.
         float dist = this.clipToSpace((float) mm.getFreelookZoom());
-        this.moveBy(-dist, 0.0, 0.0);
+        this.moveBy(-dist, 0.0f, 0.0f);
     }
 }
