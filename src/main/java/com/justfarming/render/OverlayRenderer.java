@@ -8,7 +8,8 @@ import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.render.debug.DebugRenderer;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.Vec3d;
 
@@ -98,12 +99,7 @@ public class OverlayRenderer {
         // so that requesting a text render layer does not prematurely flush the
         // LINES buffer that was used above.
         if (config.pestLabelsEnabled) {
-            // DebugRenderer.drawString internally subtracts the camera position,
-            // but the context's MatrixStack already contains the camera
-            // translation.  Using it would double-subtract the offset, placing
-            // labels at the wrong location.  A fresh (identity) MatrixStack
-            // avoids this.
-            MatrixStack labelMatrices = new MatrixStack();
+            MinecraftClient mc = MinecraftClient.getInstance();
             Map<String, Integer> pestCounts = pestDetector.getPestCounts();
             for (Map.Entry<String, double[]> e : validPlots) {
                 double[] b = e.getValue();
@@ -113,8 +109,15 @@ public class OverlayRenderer {
                 Integer count = pestCounts.get(e.getKey());
                 String label = "Plot " + e.getKey()
                         + (count != null ? " " + PestDetector.formatPestCount(count) : "");
-                DebugRenderer.drawString(labelMatrices, consumers,
-                        label, labelX, labelY, labelZ, LABEL_COLOR, 0.03f);
+                matrices.push();
+                matrices.translate(labelX - cx, labelY - cy, labelZ - cz);
+                matrices.multiply(camera.getRotation());
+                matrices.scale(-0.03f, -0.03f, 0.03f);
+                org.joml.Matrix4f posMatrix = matrices.peek().getPositionMatrix();
+                float halfWidth = mc.textRenderer.getWidth(label) / 2.0f;
+                mc.textRenderer.draw(label, -halfWidth, 0, LABEL_COLOR, false, posMatrix,
+                        consumers, TextRenderer.TextLayerType.SEE_THROUGH, 0, 0xF000F0);
+                matrices.pop();
             }
         }
     }
