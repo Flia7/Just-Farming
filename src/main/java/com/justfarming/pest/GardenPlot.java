@@ -15,13 +15,13 @@ import java.util.Map;
  * </ul>
  *
  * <p>Plot names (1–24) mapped to grid positions (row, col) following the
- * standard Hypixel unlock-spiral order:
+ * standard Hypixel unlock-spiral order (matching SkyHanni):
  * <pre>
- *  21  13   9   5  17
- *  22  14   3   1  10
- *  24   4  [B]  2  18
- *  20  16   7   6  11
- *  23  15  12   8  19
+ *  21  13   9  14  22
+ *  15   5   1   6  16
+ *  10   2  [B]  3  11
+ *  17   7   4   8  18
+ *  23  19  12  20  24
  * </pre>
  */
 public final class GardenPlot {
@@ -54,37 +54,37 @@ public final class GardenPlot {
     private static final Map<Integer, String> GRID_TO_NAME = new HashMap<>();
 
     static {
-        // Standard Hypixel Garden unlock-spiral numbering.
+        // Standard Hypixel Garden unlock-spiral numbering (matching SkyHanni).
         // Row 0 (north-most)
         putPlot("21", 0, 0);
         putPlot("13", 0, 1);
         putPlot("9",  0, 2);
-        putPlot("5",  0, 3);
-        putPlot("17", 0, 4);
+        putPlot("14", 0, 3);
+        putPlot("22", 0, 4);
         // Row 1
-        putPlot("22", 1, 0);
-        putPlot("14", 1, 1);
-        putPlot("3",  1, 2);
-        putPlot("1",  1, 3);
-        putPlot("10", 1, 4);
+        putPlot("15", 1, 0);
+        putPlot("5",  1, 1);
+        putPlot("1",  1, 2);
+        putPlot("6",  1, 3);
+        putPlot("16", 1, 4);
         // Row 2 (barn at col 2)
-        putPlot("24", 2, 0);
-        putPlot("4",  2, 1);
+        putPlot("10", 2, 0);
+        putPlot("2",  2, 1);
         // (2,2) = barn
-        putPlot("2",  2, 3);
-        putPlot("18", 2, 4);
+        putPlot("3",  2, 3);
+        putPlot("11", 2, 4);
         // Row 3
-        putPlot("20", 3, 0);
-        putPlot("16", 3, 1);
-        putPlot("7",  3, 2);
-        putPlot("6",  3, 3);
-        putPlot("11", 3, 4);
+        putPlot("17", 3, 0);
+        putPlot("7",  3, 1);
+        putPlot("4",  3, 2);
+        putPlot("8",  3, 3);
+        putPlot("18", 3, 4);
         // Row 4 (south-most)
         putPlot("23", 4, 0);
-        putPlot("15", 4, 1);
+        putPlot("19", 4, 1);
         putPlot("12", 4, 2);
-        putPlot("8",  4, 3);
-        putPlot("19", 4, 4);
+        putPlot("20", 4, 3);
+        putPlot("24", 4, 4);
     }
 
     private static void putPlot(String name, int row, int col) {
