@@ -23,6 +23,12 @@ public abstract class CameraMixin {
     @Shadow
     protected abstract void setRotation(float yaw, float pitch);
 
+    @Shadow
+    protected abstract float clipToSpace(float desiredCameraDistance);
+
+    @Shadow
+    protected abstract void moveBy(double x, double y, double z);
+
     @Inject(method = "update", at = @At("TAIL"))
     private void lockRotation(BlockView area, Entity cameraEntity, boolean thirdPerson, boolean inverseView, float tickDelta, CallbackInfo ci) {
         MacroManager mm = JustFarming.getMacroManager();
@@ -41,5 +47,9 @@ public abstract class CameraMixin {
             firstTime = false;
         }
         this.setRotation(coe.freelook$getCameraYaw(), coe.freelook$getCameraPitch());
+        // Offset camera behind the player at the configured zoom distance.
+        // clipToSpace prevents the camera from clipping through walls.
+        float dist = this.clipToSpace((float) mm.getFreelookZoom());
+        this.moveBy(-dist, 0.0, 0.0);
     }
 }
