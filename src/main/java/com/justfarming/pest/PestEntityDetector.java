@@ -3,7 +3,8 @@ package com.justfarming.pest;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.Entity;
-import net.minecraft.entity.mob.MobEntity;
+import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 
@@ -49,7 +50,8 @@ public class PestEntityDetector {
 
         List<PestEntity> found = new ArrayList<>();
         for (Entity entity : world.getEntities()) {
-            if (!(entity instanceof MobEntity)) continue;
+            if (!(entity instanceof LivingEntity)) continue;
+            if (entity instanceof PlayerEntity) continue;
             if (!entity.isAlive()) continue;
 
             String name = getCleanName(entity);
