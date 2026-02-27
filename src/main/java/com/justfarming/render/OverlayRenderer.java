@@ -65,7 +65,7 @@ public class OverlayRenderer {
             "pest_esp_see_through_lines",
             1536,
             RenderPipeline.builder(RenderPipelines.RENDERTYPE_LINES_SNIPPET)
-                    .withLocation("just-farming:pest_esp_see_through_lines")
+                    .withLocation("just-farming/pest_esp_see_through_lines")
                     .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
                     .withDepthWrite(false)
                     .build(),
@@ -82,7 +82,7 @@ public class OverlayRenderer {
             false,
             true,
             RenderPipeline.builder(RenderPipelines.POSITION_COLOR_SNIPPET)
-                    .withLocation("just-farming:pest_esp_see_through_filled")
+                    .withLocation("just-farming/pest_esp_see_through_filled")
                     .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
                     .withDepthWrite(false)
                     .withBlend(BlendFunction.TRANSLUCENT)
