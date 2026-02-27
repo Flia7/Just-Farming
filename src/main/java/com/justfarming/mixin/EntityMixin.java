@@ -3,6 +3,7 @@ package com.justfarming.mixin;
 import com.justfarming.CameraOverriddenEntity;
 import com.justfarming.JustFarming;
 import com.justfarming.MacroManager;
+import com.justfarming.config.FarmingConfig;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.entity.Entity;
 import net.minecraft.util.math.MathHelper;
@@ -26,7 +27,19 @@ public class EntityMixin implements CameraOverriddenEntity {
         //noinspection ConstantValue
         if (!((Object) this instanceof ClientPlayerEntity)) return;
         MacroManager mm = JustFarming.getMacroManager();
-        if (mm == null || !mm.isFreelookActive()) return;
+        if (mm == null) return;
+
+        FarmingConfig cfg = JustFarming.getConfig();
+
+        // When the macro is running in ungrab mode, the GLFW cursor is physically
+        // free so mouse movement would normally spin the camera.  Suppress all look
+        // direction changes so the view stays locked at the configured pitch/yaw.
+        if (mm.isRunning() && cfg != null && cfg.unlockedMouseEnabled && !mm.isFreelookActive()) {
+            ci.cancel();
+            return;
+        }
+
+        if (!mm.isFreelookActive()) return;
 
         double pitchDelta = yDelta * 0.15;
         double yawDelta = xDelta * 0.15;

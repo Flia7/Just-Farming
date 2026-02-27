@@ -8,6 +8,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(Mouse.class)
 public class MouseMixin {
@@ -45,6 +46,21 @@ public class MouseMixin {
         FarmingConfig cfg = JustFarming.getConfig();
         if (mm != null && cfg != null && mm.isRunning() && cfg.unlockedMouseEnabled) {
             ci.cancel();
+        }
+    }
+
+    /**
+     * When the macro is running with the "unlock mouse" option enabled, report
+     * the cursor as locked to Minecraft's input-handling code so that block
+     * breaking and other gameplay inputs continue to be processed even though
+     * the GLFW cursor is actually in free/normal mode.
+     */
+    @Inject(method = "isCursorLocked", at = @At("HEAD"), cancellable = true)
+    private void onIsCursorLocked(CallbackInfoReturnable<Boolean> cir) {
+        MacroManager mm = JustFarming.getMacroManager();
+        FarmingConfig cfg = JustFarming.getConfig();
+        if (mm != null && cfg != null && mm.isRunning() && cfg.unlockedMouseEnabled) {
+            cir.setReturnValue(true);
         }
     }
 }
