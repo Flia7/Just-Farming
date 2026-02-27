@@ -48,6 +48,9 @@ public class OverlayRenderer {
     // Label colour (ARGB)
     private static final int LABEL_COLOR = 0xFFFF3333;
 
+    // Semi-transparent black background behind floating text for readability
+    private static final int TEXT_BG_COLOR = 0x40000000;
+
     // Scale for the large floating plot title (SkyHanni-style)
     private static final float TITLE_SCALE = 0.25f;
 
@@ -144,7 +147,7 @@ public class OverlayRenderer {
                 float titleHalf = mc.textRenderer.getWidth(title) / 2.0f;
                 mc.textRenderer.draw(title, -titleHalf, 0, LABEL_COLOR, false,
                         titleMatrix, consumers, TextRenderer.TextLayerType.SEE_THROUGH,
-                        0x40000000, 0xF000F0);
+                        TEXT_BG_COLOR, 0xF000F0);
                 matrices.pop();
 
                 // --- Pest count subtitle below the title ---
@@ -160,7 +163,7 @@ public class OverlayRenderer {
                     float subHalf = mc.textRenderer.getWidth(subtitle) / 2.0f;
                     mc.textRenderer.draw(subtitle, -subHalf, 0, 0xFFFFAA00, false,
                             subMatrix, consumers, TextRenderer.TextLayerType.SEE_THROUGH,
-                            0x40000000, 0xF000F0);
+                            TEXT_BG_COLOR, 0xF000F0);
                     matrices.pop();
                 }
             }

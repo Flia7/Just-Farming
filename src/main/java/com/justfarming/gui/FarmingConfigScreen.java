@@ -27,7 +27,7 @@ public class FarmingConfigScreen extends Screen {
 
     // ── Layout ────────────────────────────────────────────────────────────────
     private static final int PANEL_WIDTH   = 320;
-    private static final int PANEL_HEIGHT  = 462;
+    private static final int PANEL_HEIGHT  = 462; // header + 10 widgets × (20+6) + separators + padding
     private static final int HEADER_HEIGHT = 46;
     private static final int BUTTON_WIDTH  = 240;
     private static final int BUTTON_HEIGHT = 20;
