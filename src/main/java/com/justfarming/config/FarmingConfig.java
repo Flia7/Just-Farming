@@ -2,6 +2,7 @@ package com.justfarming.config;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.InstanceCreator;
 import com.justfarming.CropType;
 import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.LoggerFactory;
@@ -18,7 +19,10 @@ import java.nio.file.Path;
  */
 public class FarmingConfig {
 
-    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final Gson GSON = new GsonBuilder()
+            .setPrettyPrinting()
+            .registerTypeAdapter(FarmingConfig.class, (InstanceCreator<FarmingConfig>) type -> new FarmingConfig())
+            .create();
     private static final String CONFIG_FILE = "just-farming.json";
 
     // --- Config fields ---
