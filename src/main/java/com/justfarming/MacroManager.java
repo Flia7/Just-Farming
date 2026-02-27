@@ -3,8 +3,6 @@ package com.justfarming;
 import com.justfarming.config.FarmingConfig;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.Vec3d;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -205,6 +203,12 @@ public class MacroManager {
             return;
         }
 
+        // Pause the macro while any screen (chat, ESC menu, inventory, etc.) is open
+        if (client.currentScreen != null) {
+            releaseKeys();
+            return;
+        }
+
         // Lock pitch and yaw every active tick
         player.setPitch(config.farmingPitch);
         player.setYaw(config.farmingYaw);
@@ -282,17 +286,6 @@ public class MacroManager {
     private void tickMoving(ClientPlayerEntity player, boolean forward) {
         // Hold attack (breaks cocoa beans in view)
         client.options.attackKey.setPressed(true);
-
-        // When any screen is open (chat, ESC menu, inventory, etc.) the attack
-        // key is not processed by Minecraft's normal input loop.  Directly
-        // trigger block breaking so crops continue to be harvested, and swing
-        // the player's hand to keep the axe animation playing.
-        if (client.currentScreen != null
-                && client.interactionManager != null
-                && client.crosshairTarget instanceof BlockHitResult blockHit) {
-            client.interactionManager.attackBlock(blockHit.getBlockPos(), blockHit.getSide());
-            player.swingHand(Hand.MAIN_HAND);
-        }
 
         // Always strafe left
         client.options.leftKey.setPressed(true);
