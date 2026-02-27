@@ -55,7 +55,7 @@ public class FarmingConfigScreen extends Screen {
     private final MacroManager macroManager;
 
     // ── Tab selector buttons ──────────────────────────────────────────────────
-    private ButtonWidget[] tabButtons;
+    private TabButton[] tabButtons;
 
     // ── Tab 0 – Farming widgets ───────────────────────────────────────────────
     private CyclingButtonWidget<CropType> cropButton;
@@ -106,18 +106,11 @@ public class FarmingConfigScreen extends Screen {
         // ── Tab selector buttons ──────────────────────────────────────────────
         int tabBarY  = panelY + HEADER_HEIGHT + 1;
         int tabW     = (PANEL_WIDTH - 4) / TAB_NAMES.length;
-        tabButtons   = new ButtonWidget[TAB_NAMES.length];
+        tabButtons   = new TabButton[TAB_NAMES.length];
         for (int i = 0; i < TAB_NAMES.length; i++) {
-            final int tabIndex = i;
-            tabButtons[i] = ButtonWidget.builder(
-                            Text.literal(TAB_NAMES[i]),
-                            btn -> {
-                                applyConfig();
-                                activeTab = tabIndex;
-                                updateTabVisibility();
-                            })
-                    .dimensions(panelX + 2 + i * (tabW + 1), tabBarY, tabW, TAB_BAR_HEIGHT - 2)
-                    .build();
+            tabButtons[i] = new TabButton(
+                    panelX + 2 + i * (tabW + 1), tabBarY,
+                    tabW, TAB_BAR_HEIGHT - 2, i);
             this.addDrawableChild(tabButtons[i]);
         }
 
@@ -450,6 +443,53 @@ public class FarmingConfigScreen extends Screen {
     // -------------------------------------------------------------------------
     // Inner slider classes
     // -------------------------------------------------------------------------
+
+    /**
+     * A lightweight tab button that renders as a browser-style tab.
+     * It draws a custom coloured background (no default Minecraft button
+     * texture) and highlights itself when it is the active tab.
+     */
+    private class TabButton extends net.minecraft.client.gui.widget.ClickableWidget {
+
+        private final int tabIndex;
+
+        TabButton(int x, int y, int width, int height, int tabIndex) {
+            super(x, y, width, height, Text.literal(TAB_NAMES[tabIndex]));
+            this.tabIndex = tabIndex;
+        }
+
+        @Override
+        protected void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
+            boolean active  = activeTab == tabIndex;
+            boolean hovered = this.isHovered();
+            int bg = active  ? COL_TAB_ACTIVE
+                   : hovered ? 0xFF261952
+                   :           COL_TAB_INACTIVE;
+            context.fill(getX(), getY(), getX() + getWidth(), getY() + getHeight(), bg);
+            if (active) {
+                context.fill(getX(), getY(), getX() + getWidth(), getY() + 2, COL_ACCENT);
+            }
+            context.drawCenteredTextWithShadow(
+                    FarmingConfigScreen.this.textRenderer,
+                    getMessage(),
+                    getX() + getWidth() / 2,
+                    getY() + (getHeight() - 8) / 2,
+                    active ? COL_TITLE : COL_LABEL);
+        }
+
+        @Override
+        public void onClick(net.minecraft.client.gui.Click click, boolean toggle) {
+            applyConfig();
+            activeTab = tabIndex;
+            updateTabVisibility();
+        }
+
+        @Override
+        protected void appendClickableNarrations(
+                net.minecraft.client.gui.screen.narration.NarrationMessageBuilder builder) {
+            this.appendDefaultNarrations(builder);
+        }
+    }
 
     /**
      * Slider for pitch angle in range [-90, 90] degrees.
