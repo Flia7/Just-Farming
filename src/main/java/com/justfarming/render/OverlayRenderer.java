@@ -71,6 +71,21 @@ public class OverlayRenderer {
                     .lineWidth(new RenderPhase.LineWidth(OptionalDouble.empty()))
                     .build(false));
 
+    // Dedicated see-through layer for the pest tracer lines (always visible through walls)
+    private static final RenderLayer PEST_TRACER_SEE_THROUGH_LINES = RenderLayer.of(
+            "pest_tracer_see_through_lines",
+            1536,
+            RenderPipeline.builder(RenderPipelines.RENDERTYPE_LINES_SNIPPET)
+                    .withLocation("just-farming/pest_tracer_see_through_lines")
+                    .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+                    .withDepthWrite(false)
+                    .build(),
+            RenderLayer.MultiPhaseParameters.builder()
+                    .layering(RenderPhase.VIEW_OFFSET_Z_LAYERING)
+                    .target(RenderPhase.ITEM_ENTITY_TARGET)
+                    .lineWidth(new RenderPhase.LineWidth(OptionalDouble.empty()))
+                    .build(false));
+
 
     private final FarmingConfig       config;
     private final PestDetector        pestDetector;
@@ -98,24 +113,28 @@ public class OverlayRenderer {
         // ── Pest entity ESP & Tracer ──────────────────────────────────────────
         List<PestEntityDetector.PestEntity> pests = pestEntityDetector.getDetectedPests();
 
-        if (!pests.isEmpty() && (config.pestEspEnabled || config.pestTracerEnabled)) {
-            boolean seeThrough = config.pestEspSeeThrough;
-
-            RenderLayer linesLayer = seeThrough ? PEST_ESP_SEE_THROUGH_LINES : RenderLayer.getLines();
-            VertexConsumer pestLines = consumers.getBuffer(linesLayer);
+        if (!pests.isEmpty()) {
             MatrixStack.Entry entry = matrices.peek();
 
-            for (PestEntityDetector.PestEntity pest : pests) {
-                if (config.pestEspEnabled) {
-                    renderEspBox(entry, pestLines, adjustedEspBox(pest.boundingBox()), cx, cy, cz, COLOR_ESP);
+            // ESP boxes (conditional on setting; respects see-through toggle)
+            if (config.pestEspEnabled) {
+                boolean seeThrough = config.pestEspSeeThrough;
+                RenderLayer espLayer = seeThrough ? PEST_ESP_SEE_THROUGH_LINES : RenderLayer.getLines();
+                VertexConsumer espLines = consumers.getBuffer(espLayer);
+                for (PestEntityDetector.PestEntity pest : pests) {
+                    renderEspBox(entry, espLines, adjustedEspBox(pest.boundingBox()), cx, cy, cz, COLOR_ESP);
                 }
-                if (config.pestTracerEnabled) {
-                    drawLine(entry, pestLines,
-                            0, 0, 0, // camera-relative origin (player eye)
-                            pest.position().x - cx,
-                            pest.position().y - cy,
-                            pest.position().z - cz,
-                            COLOR_GREEN);
+            }
+
+            // Tracer lines: always see-through, draw from camera to centre of ESP box
+            if (config.pestTracerEnabled) {
+                VertexConsumer tracerLines = consumers.getBuffer(PEST_TRACER_SEE_THROUGH_LINES);
+                for (PestEntityDetector.PestEntity pest : pests) {
+                    Box espBox = adjustedEspBox(pest.boundingBox());
+                    double targetX = (espBox.minX + espBox.maxX) / 2.0 - cx;
+                    double targetY = (espBox.minY + espBox.maxY) / 2.0 - cy;
+                    double targetZ = (espBox.minZ + espBox.maxZ) / 2.0 - cz;
+                    drawLine(entry, tracerLines, 0, 0, 0, targetX, targetY, targetZ, COLOR_GREEN);
                 }
             }
         }

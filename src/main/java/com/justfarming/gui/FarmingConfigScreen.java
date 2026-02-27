@@ -81,6 +81,7 @@ public class FarmingConfigScreen extends Screen {
 
     // ── Tab 2 – Misc widgets ──────────────────────────────────────────────────
     private ButtonWidget freelookButton;
+    private CyclingButtonWidget<Boolean> unlockedMouseButton;
 
     // ── Always-visible widget ─────────────────────────────────────────────────
     private ButtonWidget saveCloseButton;
@@ -267,6 +268,15 @@ public class FarmingConfigScreen extends Screen {
                 .dimensions(widgetX, y, bw, bh)
                 .build();
         this.addDrawableChild(freelookButton);
+        y += bh + pad;
+
+        unlockedMouseButton = CyclingButtonWidget.builder(
+                        (Boolean val) -> val ? Text.literal("ON") : Text.literal("OFF"))
+                .values(Boolean.TRUE, Boolean.FALSE)
+                .initially(config.unlockedMouseEnabled)
+                .build(widgetX, y, bw, bh,
+                        Text.translatable("gui.just-farming.unlocked_mouse_label"));
+        this.addDrawableChild(unlockedMouseButton);
 
         // ── Always-visible: Close button at the very bottom ───────────────────
         int closeBtnY = panelY + panelH - bh - pad;
@@ -301,7 +311,8 @@ public class FarmingConfigScreen extends Screen {
         pestTracerButton.visible        = t1;
 
         boolean t2 = activeTab == 2;
-        freelookButton.visible = t2;
+        freelookButton.visible     = t2;
+        unlockedMouseButton.visible = t2;
     }
 
     @Override
@@ -424,6 +435,7 @@ public class FarmingConfigScreen extends Screen {
         config.pestEspEnabled       = pestEspButton.getValue();
         config.pestEspSeeThrough    = pestEspSeeThroughButton.getValue();
         config.pestTracerEnabled    = pestTracerButton.getValue();
+        config.unlockedMouseEnabled = unlockedMouseButton.getValue();
         macroManager.setConfig(config);
     }
 
