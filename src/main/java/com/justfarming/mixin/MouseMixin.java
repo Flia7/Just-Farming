@@ -50,16 +50,18 @@ public class MouseMixin {
     }
 
     /**
-     * When the macro is running with the "unlock mouse" option enabled, report
-     * the cursor as locked to Minecraft's input-handling code so that block
-     * breaking and other gameplay inputs continue to be processed even though
-     * the GLFW cursor is actually in free/normal mode.
+     * When the macro is running, report the cursor as locked to Minecraft's
+     * input-handling code. Minecraft only processes game inputs (attack key,
+     * block breaking, etc.) when {@code isCursorLocked()} returns {@code true}
+     * or {@code currentScreen} is {@code null}. By returning {@code true} here
+     * we allow all gameplay inputs to be processed even when a GUI screen is
+     * open, so the macro keeps breaking crops regardless of which screen the
+     * player has open.
      */
     @Inject(method = "isCursorLocked", at = @At("HEAD"), cancellable = true)
     private void onIsCursorLocked(CallbackInfoReturnable<Boolean> cir) {
         MacroManager mm = JustFarming.getMacroManager();
-        FarmingConfig cfg = JustFarming.getConfig();
-        if (mm != null && cfg != null && mm.isRunning() && cfg.unlockedMouseEnabled) {
+        if (mm != null && mm.isRunning()) {
             cir.setReturnValue(true);
         }
     }
