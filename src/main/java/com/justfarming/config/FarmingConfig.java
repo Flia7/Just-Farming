@@ -67,12 +67,6 @@ public class FarmingConfig {
     public boolean pestEspSeeThrough = true;
 
     /**
-     * Whether the pest ESP renders as filled transparent boxes in addition to
-     * the wireframe overlay.
-     */
-    public boolean pestEspFilled = false;
-
-    /**
      * Scale multiplier for the large floating plot title in the world.
      * Adjust to make the "Plot N" label larger or smaller.
      */

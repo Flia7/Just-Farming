@@ -13,16 +13,11 @@ import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.RenderPhase;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
-
-import org.joml.Matrix4f;
-import org.joml.Quaternionf;
-import org.joml.Vector4f;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -81,10 +76,6 @@ public class OverlayRenderer {
     private final PestDetector        pestDetector;
     private final PestEntityDetector  pestEntityDetector;
 
-    // Cached data for 2D HUD rendering (set every frame by render())
-    private volatile Matrix4f cachedMvp    = null;
-    private volatile Vec3d    cachedCamPos = null;
-
     public OverlayRenderer(FarmingConfig config, PestDetector pestDetector,
                            PestEntityDetector pestEntityDetector) {
         this.config             = config;
@@ -107,14 +98,6 @@ public class OverlayRenderer {
         // ── Pest entity ESP & Tracer ──────────────────────────────────────────
         List<PestEntityDetector.PestEntity> pests = pestEntityDetector.getDetectedPests();
 
-        // Cache projection+view matrix for this frame so renderHud() can use it.
-        // Uses the same MVP construction as Minecraft's own world rendering.
-        float fov = (float) MinecraftClient.getInstance().options.getFov().getValue();
-        Matrix4f projection = context.gameRenderer().getBasicProjectionMatrix(fov);
-        Quaternionf viewRot = camera.getRotation().conjugate(new Quaternionf());
-        cachedMvp    = projection.mul(new Matrix4f().rotation(viewRot), new Matrix4f());
-        cachedCamPos = camPos;
-
         if (!pests.isEmpty() && (config.pestEspEnabled || config.pestTracerEnabled)) {
             boolean seeThrough = config.pestEspSeeThrough;
 
@@ -124,7 +107,7 @@ public class OverlayRenderer {
 
             for (PestEntityDetector.PestEntity pest : pests) {
                 if (config.pestEspEnabled) {
-                    renderEspBox(entry, pestLines, halfSizeBox(pest.boundingBox()), cx, cy, cz, COLOR_ESP);
+                    renderEspBox(entry, pestLines, adjustedEspBox(pest.boundingBox()), cx, cy, cz, COLOR_ESP);
                 }
                 if (config.pestTracerEnabled) {
                     drawLine(entry, pestLines,
@@ -311,87 +294,14 @@ public class OverlayRenderer {
     }
 
     /**
-     * Returns a copy of {@code box} contracted to half its original dimensions
-     * (25% shrink on each side), centred at the same point.
+     * Returns a copy of {@code box} expanded to 1.5× its original dimensions
+     * and shifted down by half a block, so the overlay is larger and better
+     * centred on the pest entity.
      */
-    private static Box halfSizeBox(Box box) {
-        return box.contract(
-                box.getLengthX() * 0.25,
-                box.getLengthY() * 0.25,
-                box.getLengthZ() * 0.25);
-    }
-
-    /**
-     * Draws 2D screen-space ESP boxes around detected pest entities on the HUD.
-     *
-     * <p>This replaces the old buggy 3D filled-quad approach: by projecting the
-     * bounding-box corners to NDC space and drawing a flat coloured rectangle on
-     * the HUD, we avoid the "transparent inside" artefact that plagued the
-     * previous translucent-quad render layer.
-     *
-     * @param context    the HUD draw context
-     * @param width      the scaled screen width in pixels
-     * @param height     the scaled screen height in pixels
-     */
-    public void renderHud(DrawContext context, int width, int height) {
-        if (!config.pestEspEnabled || !config.pestEspFilled) return;
-
-        Matrix4f mvp     = cachedMvp;
-        Vec3d    camPos  = cachedCamPos;
-        if (mvp == null || camPos == null) return;
-
-        List<PestEntityDetector.PestEntity> pests = pestEntityDetector.getDetectedPests();
-        if (pests.isEmpty()) return;
-
-        double cx = camPos.x, cy = camPos.y, cz = camPos.z;
-
-        for (PestEntityDetector.PestEntity pest : pests) {
-            Box box = halfSizeBox(pest.boundingBox());
-
-            float minSx = Float.MAX_VALUE,  minSy = Float.MAX_VALUE;
-            float maxSx = -Float.MAX_VALUE, maxSy = -Float.MAX_VALUE;
-            boolean anyVisible = false;
-
-            double[][] corners = {
-                {box.minX, box.minY, box.minZ},
-                {box.maxX, box.minY, box.minZ},
-                {box.minX, box.maxY, box.minZ},
-                {box.maxX, box.maxY, box.minZ},
-                {box.minX, box.minY, box.maxZ},
-                {box.maxX, box.minY, box.maxZ},
-                {box.minX, box.maxY, box.maxZ},
-                {box.maxX, box.maxY, box.maxZ},
-            };
-
-            for (double[] c : corners) {
-                float rx = (float) (c[0] - cx);
-                float ry = (float) (c[1] - cy);
-                float rz = (float) (c[2] - cz);
-                Vector4f clip = mvp.transform(rx, ry, rz, 1.0f, new Vector4f());
-                if (clip.w <= 0f) continue; // behind camera – skip this corner
-                anyVisible = true;
-                float sx = (clip.x / clip.w + 1.0f) * 0.5f * width;
-                float sy = (1.0f - clip.y / clip.w) * 0.5f * height;
-                if (sx < minSx) minSx = sx;
-                if (sy < minSy) minSy = sy;
-                if (sx > maxSx) maxSx = sx;
-                if (sy > maxSy) maxSy = sy;
-            }
-
-            if (!anyVisible || minSx >= maxSx || minSy >= maxSy) continue;
-
-            int x0 = (int) Math.max(0,      minSx);
-            int y0 = (int) Math.max(0,      minSy);
-            int x1 = (int) Math.min(width,  maxSx);
-            int y1 = (int) Math.min(height, maxSy);
-
-            // Semi-transparent fill so the entity is still visible through the box
-            context.fill(x0, y0, x1, y1, 0x50FF4444);
-            // Solid opaque border
-            context.fill(x0,     y0,     x1,     y0 + 1, 0xFFFF4444);
-            context.fill(x0,     y1 - 1, x1,     y1,     0xFFFF4444);
-            context.fill(x0,     y0,     x0 + 1, y1,     0xFFFF4444);
-            context.fill(x1 - 1, y0,     x1,     y1,     0xFFFF4444);
-        }
+    private static Box adjustedEspBox(Box box) {
+        double ex = box.getLengthX() * 0.25;
+        double ey = box.getLengthY() * 0.25;
+        double ez = box.getLengthZ() * 0.25;
+        return box.expand(ex, ey, ez).offset(0, -0.5, 0);
     }
 }
