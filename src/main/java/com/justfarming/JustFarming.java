@@ -60,7 +60,6 @@ public class JustFarming implements ClientModInitializer {
         macroManager = new MacroManager(net.minecraft.client.MinecraftClient.getInstance(), config);
         pestDetector = new PestDetector();
         pestEntityDetector = new PestEntityDetector();
-        final OverlayRenderer overlayRenderer = new OverlayRenderer(config, pestDetector, pestEntityDetector);
 
         // Register keybindings
         toggleMacroKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
@@ -160,8 +159,19 @@ public class JustFarming implements ClientModInitializer {
             }
         });
 
-        // Register world render event for pest plot overlay
-        WorldRenderEvents.AFTER_ENTITIES.register(overlayRenderer::render);
+        // Register world render event for pest plot overlay.
+        // The OverlayRenderer is created lazily on first render because its
+        // static RenderLayer fields require the render system to be initialised,
+        // which has not happened yet during onInitializeClient().
+        final java.util.concurrent.atomic.AtomicReference<OverlayRenderer> overlayRef = new java.util.concurrent.atomic.AtomicReference<>();
+        WorldRenderEvents.AFTER_ENTITIES.register(ctx -> {
+            OverlayRenderer renderer = overlayRef.get();
+            if (renderer == null) {
+                renderer = new OverlayRenderer(config, pestDetector, pestEntityDetector);
+                overlayRef.set(renderer);
+            }
+            renderer.render(ctx);
+        });
 
         LOGGER.info("[JustFarming] Ready. Toggle macro: R | Open GUI: I | Freelook: L | Command: /jf rewarp");
     }
