@@ -120,26 +120,34 @@ public class OverlayRenderer {
         if (!pests.isEmpty() && (config.pestEspEnabled || config.pestTracerEnabled)) {
             boolean seeThrough = config.pestEspSeeThrough;
 
-            // Choose render layer based on see-through setting
+            // Render filled boxes first in a separate pass.
+            // VertexConsumerProvider.Immediate only tracks one "current layer" via the
+            // shared allocator; calling getBuffer() for a second layer while the first
+            // is still the current layer flushes/finalizes the first buffer, making any
+            // subsequent vertex writes crash with building=false.  By completing all
+            // filled-box writes before obtaining the lines buffer we avoid that conflict.
+            if (config.pestEspEnabled && config.pestEspFilled) {
+                RenderLayer filledLayer = seeThrough
+                        ? PEST_ESP_SEE_THROUGH_FILLED
+                        : RenderLayer.getDebugFilledBox();
+                VertexConsumer filledBuffer = consumers.getBuffer(filledLayer);
+                for (PestEntityDetector.PestEntity pest : pests) {
+                    Box box = pest.boundingBox();
+                    VertexRendering.drawFilledBox(matrices, filledBuffer,
+                            box.minX - cx, box.minY - cy, box.minZ - cz,
+                            box.maxX - cx, box.maxY - cy, box.maxZ - cz,
+                            1.0f, 0.267f, 0.267f, 0.4f);
+                }
+            }
+
+            // Now obtain the lines buffer (this flushes the filled buffer if it was
+            // the current layer, which is fine because we are done with it).
             RenderLayer linesLayer = seeThrough ? PEST_ESP_SEE_THROUGH_LINES : RenderLayer.getLines();
             VertexConsumer pestLines = consumers.getBuffer(linesLayer);
             MatrixStack.Entry entry = matrices.peek();
 
             for (PestEntityDetector.PestEntity pest : pests) {
                 if (config.pestEspEnabled) {
-                    // Filled box (rendered under wireframe)
-                    if (config.pestEspFilled) {
-                        Box box = pest.boundingBox();
-                        RenderLayer filledLayer = seeThrough
-                                ? PEST_ESP_SEE_THROUGH_FILLED
-                                : RenderLayer.getDebugFilledBox();
-                        VertexConsumer filledBuffer = consumers.getBuffer(filledLayer);
-                        VertexRendering.drawFilledBox(matrices, filledBuffer,
-                                box.minX - cx, box.minY - cy, box.minZ - cz,
-                                box.maxX - cx, box.maxY - cy, box.maxZ - cz,
-                                1.0f, 0.267f, 0.267f, 0.4f);
-                    }
-                    // Wireframe overlay
                     renderEspBox(entry, pestLines, pest.boundingBox(), cx, cy, cz, COLOR_ESP);
                 }
                 if (config.pestTracerEnabled) {
