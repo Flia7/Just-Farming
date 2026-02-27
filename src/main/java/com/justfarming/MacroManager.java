@@ -344,16 +344,14 @@ public class MacroManager {
             client.options.forwardKey.setPressed(false);
         }
 
-        // ---- Block breaking when a GUI screen is open ----
+        // ---- Block breaking ----
         // Vanilla's handleInputEvents() passes breaking=false to handleBlockBreaking()
         // whenever currentScreen != null, which eventually calls cancelBlockBreaking().
         // The MinecraftClientMixin @ModifyArg forces breaking=true, but if the
         // crosshair target is null the else-branch still fires and cancels breaking.
         // Calling updateBlockBreakingProgress() here guarantees that breaking
-        // continues even when any GUI is open, without affecting the normal path
-        // (no screen) where vanilla already handles it correctly.
-        if (client.currentScreen != null
-                && client.interactionManager != null
+        // continues regardless of whether a GUI screen is open or closed.
+        if (client.interactionManager != null
                 && client.crosshairTarget instanceof BlockHitResult blockHit) {
             client.interactionManager.updateBlockBreakingProgress(
                     blockHit.getBlockPos(), blockHit.getSide());
