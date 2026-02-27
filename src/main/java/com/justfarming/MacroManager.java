@@ -1,6 +1,7 @@
 package com.justfarming;
 
 import com.justfarming.config.FarmingConfig;
+import com.justfarming.gui.FarmingConfigScreen;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.util.math.Vec3d;
@@ -211,7 +212,8 @@ public class MacroManager {
 
         // Close any open screen (inventory, ESC menu, chat) so Minecraft's
         // handleInputEvents() runs and the attack key actually breaks blocks.
-        if (client.currentScreen != null) {
+        // Our own config GUI is exempt so the player can open it while the macro runs.
+        if (client.currentScreen != null && !(client.currentScreen instanceof FarmingConfigScreen)) {
             client.setScreen(null);
         }
 
