@@ -142,7 +142,7 @@ public class OverlayRenderer {
                 matrices.push();
                 matrices.translate(centreX - cx, titleY - cy, centreZ - cz);
                 matrices.multiply(camera.getRotation());
-                matrices.scale(-TITLE_SCALE, -TITLE_SCALE, TITLE_SCALE);
+                matrices.scale(TITLE_SCALE, -TITLE_SCALE, TITLE_SCALE);
                 org.joml.Matrix4f titleMatrix = matrices.peek().getPositionMatrix();
                 float titleHalf = mc.textRenderer.getWidth(title) / 2.0f;
                 mc.textRenderer.draw(title, -titleHalf, 0, LABEL_COLOR, false,
@@ -158,7 +158,7 @@ public class OverlayRenderer {
                     matrices.translate(centreX - cx, subtitleY - cy, centreZ - cz);
                     matrices.multiply(camera.getRotation());
                     float subtitleScale = TITLE_SCALE * 0.6f;
-                    matrices.scale(-subtitleScale, -subtitleScale, subtitleScale);
+                    matrices.scale(subtitleScale, -subtitleScale, subtitleScale);
                     org.joml.Matrix4f subMatrix = matrices.peek().getPositionMatrix();
                     float subHalf = mc.textRenderer.getWidth(subtitle) / 2.0f;
                     mc.textRenderer.draw(subtitle, -subHalf, 0, 0xFFFFAA00, false,
