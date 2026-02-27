@@ -3,11 +3,11 @@ package com.justfarming.mixin;
 import com.justfarming.JustFarming;
 import com.justfarming.MacroManager;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.input.Input;
 import net.minecraft.client.input.KeyboardInput;
 import net.minecraft.util.PlayerInput;
 import net.minecraft.util.math.Vec2f;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -26,15 +26,16 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * we re-apply the correct {@code playerInput} and pre-computed
  * {@code movementVector} after any screen-induced reset, so that the player
  * entity's movement physics in the same tick continue uninterrupted.
+ *
+ * <p>This mixin extends {@link Input} so that the compiler can resolve the
+ * {@code playerInput} and {@code movementVector} fields, which are declared
+ * in {@link Input} (the superclass of {@link KeyboardInput}) rather than in
+ * {@link KeyboardInput} itself.  The {@code extends} clause is purely a
+ * compile-time hint; at runtime the mixin body is merged into
+ * {@link KeyboardInput}, which already extends {@link Input}.
  */
 @Mixin(KeyboardInput.class)
-public class KeyboardInputMixin {
-
-    @Shadow
-    public PlayerInput playerInput;
-
-    @Shadow
-    protected Vec2f movementVector;
+public abstract class KeyboardInputMixin extends Input {
 
     @Inject(method = "tick", at = @At("RETURN"))
     private void onTickReturn(CallbackInfo ci) {
@@ -66,6 +67,7 @@ public class KeyboardInputMixin {
         // With leftKey=true, rightKey=false → x = +1.0f
         // With forwardKey=true, backKey=false → y = +1.0f (forward)
         // With forwardKey=false, backKey=true  → y = -1.0f (backward)
-        this.movementVector = new Vec2f(1.0f, forward ? 1.0f : -1.0f);
+        // Normalize to match vanilla KeyboardInput.tick() behavior.
+        this.movementVector = new Vec2f(1.0f, forward ? 1.0f : -1.0f).normalize();
     }
 }
