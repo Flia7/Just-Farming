@@ -27,7 +27,7 @@ public class FarmingConfigScreen extends Screen {
 
     // ── Layout ────────────────────────────────────────────────────────────────
     private static final int PANEL_WIDTH   = 320;
-    private static final int PANEL_HEIGHT  = 462; // header + 10 widgets × (20+6) + separators + padding
+    private static final int PANEL_HEIGHT  = 540; // header + widgets + section labels + separators + padding
     private static final int HEADER_HEIGHT = 46;
     private static final int BUTTON_WIDTH  = 240;
     private static final int BUTTON_HEIGHT = 20;
@@ -59,7 +59,10 @@ public class FarmingConfigScreen extends Screen {
     private SwapRandomSlider              swapRandomSlider;
     private CyclingButtonWidget<Boolean>  pestHighlightButton;
     private CyclingButtonWidget<Boolean>  pestLabelsButton;
+    private TitleScaleSlider              titleScaleSlider;
     private CyclingButtonWidget<Boolean>  pestEspButton;
+    private CyclingButtonWidget<Boolean>  pestEspSeeThroughButton;
+    private CyclingButtonWidget<Boolean>  pestEspFilledButton;
     private CyclingButtonWidget<Boolean>  pestTracerButton;
     private ButtonWidget                  freelookButton;
     private ButtonWidget                  setRewarpButton;
@@ -141,6 +144,10 @@ public class FarmingConfigScreen extends Screen {
         this.addDrawableChild(pestLabelsButton);
         y += BUTTON_HEIGHT + PADDING;
 
+        titleScaleSlider = new TitleScaleSlider(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT, config.pestTitleScale);
+        this.addDrawableChild(titleScaleSlider);
+        y += BUTTON_HEIGHT + PADDING;
+
         pestEspButton = CyclingButtonWidget.builder(
                         (Boolean val) -> val ? Text.literal("ON") : Text.literal("OFF"))
                 .values(Boolean.TRUE, Boolean.FALSE)
@@ -148,6 +155,24 @@ public class FarmingConfigScreen extends Screen {
                 .build(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT,
                         Text.translatable("gui.just-farming.pest_esp_label"));
         this.addDrawableChild(pestEspButton);
+        y += BUTTON_HEIGHT + PADDING;
+
+        pestEspSeeThroughButton = CyclingButtonWidget.builder(
+                        (Boolean val) -> val ? Text.literal("ON") : Text.literal("OFF"))
+                .values(Boolean.TRUE, Boolean.FALSE)
+                .initially(config.pestEspSeeThrough)
+                .build(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT,
+                        Text.translatable("gui.just-farming.pest_esp_see_through_label"));
+        this.addDrawableChild(pestEspSeeThroughButton);
+        y += BUTTON_HEIGHT + PADDING;
+
+        pestEspFilledButton = CyclingButtonWidget.builder(
+                        (Boolean val) -> val ? Text.literal("Filled") : Text.literal("Overlay"))
+                .values(Boolean.TRUE, Boolean.FALSE)
+                .initially(config.pestEspFilled)
+                .build(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT,
+                        Text.translatable("gui.just-farming.pest_esp_filled_label"));
+        this.addDrawableChild(pestEspFilledButton);
         y += BUTTON_HEIGHT + PADDING;
 
         pestTracerButton = CyclingButtonWidget.builder(
@@ -322,7 +347,10 @@ public class FarmingConfigScreen extends Screen {
         config.rewarpDelayRandom   = swapRandomSlider.getRandomValue();
         config.pestHighlightEnabled = pestHighlightButton.getValue();
         config.pestLabelsEnabled    = pestLabelsButton.getValue();
+        config.pestTitleScale       = titleScaleSlider.getTitleScaleValue();
         config.pestEspEnabled       = pestEspButton.getValue();
+        config.pestEspSeeThrough    = pestEspSeeThroughButton.getValue();
+        config.pestEspFilled        = pestEspFilledButton.getValue();
         config.pestTracerEnabled    = pestTracerButton.getValue();
         macroManager.setConfig(config);
     }
@@ -460,6 +488,34 @@ public class FarmingConfigScreen extends Screen {
         @Override
         protected void updateMessage() {
             setMessage(Text.literal(String.format("Swap Randomization: %d ms", getRandomValue())));
+        }
+
+        @Override
+        protected void applyValue() {}
+    }
+
+    /**
+     * Slider for the floating pest plot title scale (0.5–6.0).
+     */
+    private static class TitleScaleSlider extends SliderWidget {
+
+        private static final float MIN = 0.5f;
+        private static final float MAX = 6.0f;
+
+        TitleScaleSlider(int x, int y, int width, int height, float initialValue) {
+            super(x, y, width, height,
+                    Text.empty(),
+                    (double) (initialValue - MIN) / (MAX - MIN));
+            updateMessage();
+        }
+
+        float getTitleScaleValue() {
+            return MIN + (float) value * (MAX - MIN);
+        }
+
+        @Override
+        protected void updateMessage() {
+            setMessage(Text.literal(String.format("Pest Title Scale: %.2f", getTitleScaleValue())));
         }
 
         @Override

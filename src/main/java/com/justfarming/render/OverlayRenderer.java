@@ -4,11 +4,19 @@ import com.justfarming.config.FarmingConfig;
 import com.justfarming.pest.GardenPlot;
 import com.justfarming.pest.PestDetector;
 import com.justfarming.pest.PestEntityDetector;
+import com.mojang.blaze3d.pipeline.BlendFunction;
+import com.mojang.blaze3d.pipeline.RenderPipeline;
+import com.mojang.blaze3d.platform.DepthTestFunction;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
+import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.RenderLayer;
+import net.minecraft.client.render.RenderPhase;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
+import net.minecraft.client.render.VertexFormats;
+import net.minecraft.client.render.VertexRendering;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.util.math.MatrixStack;
@@ -18,6 +26,7 @@ import net.minecraft.util.math.Vec3d;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalDouble;
 import java.util.Set;
 
 /**
@@ -51,8 +60,37 @@ public class OverlayRenderer {
     // Semi-transparent black background behind floating text for readability
     private static final int TEXT_BG_COLOR = 0x40000000;
 
-    // Scale for the large floating plot title (SkyHanni-style)
-    private static final float TITLE_SCALE = 2.25f;
+    // See-through wireframe ESP: lines rendered with no depth test (through blocks)
+    private static final RenderLayer PEST_ESP_SEE_THROUGH_LINES = RenderLayer.of(
+            "pest_esp_see_through_lines",
+            1536,
+            RenderPipeline.builder(RenderPipelines.RENDERTYPE_LINES_SNIPPET)
+                    .withLocation("just-farming:pest_esp_see_through_lines")
+                    .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+                    .withDepthWrite(false)
+                    .build(),
+            RenderLayer.MultiPhaseParameters.builder()
+                    .layering(RenderPhase.VIEW_OFFSET_Z_LAYERING)
+                    .target(RenderPhase.ITEM_ENTITY_TARGET)
+                    .lineWidth(new RenderPhase.LineWidth(OptionalDouble.empty()))
+                    .build(false));
+
+    // See-through filled ESP: translucent quads rendered with no depth test
+    private static final RenderLayer PEST_ESP_SEE_THROUGH_FILLED = RenderLayer.of(
+            "pest_esp_see_through_filled",
+            256,
+            false,
+            true,
+            RenderPipeline.builder(RenderPipelines.POSITION_COLOR_SNIPPET)
+                    .withLocation("just-farming:pest_esp_see_through_filled")
+                    .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+                    .withDepthWrite(false)
+                    .withBlend(BlendFunction.TRANSLUCENT)
+                    .withVertexFormat(VertexFormats.POSITION_COLOR, VertexFormat.DrawMode.QUADS)
+                    .build(),
+            RenderLayer.MultiPhaseParameters.builder()
+                    .target(RenderPhase.ITEM_ENTITY_TARGET)
+                    .build(false));
 
     private final FarmingConfig       config;
     private final PestDetector        pestDetector;
@@ -80,11 +118,28 @@ public class OverlayRenderer {
         // ── Pest entity ESP & Tracer ──────────────────────────────────────────
         List<PestEntityDetector.PestEntity> pests = pestEntityDetector.getDetectedPests();
         if (!pests.isEmpty() && (config.pestEspEnabled || config.pestTracerEnabled)) {
-            VertexConsumer pestLines = consumers.getBuffer(RenderLayer.getLines());
+            boolean seeThrough = config.pestEspSeeThrough;
+
+            // Choose render layer based on see-through setting
+            RenderLayer linesLayer = seeThrough ? PEST_ESP_SEE_THROUGH_LINES : RenderLayer.getLines();
+            VertexConsumer pestLines = consumers.getBuffer(linesLayer);
             MatrixStack.Entry entry = matrices.peek();
 
             for (PestEntityDetector.PestEntity pest : pests) {
                 if (config.pestEspEnabled) {
+                    // Filled box (rendered under wireframe)
+                    if (config.pestEspFilled) {
+                        Box box = pest.boundingBox();
+                        RenderLayer filledLayer = seeThrough
+                                ? PEST_ESP_SEE_THROUGH_FILLED
+                                : RenderLayer.getDebugFilledBox();
+                        VertexConsumer filledBuffer = consumers.getBuffer(filledLayer);
+                        VertexRendering.drawFilledBox(matrices, filledBuffer,
+                                box.minX - cx, box.minY - cy, box.minZ - cz,
+                                box.maxX - cx, box.maxY - cy, box.maxZ - cz,
+                                1.0f, 0.267f, 0.267f, 0.4f);
+                    }
+                    // Wireframe overlay
                     renderEspBox(entry, pestLines, pest.boundingBox(), cx, cy, cz, COLOR_ESP);
                 }
                 if (config.pestTracerEnabled) {
@@ -130,6 +185,7 @@ public class OverlayRenderer {
         if (config.pestLabelsEnabled) {
             MinecraftClient mc = MinecraftClient.getInstance();
             Map<String, Integer> pestCounts = pestDetector.getPestCounts();
+            float titleScale = config.pestTitleScale;
             for (Map.Entry<String, double[]> e : validPlots) {
                 double[] b = e.getValue();
                 double centreX = (b[0] + b[3]) / 2.0;
@@ -142,7 +198,7 @@ public class OverlayRenderer {
                 matrices.push();
                 matrices.translate(centreX - cx, titleY - cy, centreZ - cz);
                 matrices.multiply(camera.getRotation());
-                matrices.scale(TITLE_SCALE, -TITLE_SCALE, TITLE_SCALE);
+                matrices.scale(titleScale, -titleScale, titleScale);
                 org.joml.Matrix4f titleMatrix = matrices.peek().getPositionMatrix();
                 float titleHalf = mc.textRenderer.getWidth(title) / 2.0f;
                 mc.textRenderer.draw(title, -titleHalf, 0, LABEL_COLOR, false,
@@ -157,7 +213,7 @@ public class OverlayRenderer {
                     matrices.push();
                     matrices.translate(centreX - cx, subtitleY - cy, centreZ - cz);
                     matrices.multiply(camera.getRotation());
-                    float subtitleScale = TITLE_SCALE * 0.6f;
+                    float subtitleScale = titleScale * 0.6f;
                     matrices.scale(subtitleScale, -subtitleScale, subtitleScale);
                     org.joml.Matrix4f subMatrix = matrices.peek().getPositionMatrix();
                     float subHalf = mc.textRenderer.getWidth(subtitle) / 2.0f;
