@@ -52,7 +52,7 @@ public class OverlayRenderer {
     private static final int TEXT_BG_COLOR = 0x40000000;
 
     // Scale for the large floating plot title (SkyHanni-style)
-    private static final float TITLE_SCALE = 0.75f;
+    private static final float TITLE_SCALE = 2.25f;
 
     private final FarmingConfig       config;
     private final PestDetector        pestDetector;
