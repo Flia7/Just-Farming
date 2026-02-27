@@ -45,7 +45,7 @@ public class PestEntityDetector {
     private static final double DEFAULT_BOX_HALF_WIDTH = 0.4;
 
     /** Height of the fallback bounding box applied to zero-size entities. */
-    private static final double DEFAULT_BOX_HEIGHT = 1.8;
+    private static final double DEFAULT_BOX_HEIGHT = 0.8;
 
     /** Cached list of detected pest entities, refreshed each tick. */
     private List<PestEntity> detectedPests = Collections.emptyList();
