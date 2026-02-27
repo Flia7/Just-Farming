@@ -3,6 +3,7 @@ package com.justfarming;
 import com.justfarming.config.FarmingConfig;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.Vec3d;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -111,6 +112,17 @@ public class MacroManager {
      */
     public boolean shouldBreak() {
         return running && (state == MacroState.BACKWARD_LEFT || state == MacroState.FORWARD_LEFT);
+    }
+
+    /**
+     * Returns {@code true} when the macro is in the FORWARD_LEFT state,
+     * {@code false} when in BACKWARD_LEFT.
+     *
+     * <p>Used by input-layer mixins to determine which direction to apply when
+     * re-asserting movement inputs while a GUI screen is open.
+     */
+    public boolean isMovingForward() {
+        return running && state == MacroState.FORWARD_LEFT;
     }
 
     /**
@@ -330,6 +342,21 @@ public class MacroManager {
         } else {
             client.options.backKey.setPressed(true);
             client.options.forwardKey.setPressed(false);
+        }
+
+        // ---- Block breaking when a GUI screen is open ----
+        // Vanilla's handleInputEvents() passes breaking=false to handleBlockBreaking()
+        // whenever currentScreen != null, which eventually calls cancelBlockBreaking().
+        // The MinecraftClientMixin @ModifyArg forces breaking=true, but if the
+        // crosshair target is null the else-branch still fires and cancels breaking.
+        // Calling updateBlockBreakingProgress() here guarantees that breaking
+        // continues even when any GUI is open, without affecting the normal path
+        // (no screen) where vanilla already handles it correctly.
+        if (client.currentScreen != null
+                && client.interactionManager != null
+                && client.crosshairTarget instanceof BlockHitResult blockHit) {
+            client.interactionManager.updateBlockBreakingProgress(
+                    blockHit.getBlockPos(), blockHit.getSide());
         }
 
         // ---- Stuck detection (end of row) ----
