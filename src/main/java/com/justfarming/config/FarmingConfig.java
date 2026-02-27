@@ -62,6 +62,23 @@ public class FarmingConfig {
     public boolean pestEspEnabled = true;
 
     /**
+     * Whether the pest ESP renders through blocks (no depth test).
+     */
+    public boolean pestEspSeeThrough = true;
+
+    /**
+     * Whether the pest ESP renders as filled transparent boxes in addition to
+     * the wireframe overlay.
+     */
+    public boolean pestEspFilled = false;
+
+    /**
+     * Scale multiplier for the large floating plot title in the world.
+     * Adjust to make the "Plot N" label larger or smaller.
+     */
+    public float pestTitleScale = 2.25f;
+
+    /**
      * Whether to draw tracer lines from the player to each pest mob entity.
      */
     public boolean pestTracerEnabled = true;

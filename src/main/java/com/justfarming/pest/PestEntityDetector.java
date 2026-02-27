@@ -76,7 +76,11 @@ public class PestEntityDetector {
                     // Expand zero-size bounding boxes (e.g. marker ArmorStands used
                     // as floating nametags) to a minimum visible size for ESP rendering.
                     if (box.getAverageSideLength() < MIN_BOX_SIZE) {
-                        double x = entity.getX(), y = entity.getY(), z = entity.getZ();
+                        double x = entity.getX(), z = entity.getZ();
+                        // TextDisplay nametag entities hover ~1 block above the actual pest mob;
+                        // subtract that offset so the ESP box aligns with the pest itself.
+                        double y = entity.getY()
+                                - (entity instanceof DisplayEntity.TextDisplayEntity ? 1.0 : 0.0);
                         box = new Box(x - DEFAULT_BOX_HALF_WIDTH, y, z - DEFAULT_BOX_HALF_WIDTH,
                                       x + DEFAULT_BOX_HALF_WIDTH, y + DEFAULT_BOX_HEIGHT,
                                       z + DEFAULT_BOX_HALF_WIDTH);
