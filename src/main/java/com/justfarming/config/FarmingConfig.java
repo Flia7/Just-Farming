@@ -77,6 +77,12 @@ public class FarmingConfig {
      */
     public boolean pestTracerEnabled = true;
 
+    /**
+     * Whether to release (ungrab) the mouse cursor while the macro is running,
+     * so the user can interact with other windows on their desktop.
+     */
+    public boolean unlockedMouseEnabled = false;
+
     // --- Rewarp trigger position ---
 
     /** Whether a rewarp position has been set. */

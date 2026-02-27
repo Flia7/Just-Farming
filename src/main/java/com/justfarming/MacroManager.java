@@ -142,6 +142,9 @@ public class MacroManager {
         detectStartPos = null;
         lastPos = null;
         stuckTicks = 0;
+        if (config.unlockedMouseEnabled) {
+            client.mouse.unlockCursor();
+        }
         LOGGER.info("[JustFarming] Macro started. Crop: {}", config.selectedCrop);
     }
 
@@ -151,6 +154,9 @@ public class MacroManager {
         running = false;
         state = MacroState.IDLE;
         releaseKeys();
+        if (config.unlockedMouseEnabled && client.currentScreen == null) {
+            client.mouse.lockCursor();
+        }
         LOGGER.info("[JustFarming] Macro stopped.");
     }
 
@@ -200,12 +206,6 @@ public class MacroManager {
         ClientPlayerEntity player = client.player;
         if (player == null || client.world == null) {
             stop();
-            return;
-        }
-
-        // Pause the macro while any screen (chat, ESC menu, inventory, etc.) is open
-        if (client.currentScreen != null) {
-            releaseKeys();
             return;
         }
 
