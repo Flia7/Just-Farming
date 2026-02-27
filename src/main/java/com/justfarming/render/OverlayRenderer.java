@@ -60,37 +60,52 @@ public class OverlayRenderer {
     // Semi-transparent black background behind floating text for readability
     private static final int TEXT_BG_COLOR = 0x40000000;
 
-    // See-through wireframe ESP: lines rendered with no depth test (through blocks)
-    private static final RenderLayer PEST_ESP_SEE_THROUGH_LINES = RenderLayer.of(
-            "pest_esp_see_through_lines",
-            1536,
-            RenderPipeline.builder(RenderPipelines.RENDERTYPE_LINES_SNIPPET)
-                    .withLocation("just-farming:pest_esp_see_through_lines")
-                    .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
-                    .withDepthWrite(false)
-                    .build(),
-            RenderLayer.MultiPhaseParameters.builder()
-                    .layering(RenderPhase.VIEW_OFFSET_Z_LAYERING)
-                    .target(RenderPhase.ITEM_ENTITY_TARGET)
-                    .lineWidth(new RenderPhase.LineWidth(OptionalDouble.empty()))
-                    .build(false));
+    // See-through wireframe ESP: lines rendered with no depth test (through blocks).
+    // Lazily initialized on first render call to avoid accessing RenderSystem.getDevice()
+    // before the GPU is ready (which would crash during onInitializeClient).
+    // Safe: render() is always invoked on the single render thread.
+    private RenderLayer pestEspSeeThroughLines;
+    private RenderLayer pestEspSeeThroughFilled;
 
-    // See-through filled ESP: translucent quads rendered with no depth test
-    private static final RenderLayer PEST_ESP_SEE_THROUGH_FILLED = RenderLayer.of(
-            "pest_esp_see_through_filled",
-            256,
-            false,
-            true,
-            RenderPipeline.builder(RenderPipelines.POSITION_COLOR_SNIPPET)
-                    .withLocation("just-farming:pest_esp_see_through_filled")
-                    .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
-                    .withDepthWrite(false)
-                    .withBlend(BlendFunction.TRANSLUCENT)
-                    .withVertexFormat(VertexFormats.POSITION_COLOR, VertexFormat.DrawMode.QUADS)
-                    .build(),
-            RenderLayer.MultiPhaseParameters.builder()
-                    .target(RenderPhase.ITEM_ENTITY_TARGET)
-                    .build(false));
+    private RenderLayer getPestEspSeeThroughLines() {
+        if (pestEspSeeThroughLines == null) {
+            pestEspSeeThroughLines = RenderLayer.of(
+                    "pest_esp_see_through_lines",
+                    1536,
+                    RenderPipeline.builder(RenderPipelines.RENDERTYPE_LINES_SNIPPET)
+                            .withLocation("just-farming:pest_esp_see_through_lines")
+                            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+                            .withDepthWrite(false)
+                            .build(),
+                    RenderLayer.MultiPhaseParameters.builder()
+                            .layering(RenderPhase.VIEW_OFFSET_Z_LAYERING)
+                            .target(RenderPhase.ITEM_ENTITY_TARGET)
+                            .lineWidth(new RenderPhase.LineWidth(OptionalDouble.empty()))
+                            .build(false));
+        }
+        return pestEspSeeThroughLines;
+    }
+
+    private RenderLayer getPestEspSeeThroughFilled() {
+        if (pestEspSeeThroughFilled == null) {
+            pestEspSeeThroughFilled = RenderLayer.of(
+                    "pest_esp_see_through_filled",
+                    256,
+                    false,
+                    true,
+                    RenderPipeline.builder(RenderPipelines.POSITION_COLOR_SNIPPET)
+                            .withLocation("just-farming:pest_esp_see_through_filled")
+                            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+                            .withDepthWrite(false)
+                            .withBlend(BlendFunction.TRANSLUCENT)
+                            .withVertexFormat(VertexFormats.POSITION_COLOR, VertexFormat.DrawMode.QUADS)
+                            .build(),
+                    RenderLayer.MultiPhaseParameters.builder()
+                            .target(RenderPhase.ITEM_ENTITY_TARGET)
+                            .build(false));
+        }
+        return pestEspSeeThroughFilled;
+    }
 
     private final FarmingConfig       config;
     private final PestDetector        pestDetector;
@@ -121,7 +136,7 @@ public class OverlayRenderer {
             boolean seeThrough = config.pestEspSeeThrough;
 
             // Choose render layer based on see-through setting
-            RenderLayer linesLayer = seeThrough ? PEST_ESP_SEE_THROUGH_LINES : RenderLayer.getLines();
+            RenderLayer linesLayer = seeThrough ? getPestEspSeeThroughLines() : RenderLayer.getLines();
             VertexConsumer pestLines = consumers.getBuffer(linesLayer);
             MatrixStack.Entry entry = matrices.peek();
 
@@ -131,7 +146,7 @@ public class OverlayRenderer {
                     if (config.pestEspFilled) {
                         Box box = pest.boundingBox();
                         RenderLayer filledLayer = seeThrough
-                                ? PEST_ESP_SEE_THROUGH_FILLED
+                                ? getPestEspSeeThroughFilled()
                                 : RenderLayer.getDebugFilledBox();
                         VertexConsumer filledBuffer = consumers.getBuffer(filledLayer);
                         VertexRendering.drawFilledBox(matrices, filledBuffer,
