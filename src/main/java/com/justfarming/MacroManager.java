@@ -345,14 +345,18 @@ public class MacroManager {
         }
 
         // ---- Block breaking ----
-        // Vanilla's handleInputEvents() passes breaking=false to handleBlockBreaking()
-        // whenever currentScreen != null, which eventually calls cancelBlockBreaking().
-        // The MinecraftClientMixin @ModifyArg forces breaking=true, but if the
-        // crosshair target is null the else-branch still fires and cancels breaking.
-        // Calling updateBlockBreakingProgress() here guarantees that breaking
-        // continues regardless of whether a GUI screen is open or closed.
-        if (client.interactionManager != null
-                && client.crosshairTarget instanceof BlockHitResult blockHit) {
+        // When no screen is open, Minecraft's handleInputEvents() calls
+        // handleBlockBreaking(true) naturally (attackKey.isPressed() + isCursorLocked()),
+        // which in turn calls updateBlockBreakingProgress(). Duplicating that call here
+        // would cause double packets per tick and spurious START_DESTROY_BLOCK packets
+        // for already-broken (air) blocks – both detectable by server-side anti-cheat.
+        //
+        // When a screen IS open, handleInputEvents() is skipped entirely by Minecraft,
+        // so we drive breaking directly in that case only.
+        if (client.currentScreen != null
+                && client.interactionManager != null
+                && client.crosshairTarget instanceof BlockHitResult blockHit
+                && !client.world.getBlockState(blockHit.getBlockPos()).isAir()) {
             client.interactionManager.updateBlockBreakingProgress(
                     blockHit.getBlockPos(), blockHit.getSide());
         }
