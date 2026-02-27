@@ -136,7 +136,7 @@ public class OverlayRenderer {
                     VertexRendering.drawFilledBox(matrices, filledBuffer,
                             box.minX - cx, box.minY - cy, box.minZ - cz,
                             box.maxX - cx, box.maxY - cy, box.maxZ - cz,
-                            1.0f, 0.267f, 0.267f, 0.4f);
+                            1.0f, 0.267f, 0.267f, 1.0f);
                 }
             }
 
