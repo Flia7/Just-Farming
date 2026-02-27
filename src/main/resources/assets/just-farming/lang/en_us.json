@@ -10,6 +10,8 @@
   "gui.just-farming.yaw_label": "Yaw Angle:",
   "gui.just-farming.pest_highlight_label": "Pest Plot Highlight:",
   "gui.just-farming.pest_labels_label": "Pest Plot Labels:",
+  "gui.just-farming.pest_esp_label": "Pest ESP:",
+  "gui.just-farming.pest_tracer_label": "Pest Tracer:",
   "gui.just-farming.freelook_on": "Freelook: ON  (L to toggle)",
   "gui.just-farming.freelook_off": "Freelook: OFF  (L to toggle)",
   "gui.just-farming.set_rewarp": "Set Rewarp Here",

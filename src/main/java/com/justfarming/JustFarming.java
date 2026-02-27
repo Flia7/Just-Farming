@@ -3,6 +3,7 @@ package com.justfarming;
 import com.justfarming.config.FarmingConfig;
 import com.justfarming.gui.FarmingConfigScreen;
 import com.justfarming.pest.PestDetector;
+import com.justfarming.pest.PestEntityDetector;
 import com.justfarming.render.OverlayRenderer;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
@@ -40,6 +41,7 @@ public class JustFarming implements ClientModInitializer {
     private static FarmingConfig config;
     private static MacroManager macroManager;
     private static PestDetector pestDetector;
+    private static PestEntityDetector pestEntityDetector;
 
     // Keybindings
     private static KeyBinding toggleMacroKey;
@@ -57,7 +59,8 @@ public class JustFarming implements ClientModInitializer {
         // Create macro manager and pest detector
         macroManager = new MacroManager(net.minecraft.client.MinecraftClient.getInstance(), config);
         pestDetector = new PestDetector();
-        final OverlayRenderer overlayRenderer = new OverlayRenderer(config, pestDetector);
+        pestEntityDetector = new PestEntityDetector();
+        final OverlayRenderer overlayRenderer = new OverlayRenderer(config, pestDetector, pestEntityDetector);
 
         // Register keybindings
         toggleMacroKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
@@ -144,6 +147,7 @@ public class JustFarming implements ClientModInitializer {
 
             // Update pest detection every tick
             pestDetector.update(client);
+            pestEntityDetector.update(client);
 
             // Notify the player when pests appear in new plots
             if (client.player != null) {

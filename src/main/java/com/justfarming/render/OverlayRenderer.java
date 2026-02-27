@@ -3,6 +3,7 @@ package com.justfarming.render;
 import com.justfarming.config.FarmingConfig;
 import com.justfarming.pest.GardenPlot;
 import com.justfarming.pest.PestDetector;
+import com.justfarming.pest.PestEntityDetector;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.RenderLayer;
@@ -11,6 +12,7 @@ import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 
 import java.util.ArrayList;
@@ -40,25 +42,31 @@ public class OverlayRenderer {
     private static final int COLOR_RED      = 0xFFFF0000;
     private static final int COLOR_DARK_RED = 0xFF8B0000;
     private static final int COLOR_GOLD     = 0xFFFFAD00;
+    private static final int COLOR_GREEN    = 0xFF00FF00;
+    private static final int COLOR_ESP      = 0xFFFF4444;
 
     // Label colour (ARGB)
     private static final int LABEL_COLOR = 0xFFFF3333;
 
-    private final FarmingConfig config;
-    private final PestDetector  pestDetector;
+    // Semi-transparent black background behind floating text for readability
+    private static final int TEXT_BG_COLOR = 0x40000000;
 
-    public OverlayRenderer(FarmingConfig config, PestDetector pestDetector) {
-        this.config       = config;
-        this.pestDetector = pestDetector;
+    // Scale for the large floating plot title (SkyHanni-style)
+    private static final float TITLE_SCALE = 0.25f;
+
+    private final FarmingConfig       config;
+    private final PestDetector        pestDetector;
+    private final PestEntityDetector  pestEntityDetector;
+
+    public OverlayRenderer(FarmingConfig config, PestDetector pestDetector,
+                           PestEntityDetector pestEntityDetector) {
+        this.config             = config;
+        this.pestDetector       = pestDetector;
+        this.pestEntityDetector = pestEntityDetector;
     }
 
     /** Called by the WorldRenderEvents.AFTER_ENTITIES callback. */
     public void render(WorldRenderContext context) {
-        if (!config.pestHighlightEnabled) return;
-
-        Set<String> pestPlots = pestDetector.getPestPlots();
-        if (pestPlots.isEmpty()) return;
-
         Camera camera = context.gameRenderer().getCamera();
         if (camera == null) return;
         Vec3d camPos = camera.getPos();
@@ -68,6 +76,33 @@ public class OverlayRenderer {
         if (matrices == null || consumers == null) return;
 
         double cx = camPos.x, cy = camPos.y, cz = camPos.z;
+
+        // ── Pest entity ESP & Tracer ──────────────────────────────────────────
+        List<PestEntityDetector.PestEntity> pests = pestEntityDetector.getDetectedPests();
+        if (!pests.isEmpty() && (config.pestEspEnabled || config.pestTracerEnabled)) {
+            VertexConsumer pestLines = consumers.getBuffer(RenderLayer.getLines());
+            MatrixStack.Entry entry = matrices.peek();
+
+            for (PestEntityDetector.PestEntity pest : pests) {
+                if (config.pestEspEnabled) {
+                    renderEspBox(entry, pestLines, pest.boundingBox(), cx, cy, cz, COLOR_ESP);
+                }
+                if (config.pestTracerEnabled) {
+                    drawLine(entry, pestLines,
+                            0, 0, 0, // camera-relative origin (player eye)
+                            pest.position().x - cx,
+                            pest.position().y - cy,
+                            pest.position().z - cz,
+                            COLOR_GREEN);
+                }
+            }
+        }
+
+        // ── Plot borders & labels ─────────────────────────────────────────────
+        if (!config.pestHighlightEnabled) return;
+
+        Set<String> pestPlots = pestDetector.getPestPlots();
+        if (pestPlots.isEmpty()) return;
 
         // Determine which plot the player is in (if any)
         String playerPlot = GardenPlot.getPlotNameAt(camPos.x, camPos.z);
@@ -79,11 +114,7 @@ public class OverlayRenderer {
         }
         if (validPlots.isEmpty()) return;
 
-        // Render all plot borders first using a single LINES buffer, then render
-        // all labels. Mixing consumers.getBuffer(otherLayer) calls (e.g. text)
-        // inside the same loop would cause the Immediate provider to flush and
-        // end the LINES BufferBuilder, leading to "Not building!" crashes on
-        // subsequent iterations.
+        // Render all plot borders using a single LINES buffer
         VertexConsumer lineBuffer = consumers.getBuffer(RenderLayer.getLines());
 
         for (Map.Entry<String, double[]> e : validPlots) {
@@ -95,29 +126,46 @@ public class OverlayRenderer {
                     lineColor, cornerColor);
         }
 
-        // Draw floating plot-number labels after all border geometry is submitted
-        // so that requesting a text render layer does not prematurely flush the
-        // LINES buffer that was used above.
+        // Draw large floating title and smaller label for each infested plot
         if (config.pestLabelsEnabled) {
             MinecraftClient mc = MinecraftClient.getInstance();
             Map<String, Integer> pestCounts = pestDetector.getPestCounts();
             for (Map.Entry<String, double[]> e : validPlots) {
                 double[] b = e.getValue();
-                double labelX = (b[0] + b[3]) / 2.0;
-                double labelY = b[4] + 3.0; // slightly above the plot top
-                double labelZ = (b[2] + b[5]) / 2.0;
+                double centreX = (b[0] + b[3]) / 2.0;
+                double centreZ = (b[2] + b[5]) / 2.0;
                 Integer count = pestCounts.get(e.getKey());
-                String label = "Plot " + e.getKey()
-                        + (count != null ? " " + PestDetector.formatPestCount(count) : "");
+
+                // --- Large title: "Plot <N>" in the middle of the plot ---
+                String title = "Plot " + e.getKey();
+                double titleY = (b[1] + b[4]) / 2.0 + 5.0;
                 matrices.push();
-                matrices.translate(labelX - cx, labelY - cy, labelZ - cz);
+                matrices.translate(centreX - cx, titleY - cy, centreZ - cz);
                 matrices.multiply(camera.getRotation());
-                matrices.scale(-0.03f, -0.03f, 0.03f);
-                org.joml.Matrix4f posMatrix = matrices.peek().getPositionMatrix();
-                float halfWidth = mc.textRenderer.getWidth(label) / 2.0f;
-                mc.textRenderer.draw(label, -halfWidth, 0, LABEL_COLOR, false, posMatrix,
-                        consumers, TextRenderer.TextLayerType.SEE_THROUGH, 0, 0xF000F0);
+                matrices.scale(-TITLE_SCALE, -TITLE_SCALE, TITLE_SCALE);
+                org.joml.Matrix4f titleMatrix = matrices.peek().getPositionMatrix();
+                float titleHalf = mc.textRenderer.getWidth(title) / 2.0f;
+                mc.textRenderer.draw(title, -titleHalf, 0, LABEL_COLOR, false,
+                        titleMatrix, consumers, TextRenderer.TextLayerType.SEE_THROUGH,
+                        TEXT_BG_COLOR, 0xF000F0);
                 matrices.pop();
+
+                // --- Pest count subtitle below the title ---
+                if (count != null) {
+                    String subtitle = PestDetector.formatPestCount(count);
+                    double subtitleY = titleY - 3.0;
+                    matrices.push();
+                    matrices.translate(centreX - cx, subtitleY - cy, centreZ - cz);
+                    matrices.multiply(camera.getRotation());
+                    float subtitleScale = TITLE_SCALE * 0.6f;
+                    matrices.scale(-subtitleScale, -subtitleScale, subtitleScale);
+                    org.joml.Matrix4f subMatrix = matrices.peek().getPositionMatrix();
+                    float subHalf = mc.textRenderer.getWidth(subtitle) / 2.0f;
+                    mc.textRenderer.draw(subtitle, -subHalf, 0, 0xFFFFAA00, false,
+                            subMatrix, consumers, TextRenderer.TextLayerType.SEE_THROUGH,
+                            TEXT_BG_COLOR, 0xF000F0);
+                    matrices.pop();
+                }
             }
         }
     }
@@ -192,5 +240,33 @@ public class OverlayRenderer {
         lines.vertex(entry, (float) x2, (float) y2, (float) z2)
                 .color(color)
                 .normal(entry, nx, ny, nz);
+    }
+
+    /**
+     * Renders a wireframe bounding box (ESP) around a pest entity.
+     */
+    private void renderEspBox(MatrixStack.Entry entry, VertexConsumer lines,
+                              Box box, double cx, double cy, double cz,
+                              int color) {
+        double x0 = box.minX - cx, y0 = box.minY - cy, z0 = box.minZ - cz;
+        double x1 = box.maxX - cx, y1 = box.maxY - cy, z1 = box.maxZ - cz;
+
+        // Bottom face
+        drawLine(entry, lines, x0, y0, z0, x1, y0, z0, color);
+        drawLine(entry, lines, x1, y0, z0, x1, y0, z1, color);
+        drawLine(entry, lines, x1, y0, z1, x0, y0, z1, color);
+        drawLine(entry, lines, x0, y0, z1, x0, y0, z0, color);
+
+        // Top face
+        drawLine(entry, lines, x0, y1, z0, x1, y1, z0, color);
+        drawLine(entry, lines, x1, y1, z0, x1, y1, z1, color);
+        drawLine(entry, lines, x1, y1, z1, x0, y1, z1, color);
+        drawLine(entry, lines, x0, y1, z1, x0, y1, z0, color);
+
+        // Vertical edges
+        drawLine(entry, lines, x0, y0, z0, x0, y1, z0, color);
+        drawLine(entry, lines, x1, y0, z0, x1, y1, z0, color);
+        drawLine(entry, lines, x1, y0, z1, x1, y1, z1, color);
+        drawLine(entry, lines, x0, y0, z1, x0, y1, z1, color);
     }
 }
