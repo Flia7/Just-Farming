@@ -126,15 +126,33 @@ public class OverlayRenderer {
                 }
             }
 
-            // Tracer lines: always see-through, draw from camera to centre of ESP box
+            // Tracer lines: always see-through, draw from a point in front of the
+            // camera to the centre of each ESP box.
+            //
+            // Drawing from the exact camera position (0,0,0) clips against the near
+            // frustum plane and produces an invisible line.  Following Wurst7's
+            // TracerHack approach, we instead start 10 blocks along the camera's
+            // look direction so the start vertex is always well inside the frustum.
             if (config.pestTracerEnabled) {
                 VertexConsumer tracerLines = consumers.getBuffer(PEST_TRACER_SEE_THROUGH_LINES);
+
+                // Compute camera look direction using yaw/pitch (Minecraft convention:
+                //   yaw 0 = south (+Z), pitch positive = looking down).
+                float yawRad   = (float) Math.toRadians(camera.getYaw());
+                float pitchRad = (float) Math.toRadians(camera.getPitch());
+                float cosP     = (float) Math.cos(pitchRad);
+                double tracerStartX = -Math.sin(yawRad) * cosP * 10.0;
+                double tracerStartY = -Math.sin(pitchRad)       * 10.0;
+                double tracerStartZ =  Math.cos(yawRad) * cosP * 10.0;
+
                 for (PestEntityDetector.PestEntity pest : pests) {
                     Box espBox = adjustedEspBox(pest.boundingBox());
                     double targetX = (espBox.minX + espBox.maxX) / 2.0 - cx;
                     double targetY = (espBox.minY + espBox.maxY) / 2.0 - cy;
                     double targetZ = (espBox.minZ + espBox.maxZ) / 2.0 - cz;
-                    drawLine(entry, tracerLines, 0, 0, 0, targetX, targetY, targetZ, COLOR_GREEN);
+                    drawLine(entry, tracerLines,
+                            tracerStartX, tracerStartY, tracerStartZ,
+                            targetX, targetY, targetZ, COLOR_GREEN);
                 }
             }
         }
