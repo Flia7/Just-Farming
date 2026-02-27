@@ -2,6 +2,11 @@ package com.justfarming.pest;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.PlayerListEntry;
+import net.minecraft.scoreboard.Scoreboard;
+import net.minecraft.scoreboard.ScoreboardDisplaySlot;
+import net.minecraft.scoreboard.ScoreboardEntry;
+import net.minecraft.scoreboard.ScoreboardObjective;
+import net.minecraft.scoreboard.Team;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -64,6 +69,23 @@ public class PestDetector {
             if (entry.getDisplayName() == null) continue;
             String text = entry.getDisplayName().getString();
             parseEntry(text);
+        }
+
+        // Read scoreboard sidebar (per-plot pest counts: "Plot - N ൠ xM")
+        if (client.world != null) {
+            Scoreboard sb = client.world.getScoreboard();
+            ScoreboardObjective sidebar = sb.getObjectiveForSlot(ScoreboardDisplaySlot.SIDEBAR);
+            if (sidebar != null) {
+                for (ScoreboardEntry e : sb.getScoreboardEntries(sidebar)) {
+                    // Try the entry's own display text first
+                    parseEntry(e.name().getString());
+                    // Also try the team-decorated text (prefix + owner + suffix)
+                    Team team = sb.getScoreHolderTeam(e.owner());
+                    if (team != null) {
+                        parseEntry(team.getPrefix().getString() + e.owner() + team.getSuffix().getString());
+                    }
+                }
+            }
         }
 
         // Detect plots that have newly gained pests since the last tick
