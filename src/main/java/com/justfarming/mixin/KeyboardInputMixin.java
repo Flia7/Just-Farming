@@ -69,5 +69,10 @@ public abstract class KeyboardInputMixin extends Input {
         // With forwardKey=false, backKey=true  → y = -1.0f (backward)
         // Normalize to match vanilla KeyboardInput.tick() behavior.
         this.movementVector = new Vec2f(1.0f, forward ? 1.0f : -1.0f).normalize();
+
+        // Also refresh the KeyBinding press states so that any code path that reads
+        // isPressed() directly (e.g. handleInputEvents in the same or next tick) sees
+        // the correct values even if another unpressAll() fired after onTick().
+        mm.reapplyMovementKeys();
     }
 }
