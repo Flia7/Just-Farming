@@ -51,6 +51,17 @@ public class FarmingConfig {
      */
     public boolean pestLabelsEnabled = true;
 
+    /**
+     * Whether to draw ESP (highlighted bounding boxes) around pest mob
+     * entities, visible through walls.
+     */
+    public boolean pestEspEnabled = true;
+
+    /**
+     * Whether to draw tracer lines from the player to each pest mob entity.
+     */
+    public boolean pestTracerEnabled = true;
+
     // --- Rewarp trigger position ---
 
     /** Whether a rewarp position has been set. */
