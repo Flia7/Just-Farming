@@ -22,14 +22,19 @@ import net.minecraft.text.Text;
  */
 public class FarmingConfigScreen extends Screen {
 
-    // ── Layout ────────────────────────────────────────────────────────────────
+    // ── Layout (natural/maximum dimensions) ──────────────────────────────────
     private static final int PANEL_WIDTH    = 320;
-    private static final int PANEL_HEIGHT   = 540;
+    private static final int PANEL_HEIGHT   = 490;
     private static final int HEADER_HEIGHT  = 46;
     private static final int TAB_BAR_HEIGHT = 22;
     private static final int BUTTON_WIDTH   = 240;
     private static final int BUTTON_HEIGHT  = 20;
     private static final int PADDING        = 6;
+
+    // ── Dynamic layout (computed in init, used in render) ─────────────────────
+    private float scale = 1.0f;
+    private int panelX, panelY, panelW, panelH;
+    private int hdrH, tabH, bw, bh, pad, sectionLH;
 
     // ── Colour palette (modern dark theme) ────────────────────────────────────
     private static final int COL_BG            = 0xF00E1018;
@@ -72,7 +77,6 @@ public class FarmingConfigScreen extends Screen {
     private TitleScaleSlider              titleScaleSlider;
     private CyclingButtonWidget<Boolean>  pestEspButton;
     private CyclingButtonWidget<Boolean>  pestEspSeeThroughButton;
-    private CyclingButtonWidget<Boolean>  pestEspFilledButton;
     private CyclingButtonWidget<Boolean>  pestTracerButton;
 
     // ── Tab 2 – Misc widgets ──────────────────────────────────────────────────
@@ -98,61 +102,75 @@ public class FarmingConfigScreen extends Screen {
 
     @Override
     protected void init() {
-        int panelX  = (this.width  - PANEL_WIDTH)  / 2;
-        int panelY  = (this.height - PANEL_HEIGHT) / 2;
-        int centerX = panelX + PANEL_WIDTH / 2;
-        int widgetX = centerX - BUTTON_WIDTH / 2;
+        // ── Compute scale so the panel fits the screen with a small margin ────
+        float sw = (float)(this.width  - 4) / PANEL_WIDTH;
+        float sh = (float)(this.height - 4) / PANEL_HEIGHT;
+        scale     = Math.min(1.0f, Math.min(sw, sh));
+        panelW    = Math.round(PANEL_WIDTH      * scale);
+        panelH    = Math.round(PANEL_HEIGHT     * scale);
+        hdrH      = Math.round(HEADER_HEIGHT    * scale);
+        tabH      = Math.round(TAB_BAR_HEIGHT   * scale);
+        bw        = Math.round(BUTTON_WIDTH     * scale);
+        bh        = Math.max(8, Math.round(BUTTON_HEIGHT * scale));
+        pad       = Math.max(2, Math.round(PADDING       * scale));
+        sectionLH = Math.max(8, Math.round(10            * scale));
+        int gap   = Math.max(2, Math.round(8             * scale));
+
+        panelX = (this.width  - panelW) / 2;
+        panelY = (this.height - panelH) / 2;
+        int centerX = panelX + panelW / 2;
+        int widgetX = centerX - bw / 2;
 
         // ── Tab selector buttons ──────────────────────────────────────────────
-        int tabBarY  = panelY + HEADER_HEIGHT + 1;
-        int tabW     = (PANEL_WIDTH - 4) / TAB_NAMES.length;
+        int tabBarY  = panelY + hdrH + 1;
+        int tabW     = (panelW - 4) / TAB_NAMES.length;
         tabButtons   = new TabButton[TAB_NAMES.length];
         for (int i = 0; i < TAB_NAMES.length; i++) {
             tabButtons[i] = new TabButton(
                     panelX + 2 + i * (tabW + 1), tabBarY,
-                    tabW, TAB_BAR_HEIGHT - 2, i);
+                    tabW, tabH - 2, i);
             this.addDrawableChild(tabButtons[i]);
         }
 
         // Content starts below the tab bar
-        int contentTop = panelY + HEADER_HEIGHT + TAB_BAR_HEIGHT + PADDING;
+        int contentTop = panelY + hdrH + tabH + pad;
         int y;
 
         // ── Tab 0 – Farming ───────────────────────────────────────────────────
         y = contentTop;
         sectionCropY = y;
-        y += 10;
+        y += sectionLH;
         cropButton = CyclingButtonWidget.builder(
                         (CropType crop) -> Text.translatable(crop.getTranslationKey()))
                 .values(CropType.COCOA_BEANS)
                 .initially(CropType.COCOA_BEANS)
-                .build(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT,
+                .build(widgetX, y, bw, bh,
                         Text.translatable("gui.just-farming.crop_label"));
         this.addDrawableChild(cropButton);
-        y += BUTTON_HEIGHT + PADDING + 8;
+        y += bh + pad + gap;
 
         sectionAnglesY = y;
-        y += 10;
-        pitchSlider = new PitchSlider(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT, config.farmingPitch);
+        y += sectionLH;
+        pitchSlider = new PitchSlider(widgetX, y, bw, bh, config.farmingPitch);
         this.addDrawableChild(pitchSlider);
-        y += BUTTON_HEIGHT + PADDING;
+        y += bh + pad;
 
-        yawSlider = new YawSlider(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT, config.farmingYaw);
+        yawSlider = new YawSlider(widgetX, y, bw, bh, config.farmingYaw);
         this.addDrawableChild(yawSlider);
-        y += BUTTON_HEIGHT + PADDING + 8;
+        y += bh + pad + gap;
 
         sectionDelaysY = y;
-        y += 10;
-        swapDelaySlider = new SwapDelaySlider(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT, config.rewarpDelayMin);
+        y += sectionLH;
+        swapDelaySlider = new SwapDelaySlider(widgetX, y, bw, bh, config.rewarpDelayMin);
         this.addDrawableChild(swapDelaySlider);
-        y += BUTTON_HEIGHT + PADDING;
+        y += bh + pad;
 
-        swapRandomSlider = new SwapRandomSlider(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT, config.rewarpDelayRandom);
+        swapRandomSlider = new SwapRandomSlider(widgetX, y, bw, bh, config.rewarpDelayRandom);
         this.addDrawableChild(swapRandomSlider);
-        y += BUTTON_HEIGHT + PADDING + 8;
+        y += bh + pad + gap;
 
         actionSeparatorY = y;
-        y += 4;
+        y += Math.max(2, Math.round(4 * scale));
 
         setRewarpButton = ButtonWidget.builder(
                         getRewarpButtonText(),
@@ -166,10 +184,10 @@ public class FarmingConfigScreen extends Screen {
                                 btn.setMessage(Text.literal("§aRewarp Set!"));
                             }
                         })
-                .dimensions(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT)
+                .dimensions(widgetX, y, bw, bh)
                 .build();
         this.addDrawableChild(setRewarpButton);
-        y += BUTTON_HEIGHT + PADDING;
+        y += bh + pad;
 
         toggleMacroButton = ButtonWidget.builder(
                         getMacroToggleText(),
@@ -178,76 +196,67 @@ public class FarmingConfigScreen extends Screen {
                             macroManager.toggle();
                             btn.setMessage(getMacroToggleText());
                         })
-                .dimensions(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT)
+                .dimensions(widgetX, y, bw, bh)
                 .build();
         this.addDrawableChild(toggleMacroButton);
 
         // ── Tab 1 – Pests ─────────────────────────────────────────────────────
         y = contentTop;
         sectionPestsY = y;
-        y += 10;
+        y += sectionLH;
 
         pestHighlightButton = CyclingButtonWidget.builder(
                         (Boolean val) -> val ? Text.literal("ON") : Text.literal("OFF"))
                 .values(Boolean.TRUE, Boolean.FALSE)
                 .initially(config.pestHighlightEnabled)
-                .build(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT,
+                .build(widgetX, y, bw, bh,
                         Text.translatable("gui.just-farming.pest_highlight_label"));
         this.addDrawableChild(pestHighlightButton);
-        y += BUTTON_HEIGHT + PADDING;
+        y += bh + pad;
 
         pestLabelsButton = CyclingButtonWidget.builder(
                         (Boolean val) -> val ? Text.literal("ON") : Text.literal("OFF"))
                 .values(Boolean.TRUE, Boolean.FALSE)
                 .initially(config.pestLabelsEnabled)
-                .build(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT,
+                .build(widgetX, y, bw, bh,
                         Text.translatable("gui.just-farming.pest_labels_label"));
         this.addDrawableChild(pestLabelsButton);
-        y += BUTTON_HEIGHT + PADDING;
+        y += bh + pad;
 
-        titleScaleSlider = new TitleScaleSlider(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT, config.pestTitleScale);
+        titleScaleSlider = new TitleScaleSlider(widgetX, y, bw, bh, config.pestTitleScale);
         this.addDrawableChild(titleScaleSlider);
-        y += BUTTON_HEIGHT + PADDING;
+        y += bh + pad;
 
         pestEspButton = CyclingButtonWidget.builder(
                         (Boolean val) -> val ? Text.literal("ON") : Text.literal("OFF"))
                 .values(Boolean.TRUE, Boolean.FALSE)
                 .initially(config.pestEspEnabled)
-                .build(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT,
+                .build(widgetX, y, bw, bh,
                         Text.translatable("gui.just-farming.pest_esp_label"));
         this.addDrawableChild(pestEspButton);
-        y += BUTTON_HEIGHT + PADDING;
+        y += bh + pad;
 
         pestEspSeeThroughButton = CyclingButtonWidget.builder(
                         (Boolean val) -> val ? Text.literal("ON") : Text.literal("OFF"))
                 .values(Boolean.TRUE, Boolean.FALSE)
                 .initially(config.pestEspSeeThrough)
-                .build(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT,
+                .build(widgetX, y, bw, bh,
                         Text.translatable("gui.just-farming.pest_esp_see_through_label"));
         this.addDrawableChild(pestEspSeeThroughButton);
-        y += BUTTON_HEIGHT + PADDING;
-
-        pestEspFilledButton = CyclingButtonWidget.builder(
-                        (Boolean val) -> val ? Text.literal("Filled") : Text.literal("Overlay"))
-                .values(Boolean.TRUE, Boolean.FALSE)
-                .initially(config.pestEspFilled)
-                .build(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT,
-                        Text.translatable("gui.just-farming.pest_esp_filled_label"));
-        this.addDrawableChild(pestEspFilledButton);
-        y += BUTTON_HEIGHT + PADDING;
+        y += bh + pad;
 
         pestTracerButton = CyclingButtonWidget.builder(
                         (Boolean val) -> val ? Text.literal("ON") : Text.literal("OFF"))
                 .values(Boolean.TRUE, Boolean.FALSE)
                 .initially(config.pestTracerEnabled)
-                .build(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT,
+                .build(widgetX, y, bw, bh,
                         Text.translatable("gui.just-farming.pest_tracer_label"));
         this.addDrawableChild(pestTracerButton);
 
         // ── Tab 2 – Misc ──────────────────────────────────────────────────────
         y = contentTop;
         sectionMiscY = y;
-        y += 10;
+        y += sectionLH;
 
         freelookButton = ButtonWidget.builder(
                         getFreelookButtonText(),
@@ -255,16 +264,16 @@ public class FarmingConfigScreen extends Screen {
                             macroManager.toggleFreelook();
                             btn.setMessage(getFreelookButtonText());
                         })
-                .dimensions(widgetX, y, BUTTON_WIDTH, BUTTON_HEIGHT)
+                .dimensions(widgetX, y, bw, bh)
                 .build();
         this.addDrawableChild(freelookButton);
 
         // ── Always-visible: Close button at the very bottom ───────────────────
-        int closeBtnY = panelY + PANEL_HEIGHT - BUTTON_HEIGHT - PADDING;
+        int closeBtnY = panelY + panelH - bh - pad;
         saveCloseButton = ButtonWidget.builder(
                         Text.translatable("gui.just-farming.close"),
                         btn -> close())
-                .dimensions(widgetX, closeBtnY, BUTTON_WIDTH, BUTTON_HEIGHT)
+                .dimensions(widgetX, closeBtnY, bw, bh)
                 .build();
         this.addDrawableChild(saveCloseButton);
 
@@ -289,7 +298,6 @@ public class FarmingConfigScreen extends Screen {
         titleScaleSlider.visible        = t1;
         pestEspButton.visible           = t1;
         pestEspSeeThroughButton.visible = t1;
-        pestEspFilledButton.visible     = t1;
         pestTracerButton.visible        = t1;
 
         boolean t2 = activeTab == 2;
@@ -298,10 +306,8 @@ public class FarmingConfigScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        int panelX = (this.width  - PANEL_WIDTH)  / 2;
-        int panelY = (this.height - PANEL_HEIGHT) / 2;
-        int panelR = panelX + PANEL_WIDTH;
-        int panelB = panelY + PANEL_HEIGHT;
+        int panelR = panelX + panelW;
+        int panelB = panelY + panelH;
 
         // ── Drop shadow ───────────────────────────────────────────────────────
         context.fill(panelX + 3, panelY + 3, panelR + 3, panelB + 3, COL_SHADOW);
@@ -316,12 +322,12 @@ public class FarmingConfigScreen extends Screen {
         context.fill(panelX, panelY, panelR, panelB, COL_BG);
 
         // ── Header gradient ───────────────────────────────────────────────────
-        context.fillGradient(panelX, panelY, panelR, panelY + HEADER_HEIGHT,
+        context.fillGradient(panelX, panelY, panelR, panelY + hdrH,
                 COL_HEADER_TOP, COL_HEADER_BOTTOM);
 
         // ── Header accent line (bottom) ───────────────────────────────────────
-        context.fillGradient(panelX, panelY + HEADER_HEIGHT - 1, panelR,
-                panelY + HEADER_HEIGHT + 1, COL_ACCENT, COL_BORDER_OUTER);
+        context.fillGradient(panelX, panelY + hdrH - 1, panelR,
+                panelY + hdrH + 1, COL_ACCENT, COL_BORDER_OUTER);
 
         // ── Corner accents (top-left / top-right) ─────────────────────────────
         context.fill(panelX - 2, panelY - 2, panelX + 6, panelY - 1, COL_ACCENT);
@@ -330,8 +336,9 @@ public class FarmingConfigScreen extends Screen {
         context.fill(panelR + 1, panelY - 2, panelR + 2, panelY + 6, COL_ACCENT);
 
         // ── Title ─────────────────────────────────────────────────────────────
+        int titleY = panelY + Math.max(4, Math.round(10 * scale));
         context.drawCenteredTextWithShadow(this.textRenderer,
-                this.title, this.width / 2, panelY + 10, COL_TITLE);
+                this.title, this.width / 2, titleY, COL_TITLE);
 
         // ── Status badge ──────────────────────────────────────────────────────
         boolean running    = macroManager.isRunning();
@@ -340,7 +347,7 @@ public class FarmingConfigScreen extends Screen {
         int badgeGlow      = running ? 0x2030D870 : 0x20FF4050;
         int badgeW         = this.textRenderer.getWidth(statusStr) + 14;
         int badgeX         = this.width / 2 - badgeW / 2;
-        int badgeY         = panelY + 27;
+        int badgeY         = panelY + Math.max(14, Math.round(27 * scale));
         context.fill(badgeX - 2, badgeY - 1, badgeX + badgeW + 2, badgeY + 13, badgeGlow);
         context.fill(badgeX, badgeY, badgeX + badgeW, badgeY + 12,
                 running ? 0x3020C060 : 0x30D03040);
@@ -353,15 +360,15 @@ public class FarmingConfigScreen extends Screen {
                 this.width / 2, badgeY + 2, 0xFFFFFF);
 
         // ── Tab bar background ────────────────────────────────────────────────
-        int tabBarY = panelY + HEADER_HEIGHT + 1;
-        context.fill(panelX, tabBarY - 1, panelR, tabBarY + TAB_BAR_HEIGHT, COL_TAB_INACTIVE);
+        int tabBarY = panelY + hdrH + 1;
+        context.fill(panelX, tabBarY - 1, panelR, tabBarY + tabH, COL_TAB_INACTIVE);
         // Highlight active tab
-        int tabW       = (PANEL_WIDTH - 4) / TAB_NAMES.length;
+        int tabW       = (panelW - 4) / TAB_NAMES.length;
         int activeTabX = panelX + 2 + activeTab * (tabW + 1);
-        context.fill(activeTabX, tabBarY, activeTabX + tabW, tabBarY + TAB_BAR_HEIGHT - 2,
+        context.fill(activeTabX, tabBarY, activeTabX + tabW, tabBarY + tabH - 2,
                 COL_TAB_ACTIVE);
         // Bottom separator below tab bar
-        context.fill(panelX, tabBarY + TAB_BAR_HEIGHT - 1, panelR, tabBarY + TAB_BAR_HEIGHT,
+        context.fill(panelX, tabBarY + tabH - 1, panelR, tabBarY + tabH,
                 COL_ACCENT);
 
         // ── Section labels per tab ────────────────────────────────────────────
@@ -383,8 +390,8 @@ public class FarmingConfigScreen extends Screen {
 
     /** Draws a section label with an accent bar and subtle background. */
     private void drawSectionLabel(DrawContext context, String label, int panelX, int y, int panelR) {
-        context.fill(panelX + 4, y, panelR - 4, y + 10, COL_SECTION_BG);
-        context.fill(panelX + 6, y + 1, panelX + 8, y + 9, COL_ACCENT);
+        context.fill(panelX + 4, y, panelR - 4, y + sectionLH, COL_SECTION_BG);
+        context.fill(panelX + 6, y + 1, panelX + 8, y + sectionLH - 1, COL_ACCENT);
         context.drawTextWithShadow(this.textRenderer,
                 Text.literal(label).withColor(COL_LABEL),
                 panelX + 14, y + 1, COL_LABEL);
@@ -416,7 +423,6 @@ public class FarmingConfigScreen extends Screen {
         config.pestTitleScale       = titleScaleSlider.getTitleScaleValue();
         config.pestEspEnabled       = pestEspButton.getValue();
         config.pestEspSeeThrough    = pestEspSeeThroughButton.getValue();
-        config.pestEspFilled        = pestEspFilledButton.getValue();
         config.pestTracerEnabled    = pestTracerButton.getValue();
         macroManager.setConfig(config);
     }
