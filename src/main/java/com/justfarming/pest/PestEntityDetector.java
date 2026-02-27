@@ -81,8 +81,19 @@ public class PestEntityDetector {
     }
 
     private static String getCleanName(Entity entity) {
-        if (entity.getCustomName() == null) return null;
-        String raw = entity.getCustomName().getString();
+        // Prefer the explicitly-set custom name (server name-tags, /summon NBT, etc.)
+        if (entity.getCustomName() != null) {
+            String raw = entity.getCustomName().getString();
+            if (raw != null && !raw.isBlank()) {
+                return COLOR_CODE.matcher(raw).replaceAll("").trim();
+            }
+        }
+        // Fall back to the display name (covers custom entity types whose name is
+        // returned by getName() even without a CustomName NBT, e.g. Hypixel Skyblock
+        // pest mobs that expose their name through entity-type metadata only).
+        net.minecraft.text.Text display = entity.getDisplayName();
+        if (display == null) return null;
+        String raw = display.getString();
         if (raw == null || raw.isBlank()) return null;
         return COLOR_CODE.matcher(raw).replaceAll("").trim();
     }
