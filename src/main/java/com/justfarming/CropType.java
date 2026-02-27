@@ -17,7 +17,9 @@ public enum CropType {
     POTATO_S_SHAPE("crop.just-farming.potato_s_shape", 7),
     NETHER_WART_S_SHAPE("crop.just-farming.nether_wart_s_shape", 3),
     CARROT_S_SHAPE("crop.just-farming.carrot_s_shape", 7),
-    WHEAT_S_SHAPE("crop.just-farming.wheat_s_shape", 7);
+    WHEAT_S_SHAPE("crop.just-farming.wheat_s_shape", 7),
+    PUMPKIN_S_SHAPE("crop.just-farming.pumpkin_s_shape", 0),
+    MELON_S_SHAPE("crop.just-farming.melon_s_shape", 0);
 
     /** Translation key for display name */
     private final String translationKey;
@@ -43,7 +45,8 @@ public enum CropType {
 
     public boolean isSShape() {
         return this == POTATO_S_SHAPE || this == NETHER_WART_S_SHAPE
-                || this == CARROT_S_SHAPE || this == WHEAT_S_SHAPE;
+                || this == CARROT_S_SHAPE || this == WHEAT_S_SHAPE
+                || this == PUMPKIN_S_SHAPE || this == MELON_S_SHAPE;
     }
 
     @Override
