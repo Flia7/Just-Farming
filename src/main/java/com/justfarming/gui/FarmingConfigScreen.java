@@ -146,7 +146,9 @@ public class FarmingConfigScreen extends Screen {
                 .values(CropType.COCOA_BEANS, CropType.POTATO_S_SHAPE,
                         CropType.NETHER_WART_S_SHAPE, CropType.CARROT_S_SHAPE,
                         CropType.WHEAT_S_SHAPE, CropType.PUMPKIN_S_SHAPE,
-                        CropType.MELON_S_SHAPE)
+                        CropType.MELON_S_SHAPE, CropType.SUGAR_CANE_S_SHAPE,
+                        CropType.MOONFLOWER_S_SHAPE, CropType.SUNFLOWER_S_SHAPE,
+                        CropType.WILD_ROSE_S_SHAPE)
                 .initially(config.selectedCrop)
                 .build(widgetX, y, bw, bh,
                         Text.translatable("gui.just-farming.crop_label"));
