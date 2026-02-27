@@ -9,6 +9,7 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
@@ -171,6 +172,16 @@ public class JustFarming implements ClientModInitializer {
                 overlayRef.set(renderer);
             }
             renderer.render(ctx);
+        });
+
+        // Draw 2D screen-space ESP boxes on the HUD (filled-highlight mode).
+        HudRenderCallback.EVENT.register((drawContext, tickCounter) -> {
+            OverlayRenderer renderer = overlayRef.get();
+            if (renderer == null) return;
+            net.minecraft.client.MinecraftClient mc = net.minecraft.client.MinecraftClient.getInstance();
+            renderer.renderHud(drawContext,
+                    mc.getWindow().getScaledWidth(),
+                    mc.getWindow().getScaledHeight());
         });
 
         LOGGER.info("[JustFarming] Ready. Toggle macro: R | Open GUI: I | Freelook: L | Command: /jf rewarp");

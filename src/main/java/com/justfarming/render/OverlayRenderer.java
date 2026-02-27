@@ -4,10 +4,8 @@ import com.justfarming.config.FarmingConfig;
 import com.justfarming.pest.GardenPlot;
 import com.justfarming.pest.PestDetector;
 import com.justfarming.pest.PestEntityDetector;
-import com.mojang.blaze3d.pipeline.BlendFunction;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.platform.DepthTestFunction;
-import com.mojang.blaze3d.vertex.VertexFormat;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
 import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.render.Camera;
@@ -15,13 +13,16 @@ import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.RenderPhase;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.render.VertexFormats;
-import net.minecraft.client.render.VertexRendering;
+import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
+
+import org.joml.Matrix4f;
+import org.joml.Quaternionf;
+import org.joml.Vector4f;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -75,26 +76,14 @@ public class OverlayRenderer {
                     .lineWidth(new RenderPhase.LineWidth(OptionalDouble.empty()))
                     .build(false));
 
-    // See-through filled ESP: translucent quads rendered with no depth test
-    private static final RenderLayer PEST_ESP_SEE_THROUGH_FILLED = RenderLayer.of(
-            "pest_esp_see_through_filled",
-            256,
-            false,
-            true,
-            RenderPipeline.builder(RenderPipelines.POSITION_COLOR_SNIPPET)
-                    .withLocation("just-farming/pest_esp_see_through_filled")
-                    .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
-                    .withDepthWrite(false)
-                    .withBlend(BlendFunction.TRANSLUCENT)
-                    .withVertexFormat(VertexFormats.POSITION_COLOR, VertexFormat.DrawMode.QUADS)
-                    .build(),
-            RenderLayer.MultiPhaseParameters.builder()
-                    .target(RenderPhase.ITEM_ENTITY_TARGET)
-                    .build(false));
 
     private final FarmingConfig       config;
     private final PestDetector        pestDetector;
     private final PestEntityDetector  pestEntityDetector;
+
+    // Cached data for 2D HUD rendering (set every frame by render())
+    private volatile Matrix4f cachedMvp    = null;
+    private volatile Vec3d    cachedCamPos = null;
 
     public OverlayRenderer(FarmingConfig config, PestDetector pestDetector,
                            PestEntityDetector pestEntityDetector) {
@@ -117,38 +106,25 @@ public class OverlayRenderer {
 
         // ── Pest entity ESP & Tracer ──────────────────────────────────────────
         List<PestEntityDetector.PestEntity> pests = pestEntityDetector.getDetectedPests();
+
+        // Cache projection+view matrix for this frame so renderHud() can use it.
+        // Uses the same MVP construction as Minecraft's own world rendering.
+        float fov = (float) MinecraftClient.getInstance().options.getFov().getValue();
+        Matrix4f projection = context.gameRenderer().getBasicProjectionMatrix(fov);
+        Quaternionf viewRot = camera.getRotation().conjugate(new Quaternionf());
+        cachedMvp    = projection.mul(new Matrix4f().rotation(viewRot), new Matrix4f());
+        cachedCamPos = camPos;
+
         if (!pests.isEmpty() && (config.pestEspEnabled || config.pestTracerEnabled)) {
             boolean seeThrough = config.pestEspSeeThrough;
 
-            // Render filled boxes first in a separate pass.
-            // VertexConsumerProvider.Immediate only tracks one "current layer" via the
-            // shared allocator; calling getBuffer() for a second layer while the first
-            // is still the current layer flushes/finalizes the first buffer, making any
-            // subsequent vertex writes crash with building=false.  By completing all
-            // filled-box writes before obtaining the lines buffer we avoid that conflict.
-            if (config.pestEspEnabled && config.pestEspFilled) {
-                RenderLayer filledLayer = seeThrough
-                        ? PEST_ESP_SEE_THROUGH_FILLED
-                        : RenderLayer.getDebugFilledBox();
-                VertexConsumer filledBuffer = consumers.getBuffer(filledLayer);
-                for (PestEntityDetector.PestEntity pest : pests) {
-                    Box box = pest.boundingBox();
-                    VertexRendering.drawFilledBox(matrices, filledBuffer,
-                            box.minX - cx, box.minY - cy, box.minZ - cz,
-                            box.maxX - cx, box.maxY - cy, box.maxZ - cz,
-                            1.0f, 0.267f, 0.267f, 1.0f);
-                }
-            }
-
-            // Now obtain the lines buffer (this flushes the filled buffer if it was
-            // the current layer, which is fine because we are done with it).
             RenderLayer linesLayer = seeThrough ? PEST_ESP_SEE_THROUGH_LINES : RenderLayer.getLines();
             VertexConsumer pestLines = consumers.getBuffer(linesLayer);
             MatrixStack.Entry entry = matrices.peek();
 
             for (PestEntityDetector.PestEntity pest : pests) {
                 if (config.pestEspEnabled) {
-                    renderEspBox(entry, pestLines, pest.boundingBox(), cx, cy, cz, COLOR_ESP);
+                    renderEspBox(entry, pestLines, halfSizeBox(pest.boundingBox()), cx, cy, cz, COLOR_ESP);
                 }
                 if (config.pestTracerEnabled) {
                     drawLine(entry, pestLines,
@@ -332,5 +308,90 @@ public class OverlayRenderer {
         drawLine(entry, lines, x1, y0, z0, x1, y1, z0, color);
         drawLine(entry, lines, x1, y0, z1, x1, y1, z1, color);
         drawLine(entry, lines, x0, y0, z1, x0, y1, z1, color);
+    }
+
+    /**
+     * Returns a copy of {@code box} contracted to half its original dimensions
+     * (25% shrink on each side), centred at the same point.
+     */
+    private static Box halfSizeBox(Box box) {
+        return box.contract(
+                box.getLengthX() * 0.25,
+                box.getLengthY() * 0.25,
+                box.getLengthZ() * 0.25);
+    }
+
+    /**
+     * Draws 2D screen-space ESP boxes around detected pest entities on the HUD.
+     *
+     * <p>This replaces the old buggy 3D filled-quad approach: by projecting the
+     * bounding-box corners to NDC space and drawing a flat coloured rectangle on
+     * the HUD, we avoid the "transparent inside" artefact that plagued the
+     * previous translucent-quad render layer.
+     *
+     * @param context    the HUD draw context
+     * @param width      the scaled screen width in pixels
+     * @param height     the scaled screen height in pixels
+     */
+    public void renderHud(DrawContext context, int width, int height) {
+        if (!config.pestEspEnabled || !config.pestEspFilled) return;
+
+        Matrix4f mvp     = cachedMvp;
+        Vec3d    camPos  = cachedCamPos;
+        if (mvp == null || camPos == null) return;
+
+        List<PestEntityDetector.PestEntity> pests = pestEntityDetector.getDetectedPests();
+        if (pests.isEmpty()) return;
+
+        double cx = camPos.x, cy = camPos.y, cz = camPos.z;
+
+        for (PestEntityDetector.PestEntity pest : pests) {
+            Box box = halfSizeBox(pest.boundingBox());
+
+            float minSx = Float.MAX_VALUE,  minSy = Float.MAX_VALUE;
+            float maxSx = -Float.MAX_VALUE, maxSy = -Float.MAX_VALUE;
+            boolean anyVisible = false;
+
+            double[][] corners = {
+                {box.minX, box.minY, box.minZ},
+                {box.maxX, box.minY, box.minZ},
+                {box.minX, box.maxY, box.minZ},
+                {box.maxX, box.maxY, box.minZ},
+                {box.minX, box.minY, box.maxZ},
+                {box.maxX, box.minY, box.maxZ},
+                {box.minX, box.maxY, box.maxZ},
+                {box.maxX, box.maxY, box.maxZ},
+            };
+
+            for (double[] c : corners) {
+                float rx = (float) (c[0] - cx);
+                float ry = (float) (c[1] - cy);
+                float rz = (float) (c[2] - cz);
+                Vector4f clip = mvp.transform(rx, ry, rz, 1.0f, new Vector4f());
+                if (clip.w <= 0f) continue; // behind camera – skip this corner
+                anyVisible = true;
+                float sx = (clip.x / clip.w + 1.0f) * 0.5f * width;
+                float sy = (1.0f - clip.y / clip.w) * 0.5f * height;
+                if (sx < minSx) minSx = sx;
+                if (sy < minSy) minSy = sy;
+                if (sx > maxSx) maxSx = sx;
+                if (sy > maxSy) maxSy = sy;
+            }
+
+            if (!anyVisible || minSx >= maxSx || minSy >= maxSy) continue;
+
+            int x0 = (int) Math.max(0,      minSx);
+            int y0 = (int) Math.max(0,      minSy);
+            int x1 = (int) Math.min(width,  maxSx);
+            int y1 = (int) Math.min(height, maxSy);
+
+            // Semi-transparent fill so the entity is still visible through the box
+            context.fill(x0, y0, x1, y1, 0x50FF4444);
+            // Solid opaque border
+            context.fill(x0,     y0,     x1,     y0 + 1, 0xFFFF4444);
+            context.fill(x0,     y1 - 1, x1,     y1,     0xFFFF4444);
+            context.fill(x0,     y0,     x0 + 1, y1,     0xFFFF4444);
+            context.fill(x1 - 1, y0,     x1,     y1,     0xFFFF4444);
+        }
     }
 }
