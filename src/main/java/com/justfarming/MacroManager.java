@@ -102,6 +102,39 @@ public class MacroManager {
         return running;
     }
 
+    /**
+     * Returns {@code true} when the macro is actively in a movement+breaking
+     * phase (BACKWARD_LEFT or FORWARD_LEFT).
+     *
+     * <p>Used by {@code MinecraftClientMixin} to decide whether to force
+     * block-breaking even when a GUI screen is open.
+     */
+    public boolean shouldBreak() {
+        return running && (state == MacroState.BACKWARD_LEFT || state == MacroState.FORWARD_LEFT);
+    }
+
+    /**
+     * Re-apply the programmatic key states that the macro holds during a
+     * movement+breaking phase.  Called from {@code KeyBindingMixin} immediately
+     * after {@link net.minecraft.client.option.KeyBinding#unpressAll()} runs so
+     * that only the keys the macro explicitly controls are kept pressed while
+     * all other key states are reset normally.
+     */
+    public void reapplyMovementKeys() {
+        if (!running || client.options == null) return;
+        if (state == MacroState.BACKWARD_LEFT || state == MacroState.FORWARD_LEFT) {
+            client.options.attackKey.setPressed(true);
+            client.options.leftKey.setPressed(true);
+            if (state == MacroState.FORWARD_LEFT) {
+                client.options.forwardKey.setPressed(true);
+                client.options.backKey.setPressed(false);
+            } else {
+                client.options.backKey.setPressed(true);
+                client.options.forwardKey.setPressed(false);
+            }
+        }
+    }
+
     /** Returns {@code true} if freelook mode is enabled. */
     public boolean isFreelookEnabled() {
         return freelookEnabled;
