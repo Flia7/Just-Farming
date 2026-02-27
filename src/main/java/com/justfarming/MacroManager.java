@@ -209,6 +209,12 @@ public class MacroManager {
             return;
         }
 
+        // Close any open screen (inventory, ESC menu, chat) so Minecraft's
+        // handleInputEvents() runs and the attack key actually breaks blocks.
+        if (client.currentScreen != null) {
+            client.setScreen(null);
+        }
+
         // Lock pitch and yaw every active tick
         player.setPitch(config.farmingPitch);
         player.setYaw(config.farmingYaw);
