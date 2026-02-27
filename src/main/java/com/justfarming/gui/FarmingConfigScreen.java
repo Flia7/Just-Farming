@@ -143,8 +143,10 @@ public class FarmingConfigScreen extends Screen {
         y += sectionLH;
         cropButton = CyclingButtonWidget.builder(
                         (CropType crop) -> Text.translatable(crop.getTranslationKey()))
-                .values(CropType.COCOA_BEANS)
-                .initially(CropType.COCOA_BEANS)
+                .values(CropType.COCOA_BEANS, CropType.POTATO_S_SHAPE,
+                        CropType.NETHER_WART_S_SHAPE, CropType.CARROT_S_SHAPE,
+                        CropType.WHEAT_S_SHAPE)
+                .initially(config.selectedCrop)
                 .build(widgetX, y, bw, bh,
                         Text.translatable("gui.just-farming.crop_label"));
         this.addDrawableChild(cropButton);

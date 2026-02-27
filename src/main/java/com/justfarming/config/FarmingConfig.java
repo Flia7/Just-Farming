@@ -27,7 +27,7 @@ public class FarmingConfig {
 
     // --- Config fields ---
 
-    /** The crop type currently selected for farming (only COCOA_BEANS for now). */
+    /** The crop type currently selected for farming. */
     public CropType selectedCrop = CropType.COCOA_BEANS;
 
     /**

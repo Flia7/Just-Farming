@@ -13,7 +13,11 @@ public enum CropType {
     CACTUS("crop.just-farming.cactus", 0),
     MUSHROOM("crop.just-farming.mushroom", 0),
     COCOA_BEANS("crop.just-farming.cocoa_beans", 2),
-    NETHER_WART("crop.just-farming.nether_wart", 3);
+    NETHER_WART("crop.just-farming.nether_wart", 3),
+    POTATO_S_SHAPE("crop.just-farming.potato_s_shape", 7),
+    NETHER_WART_S_SHAPE("crop.just-farming.nether_wart_s_shape", 3),
+    CARROT_S_SHAPE("crop.just-farming.carrot_s_shape", 7),
+    WHEAT_S_SHAPE("crop.just-farming.wheat_s_shape", 7);
 
     /** Translation key for display name */
     private final String translationKey;
@@ -35,6 +39,11 @@ public enum CropType {
 
     public boolean isAgeBased() {
         return maxAge > 0;
+    }
+
+    public boolean isSShape() {
+        return this == POTATO_S_SHAPE || this == NETHER_WART_S_SHAPE
+                || this == CARROT_S_SHAPE || this == WHEAT_S_SHAPE;
     }
 
     @Override
