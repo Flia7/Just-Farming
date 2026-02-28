@@ -20,7 +20,6 @@ import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalDouble;
@@ -112,45 +111,15 @@ public class OverlayRenderer {
         double cx = camPos.x, cy = camPos.y, cz = camPos.z;
 
         // ── Pest entity ESP & Tracer ──────────────────────────────────────────
-        List<PestEntityDetector.PestEntity> pests = pestEntityDetector.getDetectedPests();
+        List<PestEntityDetector.PestEntity> entityPests = pestEntityDetector.getDetectedPests();
 
-        // Supplement entity-based detection with plot-centre fallback markers
-        // for any known pest plot that has no detected entities within it.
-        // Plot occupancy data from the scoreboard/tab list (PestDetector) is
-        // available at any range, unlike TextDisplay nametag entities which are
-        // only sent to the client within ~32–64 blocks.
-        Set<String> knownPestPlots = pestDetector.getPestPlots();
-        if (!knownPestPlots.isEmpty()) {
-            // Build the set of plots already covered by entity-based detection in
-            // O(m) so the subsequent fallback loop runs in O(n) rather than O(n*m).
-            HashSet<String> coveredPlots = new HashSet<>();
-            for (PestEntityDetector.PestEntity pe : pests) {
-                String p = GardenPlot.getPlotNameAt(pe.position().x, pe.position().z);
-                if (p != null) coveredPlots.add(p);
-            }
-            List<PestEntityDetector.PestEntity> merged = null;
-            for (String plotName : knownPestPlots) {
-                if (coveredPlots.contains(plotName)) continue;
-                double[] b = GardenPlot.getBounds(plotName);
-                if (b == null) continue;
-                double fx = (b[0] + b[3]) / 2.0;
-                double fz = (b[2] + b[5]) / 2.0;
-                double fy = GardenPlot.MIN_Y + 1.0;
-                Box fallbackBox = new Box(fx - 0.4, fy, fz - 0.4, fx + 0.4, fy + 0.8, fz + 0.4);
-                if (merged == null) merged = new ArrayList<>(pests);
-                merged.add(new PestEntityDetector.PestEntity(
-                        new Vec3d(fx, fy, fz), fallbackBox, "Plot " + plotName));
-            }
-            if (merged != null) pests = merged;
-        }
-
-        if (!pests.isEmpty()) {
+        if (!entityPests.isEmpty()) {
             MatrixStack.Entry entry = matrices.peek();
 
-            // ESP boxes (always see-through when enabled)
+            // ESP boxes: see-through wireframe around each detected pest entity.
             if (config.pestEspEnabled) {
                 VertexConsumer espLines = consumers.getBuffer(PEST_ESP_SEE_THROUGH_LINES);
-                for (PestEntityDetector.PestEntity pest : pests) {
+                for (PestEntityDetector.PestEntity pest : entityPests) {
                     renderEspBox(entry, espLines, adjustedEspBox(pest.boundingBox()), cx, cy, cz, COLOR_ESP);
                 }
             }
@@ -174,7 +143,7 @@ public class OverlayRenderer {
                 double tracerStartY = -Math.sin(pitchRad)       * 10.0;
                 double tracerStartZ =  Math.cos(yawRad) * cosP * 10.0;
 
-                for (PestEntityDetector.PestEntity pest : pests) {
+                for (PestEntityDetector.PestEntity pest : entityPests) {
                     Box espBox = adjustedEspBox(pest.boundingBox());
                     double targetX = (espBox.minX + espBox.maxX) / 2.0 - cx;
                     double targetY = (espBox.minY + espBox.maxY) / 2.0 - cy;
