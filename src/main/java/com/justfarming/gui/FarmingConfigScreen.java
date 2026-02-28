@@ -1,6 +1,5 @@
 package com.justfarming.gui;
 
-import com.justfarming.CropType;
 import com.justfarming.MacroManager;
 import com.justfarming.config.FarmingConfig;
 import net.minecraft.client.gui.DrawContext;
@@ -63,7 +62,8 @@ public class FarmingConfigScreen extends Screen {
     private TabButton[] tabButtons;
 
     // ── Tab 0 – Farming widgets ───────────────────────────────────────────────
-    private CyclingButtonWidget<CropType> cropButton;
+    private ButtonWidget                  cropSelectButton;
+    private ButtonWidget                  cropSettingsButton;
     private SwapDelaySlider               swapDelaySlider;
     private SwapRandomSlider              swapRandomSlider;
     private ButtonWidget                  setRewarpButton;
@@ -138,21 +138,30 @@ public class FarmingConfigScreen extends Screen {
         y = contentTop;
         sectionCropY = y;
         y += sectionLH;
-        cropButton = CyclingButtonWidget.builder(
-                        (CropType crop) -> Text.literal(
-                                Text.translatable(crop.getTranslationKey()).getString()
-                                        + " (Speed: " + crop.getRecommendedSpeed() + ")"))
-                .values(CropType.COCOA_BEANS, CropType.MUSHROOM, CropType.CACTUS,
-                        CropType.POTATO_S_SHAPE,
-                        CropType.NETHER_WART_S_SHAPE, CropType.CARROT_S_SHAPE,
-                        CropType.WHEAT_S_SHAPE, CropType.PUMPKIN_S_SHAPE,
-                        CropType.MELON_S_SHAPE, CropType.SUGAR_CANE_S_SHAPE,
-                        CropType.MOONFLOWER_S_SHAPE, CropType.SUNFLOWER_S_SHAPE,
-                        CropType.WILD_ROSE_S_SHAPE)
-                .initially(config.selectedCrop)
-                .build(widgetX, y, bw, bh,
-                        Text.translatable("gui.just-farming.crop_label"));
-        this.addDrawableChild(cropButton);
+        cropSelectButton = ButtonWidget.builder(
+                        getCropSelectText(),
+                        btn -> {
+                            applyConfig();
+                            if (this.client != null) {
+                                this.client.setScreen(new CropSelectScreen(this, config));
+                            }
+                        })
+                .dimensions(widgetX, y, bw, bh)
+                .build();
+        this.addDrawableChild(cropSelectButton);
+        y += bh + pad;
+
+        cropSettingsButton = ButtonWidget.builder(
+                        getCropSettingsText(),
+                        btn -> {
+                            applyConfig();
+                            if (this.client != null) {
+                                this.client.setScreen(new CropSettingsScreen(this, config));
+                            }
+                        })
+                .dimensions(widgetX, y, bw, bh)
+                .build();
+        this.addDrawableChild(cropSettingsButton);
         y += bh + pad + gap;
 
         sectionDelaysY = y;
@@ -289,8 +298,9 @@ public class FarmingConfigScreen extends Screen {
     /** Shows/hides content widgets according to {@link #activeTab}. */
     private void updateTabVisibility() {
         boolean t0 = activeTab == 0;
-        cropButton.visible        = t0;
-        swapDelaySlider.visible   = t0;
+        cropSelectButton.visible   = t0;
+        cropSettingsButton.visible = t0;
+        swapDelaySlider.visible    = t0;
         swapRandomSlider.visible  = t0;
         setRewarpButton.visible   = t0;
         toggleMacroButton.visible = t0;
@@ -416,7 +426,7 @@ public class FarmingConfigScreen extends Screen {
 
     /** Read widget values back into the config object. */
     private void applyConfig() {
-        config.selectedCrop         = cropButton.getValue();
+        // config.selectedCrop is managed directly by CropSelectScreen
         config.rewarpDelayMin       = swapDelaySlider.getDelayValue();
         config.rewarpDelayRandom    = swapRandomSlider.getRandomValue();
         config.pestHighlightEnabled = pestHighlightButton.getValue();
@@ -427,6 +437,17 @@ public class FarmingConfigScreen extends Screen {
         config.pestTracerEnabled    = pestTracerButton.getValue();
         config.unlockedMouseEnabled = unlockedMouseButton.getValue();
         macroManager.setConfig(config);
+    }
+
+    private Text getCropSelectText() {
+        String name = Text.translatable(config.selectedCrop.getTranslationKey()).getString();
+        return Text.literal("Select Crop: " + name
+                + "  (Speed: " + config.selectedCrop.getRecommendedSpeed() + ")");
+    }
+
+    private Text getCropSettingsText() {
+        String name = Text.translatable(config.selectedCrop.getTranslationKey()).getString();
+        return Text.literal("Crop Settings: " + name);
     }
 
     private Text getMacroToggleText() {

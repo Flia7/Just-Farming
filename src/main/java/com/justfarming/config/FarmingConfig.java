@@ -12,6 +12,8 @@ import java.io.Reader;
 import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Persistent configuration for Just Farming mod.
@@ -99,6 +101,94 @@ public class FarmingConfig {
      * The actual delay will be {@code rewarpDelayMin + random(0, rewarpDelayRandom)}.
      */
     public int rewarpDelayRandom = 0;
+
+    // --- Per-Crop Settings ---
+
+    /**
+     * Per-crop camera and key overrides.
+     *
+     * <p>The map key is the {@link CropType#name()} string (e.g. {@code "COCOA_BEANS"}).
+     * When an entry is present, the macro uses its values instead of the crop's built-in
+     * defaults.  When absent the built-in defaults apply.
+     */
+    public Map<String, CropCustomSettings> cropSettings = new HashMap<>();
+
+    /** Returns the custom settings for {@code crop}, or {@code null} if none are saved. */
+    public CropCustomSettings getCropSettings(CropType crop) {
+        return cropSettings.get(crop.name());
+    }
+
+    /** Returns the effective yaw for {@code crop} (custom override or built-in default). */
+    public float getEffectiveYaw(CropType crop) {
+        CropCustomSettings cs = getCropSettings(crop);
+        return cs != null ? cs.yaw : crop.getDefaultYaw();
+    }
+
+    /** Returns the effective pitch for {@code crop} (custom override or built-in default). */
+    public float getEffectivePitch(CropType crop) {
+        CropCustomSettings cs = getCropSettings(crop);
+        return cs != null ? cs.pitch : crop.getDefaultPitch();
+    }
+
+    // -------------------------------------------------------------------------
+    // Nested: per-crop customisable settings
+    // -------------------------------------------------------------------------
+
+    /**
+     * Stores a player-configurable override for a single crop type.
+     *
+     * <p>All fields are always present once an entry is saved.  Use
+     * {@link #fromDefaults(CropType)} to build an entry pre-populated with a
+     * crop's built-in defaults.
+     */
+    public static class CropCustomSettings {
+
+        /** Camera yaw (horizontal rotation, degrees). */
+        public float yaw;
+        /** Camera pitch (vertical look angle, degrees). */
+        public float pitch;
+
+        /** Hold the forward movement key during active farming states. */
+        public boolean forward;
+        /** Hold the back movement key during active farming states. */
+        public boolean back;
+        /** Hold the left-strafe key during active farming states. */
+        public boolean left;
+        /** Hold the right-strafe key during active farming states. */
+        public boolean right;
+        /** Hold the attack key during active farming states. */
+        public boolean attack;
+
+        /** Required by Gson. */
+        public CropCustomSettings() {}
+
+        public CropCustomSettings(float yaw, float pitch,
+                                   boolean forward, boolean back,
+                                   boolean left, boolean right,
+                                   boolean attack) {
+            this.yaw     = yaw;
+            this.pitch   = pitch;
+            this.forward = forward;
+            this.back    = back;
+            this.left    = left;
+            this.right   = right;
+            this.attack  = attack;
+        }
+
+        /**
+         * Build a {@code CropCustomSettings} pre-filled with the built-in defaults
+         * for the given crop type.
+         */
+        public static CropCustomSettings fromDefaults(CropType crop) {
+            boolean fwd = crop.isSShape() || crop.isForwardBack();
+            boolean bk  = !crop.isSShape() && !crop.isLeftBack()
+                          && !crop.isCactus() && !crop.isForwardBack();
+            boolean lft = !crop.isForwardBack();
+            return new CropCustomSettings(
+                    crop.getDefaultYaw(), crop.getDefaultPitch(),
+                    fwd, bk, lft, false, true);
+        }
+    }
 
     // --- Load / Save ---
 
