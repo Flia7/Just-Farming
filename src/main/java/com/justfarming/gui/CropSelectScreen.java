@@ -84,8 +84,7 @@ public class CropSelectScreen extends Screen {
 
         for (int i = 0; i < CROPS.length; i++) {
             final CropType crop = CROPS[i];
-            String label = Text.translatable(crop.getTranslationKey()).getString()
-                    + "  (Speed: " + crop.getRecommendedSpeed() + ")";
+            String label = Text.translatable(crop.getTranslationKey()).getString();
             int visibleIndex = i - scrollOffset;
             cropButtons[i] = ButtonWidget.builder(
                     Text.literal(label),

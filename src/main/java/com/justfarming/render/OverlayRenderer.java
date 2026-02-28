@@ -49,6 +49,7 @@ public class OverlayRenderer {
     private static final int COLOR_GOLD     = 0xFFFFAD00;
     private static final int COLOR_GREEN    = 0xFF00FF00;
     private static final int COLOR_ESP      = 0xFFFF4444;
+    private static final int COLOR_REWARP   = 0xFFFFFF55; // bright yellow rewarp block outline
 
     // Label colour (ARGB)
     private static final int LABEL_COLOR = 0xFFFF3333;
@@ -86,6 +87,21 @@ public class OverlayRenderer {
                     .lineWidth(new RenderPhase.LineWidth(OptionalDouble.empty()))
                     .build(false));
 
+    // See-through outline for the rewarp block (always visible through walls)
+    private static final RenderLayer REWARP_SEE_THROUGH_LINES = RenderLayer.of(
+            "rewarp_see_through_lines",
+            1536,
+            RenderPipeline.builder(RenderPipelines.RENDERTYPE_LINES_SNIPPET)
+                    .withLocation("just-farming/rewarp_see_through_lines")
+                    .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+                    .withDepthWrite(false)
+                    .build(),
+            RenderLayer.MultiPhaseParameters.builder()
+                    .layering(RenderPhase.VIEW_OFFSET_Z_LAYERING)
+                    .target(RenderPhase.ITEM_ENTITY_TARGET)
+                    .lineWidth(new RenderPhase.LineWidth(OptionalDouble.empty()))
+                    .build(false));
+
 
     private final FarmingConfig       config;
     private final PestDetector        pestDetector;
@@ -109,6 +125,18 @@ public class OverlayRenderer {
         if (matrices == null || consumers == null) return;
 
         double cx = camPos.x, cy = camPos.y, cz = camPos.z;
+
+        // ── Rewarp block see-through outline (always on when rewarp is set) ────
+        if (config.rewarpSet) {
+            double blockX = Math.floor(config.rewarpX);
+            double blockY = Math.floor(config.rewarpY);
+            double blockZ = Math.floor(config.rewarpZ);
+            VertexConsumer rewarpLines = consumers.getBuffer(REWARP_SEE_THROUGH_LINES);
+            MatrixStack.Entry rewarpEntry = matrices.peek();
+            renderEspBox(rewarpEntry, rewarpLines,
+                    new Box(blockX, blockY, blockZ, blockX + 1, blockY + 1, blockZ + 1),
+                    cx, cy, cz, COLOR_REWARP);
+        }
 
         // ── Pest entity ESP & Tracer ──────────────────────────────────────────
         List<PestEntityDetector.PestEntity> entityPests = pestEntityDetector.getDetectedPests();

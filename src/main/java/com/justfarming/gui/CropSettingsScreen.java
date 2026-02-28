@@ -167,11 +167,16 @@ public class CropSettingsScreen extends Screen {
         // Header separator
         context.fill(panelX + 3, panelY + hdrH - 1, panelR, panelY + hdrH, COL_SEP);
 
-        // Title
+        // Title + recommended speed (two-line header block, vertically centred)
+        // 18 = 8px (first text line) + 2px gap + 8px (second text line)
         String cropName = Text.translatable(crop.getTranslationKey()).getString();
+        int firstLineY = panelY + Math.max(2, (hdrH - 18) / 2);
         context.drawTextWithShadow(this.textRenderer,
                 Text.literal(cropName + " Settings").withColor(COL_TEXT),
-                panelX + 10, panelY + (hdrH - 8) / 2, COL_TEXT);
+                panelX + 10, firstLineY, COL_TEXT);
+        context.drawTextWithShadow(this.textRenderer,
+                Text.literal("Recommended Speed: " + crop.getRecommendedSpeed()).withColor(COL_TEXT_MUTED),
+                panelX + 10, firstLineY + 10, COL_TEXT_MUTED);
 
         // Section labels
         drawSectionLabel(context, "Camera", sectionCameraY, sLH, panelR);
