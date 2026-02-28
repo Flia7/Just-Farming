@@ -3,6 +3,8 @@ package com.justfarming;
 import com.justfarming.config.FarmingConfig;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.item.ItemStack;
+import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.Vec3d;
 import org.slf4j.Logger;
@@ -64,7 +66,7 @@ public class MacroManager {
     // State
     // -----------------------------------------------------------------------
 
-    private enum MacroState { IDLE, DETECTING, BACKWARD_LEFT, FORWARD_LEFT, FORWARD_RIGHT,
+    private enum MacroState { IDLE, MOUSEMAT_SNAP, DETECTING, BACKWARD_LEFT, FORWARD_LEFT, FORWARD_RIGHT,
             STRAFE_LEFT_ONLY, STRAFE_RIGHT_ONLY, BACK_ONLY, FORWARD_ONLY, WARPING,
             LANE_SWAP_WAITING }
 
@@ -111,6 +113,14 @@ public class MacroManager {
      * of switching to {@link #laneSwapNextState}.
      */
     private boolean laneSwapPendingCustomFlip = false;
+
+    /**
+     * Tracks which phase of the MOUSEMAT_SNAP state we are in.
+     * {@code 0} = slot not yet switched; {@code 1} = slot switched, swing pending.
+     * The two-tick split ensures the server receives the slot-change packet
+     * before the arm-swing packet.
+     */
+    private int mousematSnapPhase = 0;
 
     // -----------------------------------------------------------------------
     // Constructor / config
@@ -273,12 +283,13 @@ public class MacroManager {
     public void start() {
         if (running) return;
         running = true;
-        state = MacroState.DETECTING;
+        state = config.squeakyMousematEnabled ? MacroState.MOUSEMAT_SNAP : MacroState.DETECTING;
         detectTicks = 0;
         detectStartPos = null;
         lastPos = null;
         stuckTicks = 0;
         customFlipped = false;
+        mousematSnapPhase = 0;
         if (config.unlockedMouseEnabled) {
             client.mouse.unlockCursor();
         }
@@ -346,11 +357,15 @@ public class MacroManager {
             return;
         }
 
-        // Lock pitch and yaw to crop-specific defaults every active tick
-        player.setPitch(config.getEffectivePitch(config.selectedCrop));
-        player.setYaw(config.getEffectiveYaw(config.selectedCrop));
+        // Lock pitch and yaw to crop-specific defaults every active tick.
+        // Skipped during MOUSEMAT_SNAP so the mousemat's camera snap can take effect.
+        if (state != MacroState.MOUSEMAT_SNAP) {
+            player.setPitch(config.getEffectivePitch(config.selectedCrop));
+            player.setYaw(config.getEffectiveYaw(config.selectedCrop));
+        }
 
         switch (state) {
+            case MOUSEMAT_SNAP      -> tickMousematSnap(player);
             case DETECTING         -> tickDetecting(player);
             case BACKWARD_LEFT     -> tickMoving(player, false, true,  true,  false);
             case FORWARD_LEFT      -> tickMoving(player, true,  false, true,  false);
@@ -400,6 +415,56 @@ public class MacroManager {
     // -----------------------------------------------------------------------
     // State handlers
     // -----------------------------------------------------------------------
+
+    /**
+     * Mousemat snap phase: searches the player's hotbar for a Squeaky Mousemat,
+     * switches to that slot, and performs a left-click (arm swing) so that
+     * Hypixel Skyblock's plugin snaps the camera to the mousemat's configured
+     * yaw and pitch.
+     *
+     * <p>Runs over two ticks so that the slot-change packet is guaranteed to
+     * reach the server before the arm-swing packet:
+     * <ol>
+     *   <li>Tick 0 – find the item and switch the hotbar slot.</li>
+     *   <li>Tick 1 – swing the main hand and transition to DETECTING.</li>
+     * </ol>
+     * If the item is not found on tick 0, the state transitions to DETECTING
+     * immediately.
+     */
+    private void tickMousematSnap(ClientPlayerEntity player) {
+        releaseKeys();
+
+        if (mousematSnapPhase == 0) {
+            int mousematSlot = -1;
+            for (int i = 0; i < 9; i++) {
+                ItemStack stack = player.getInventory().getStack(i);
+                if (!stack.isEmpty() && stack.getName().getString().equals("Squeaky Mousemat")) {
+                    mousematSlot = i;
+                    break;
+                }
+            }
+
+            if (mousematSlot >= 0) {
+                player.getInventory().setSelectedSlot(mousematSlot);
+                LOGGER.info("[JustFarming] Switching to Squeaky Mousemat in hotbar slot {}.", mousematSlot);
+                mousematSnapPhase = 1;
+            } else {
+                LOGGER.info("[JustFarming] Squeaky Mousemat not found in hotbar, skipping mousemat snap.");
+                mousematSnapPhase = 0;
+                state = MacroState.DETECTING;
+                detectTicks = 0;
+                detectStartPos = null;
+            }
+        } else {
+            // Phase 1: slot change packet was sent last tick – swing now
+            player.swingHand(Hand.MAIN_HAND);
+            LOGGER.info("[JustFarming] Attempting to use Squeaky Mousemat.");
+            mousematSnapPhase = 0;
+            state = MacroState.DETECTING;
+            detectTicks = 0;
+            detectStartPos = null;
+        }
+    }
 
     /**
      * Observation phase: no keys are pressed; we watch the player move (or not)

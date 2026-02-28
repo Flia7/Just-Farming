@@ -68,6 +68,13 @@ public class FarmingConfig {
      */
     public boolean unlockedMouseEnabled = false;
 
+    /**
+     * When {@code true}, the macro will search the player's hotbar for a
+     * Squeaky Mousemat at startup and left-click it to perform the initial
+     * camera snap, instead of directly overriding the player's rotation.
+     */
+    public boolean squeakyMousematEnabled = false;
+
     // --- Rewarp trigger position ---
 
     /** Whether a rewarp position has been set. */

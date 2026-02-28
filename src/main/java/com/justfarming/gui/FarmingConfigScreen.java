@@ -82,6 +82,7 @@ public class FarmingConfigScreen extends Screen {
     // ── Tab 2 – Misc widgets ──────────────────────────────────────────────────
     private ButtonWidget                  freelookButton;
     private CyclingButtonWidget<Boolean>  unlockedMouseButton;
+    private CyclingButtonWidget<Boolean>  squeakyMousematButton;
 
     // ── Tab 3 – Delays widgets ────────────────────────────────────────────────
     private LaneSwapDelaySlider           laneSwapDelaySlider;
@@ -263,6 +264,15 @@ public class FarmingConfigScreen extends Screen {
                 .build(widgetX, y, bw, bh,
                         Text.translatable("gui.just-farming.unlocked_mouse_label"));
         this.addDrawableChild(unlockedMouseButton);
+        y += bh + pad;
+
+        squeakyMousematButton = CyclingButtonWidget.builder(
+                        (Boolean val) -> val ? Text.literal("ON") : Text.literal("OFF"))
+                .values(Boolean.TRUE, Boolean.FALSE)
+                .initially(config.squeakyMousematEnabled)
+                .build(widgetX, y, bw, bh,
+                        Text.translatable("gui.just-farming.squeaky_mousemat_label"));
+        this.addDrawableChild(squeakyMousematButton);
 
         // ── Tab 3 – Delays ────────────────────────────────────────────────────
         y = contentTop;
@@ -314,6 +324,7 @@ public class FarmingConfigScreen extends Screen {
         boolean t2 = activeTab == 2;
         freelookButton.visible      = t2;
         unlockedMouseButton.visible = t2;
+        squeakyMousematButton.visible = t2;
 
         boolean t3 = activeTab == 3;
         laneSwapDelaySlider.visible  = t3;
@@ -432,6 +443,7 @@ public class FarmingConfigScreen extends Screen {
         config.pestEspEnabled       = pestEspButton.getValue();
         config.pestTracerEnabled    = pestTracerButton.getValue();
         config.unlockedMouseEnabled = unlockedMouseButton.getValue();
+        config.squeakyMousematEnabled = squeakyMousematButton.getValue();
         macroManager.setConfig(config);
     }
 
