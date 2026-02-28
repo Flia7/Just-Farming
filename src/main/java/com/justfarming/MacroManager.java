@@ -19,6 +19,9 @@ import org.slf4j.LoggerFactory;
  *   <li>BACKWARD_LEFT – holds back + strafe-left + attack (Cocoa Beans).</li>
  *   <li>FORWARD_LEFT – holds forward + strafe-left + attack.</li>
  *   <li>FORWARD_RIGHT – holds forward + strafe-right + attack (S-Shape crops).</li>
+ *   <li>STRAFE_LEFT_ONLY – holds strafe-left only + attack (Sugar Cane / Moonflower / Sunflower / Wild Rose).</li>
+ *   <li>BACK_ONLY – holds back only + attack (end-of-row for left-back and forward-back crops).</li>
+ *   <li>FORWARD_ONLY – holds forward only + attack (Mushroom).</li>
  *   <li>WARPING – releases keys and sends {@code /warp garden}.</li>
  * </ol>
  *
@@ -60,7 +63,8 @@ public class MacroManager {
     // State
     // -----------------------------------------------------------------------
 
-    private enum MacroState { IDLE, DETECTING, BACKWARD_LEFT, FORWARD_LEFT, FORWARD_RIGHT, WARPING }
+    private enum MacroState { IDLE, DETECTING, BACKWARD_LEFT, FORWARD_LEFT, FORWARD_RIGHT,
+            STRAFE_LEFT_ONLY, BACK_ONLY, FORWARD_ONLY, WARPING }
 
     private MacroState state = MacroState.IDLE;
     private boolean running = false;
@@ -113,7 +117,8 @@ public class MacroManager {
      */
     public boolean shouldBreak() {
         return running && (state == MacroState.BACKWARD_LEFT || state == MacroState.FORWARD_LEFT
-                || state == MacroState.FORWARD_RIGHT);
+                || state == MacroState.FORWARD_RIGHT || state == MacroState.STRAFE_LEFT_ONLY
+                || state == MacroState.BACK_ONLY || state == MacroState.FORWARD_ONLY);
     }
 
     /**
@@ -124,7 +129,24 @@ public class MacroManager {
      * re-asserting movement inputs while a GUI screen is open.
      */
     public boolean isMovingForward() {
-        return running && (state == MacroState.FORWARD_LEFT || state == MacroState.FORWARD_RIGHT);
+        return running && (state == MacroState.FORWARD_LEFT || state == MacroState.FORWARD_RIGHT
+                || state == MacroState.FORWARD_ONLY);
+    }
+
+    /** Returns {@code true} when the back key should be held (BACKWARD_LEFT or BACK_ONLY). */
+    public boolean isMovingBack() {
+        return running && (state == MacroState.BACKWARD_LEFT || state == MacroState.BACK_ONLY);
+    }
+
+    /** Returns {@code true} when the left-strafe key should be held. */
+    public boolean isStrafeLeft() {
+        return running && (state == MacroState.BACKWARD_LEFT || state == MacroState.FORWARD_LEFT
+                || state == MacroState.STRAFE_LEFT_ONLY);
+    }
+
+    /** Returns {@code true} when the right-strafe key should be held (FORWARD_RIGHT). */
+    public boolean isStrafeRight() {
+        return running && state == MacroState.FORWARD_RIGHT;
     }
 
     /**
@@ -137,14 +159,17 @@ public class MacroManager {
     public void reapplyMovementKeys() {
         if (!running || client.options == null) return;
         if (state == MacroState.BACKWARD_LEFT || state == MacroState.FORWARD_LEFT
-                || state == MacroState.FORWARD_RIGHT) {
+                || state == MacroState.FORWARD_RIGHT || state == MacroState.STRAFE_LEFT_ONLY
+                || state == MacroState.BACK_ONLY || state == MacroState.FORWARD_ONLY) {
             client.options.attackKey.setPressed(true);
-            boolean goForward = (state == MacroState.FORWARD_LEFT || state == MacroState.FORWARD_RIGHT);
+            boolean goForward  = (state == MacroState.FORWARD_LEFT || state == MacroState.FORWARD_RIGHT || state == MacroState.FORWARD_ONLY);
+            boolean goBack     = (state == MacroState.BACKWARD_LEFT || state == MacroState.BACK_ONLY);
+            boolean goLeft     = (state == MacroState.BACKWARD_LEFT || state == MacroState.FORWARD_LEFT || state == MacroState.STRAFE_LEFT_ONLY);
+            boolean goRight    = (state == MacroState.FORWARD_RIGHT);
             client.options.forwardKey.setPressed(goForward);
-            client.options.backKey.setPressed(!goForward);
-            boolean strafeLeft = (state != MacroState.FORWARD_RIGHT);
-            client.options.leftKey.setPressed(strafeLeft);
-            client.options.rightKey.setPressed(!strafeLeft);
+            client.options.backKey.setPressed(goBack);
+            client.options.leftKey.setPressed(goLeft);
+            client.options.rightKey.setPressed(goRight);
         }
     }
 
@@ -260,11 +285,14 @@ public class MacroManager {
         player.setYaw(config.farmingYaw);
 
         switch (state) {
-            case DETECTING      -> tickDetecting(player);
-            case BACKWARD_LEFT  -> tickMoving(player, false, true);
-            case FORWARD_LEFT   -> tickMoving(player, true, true);
-            case FORWARD_RIGHT  -> tickMoving(player, true, false);
-            case WARPING        -> {
+            case DETECTING         -> tickDetecting(player);
+            case BACKWARD_LEFT     -> tickMoving(player, false, true,  true,  false);
+            case FORWARD_LEFT      -> tickMoving(player, true,  false, true,  false);
+            case FORWARD_RIGHT     -> tickMoving(player, true,  false, false, true);
+            case STRAFE_LEFT_ONLY  -> tickMoving(player, false, false, true,  false);
+            case BACK_ONLY         -> tickMoving(player, false, true,  false, false);
+            case FORWARD_ONLY      -> tickMoving(player, true,  false, false, false);
+            case WARPING           -> {
                 releaseKeys();
                 if (System.currentTimeMillis() - warpStartTime < warpTargetDelay) {
                     // Still waiting for the configured delay – keep keys released
@@ -310,6 +338,9 @@ public class MacroManager {
                 // S-Shape crops always move forward
                 state = MacroState.FORWARD_LEFT;
                 LOGGER.info("[JustFarming] Detected movement – S-Shape crop, starting FORWARD_LEFT.");
+            } else if (config.selectedCrop.isLeftBack()) {
+                state = MacroState.STRAFE_LEFT_ONLY;
+                LOGGER.info("[JustFarming] Detected movement – left-back crop, starting STRAFE_LEFT_ONLY.");
             } else {
                 // Project delta onto the player's forward axis
                 double yawRad = Math.toRadians(config.farmingYaw);
@@ -317,12 +348,24 @@ public class MacroManager {
                 double fwdZ =  Math.cos(yawRad);
                 double forwardComponent = delta.x * fwdX + delta.z * fwdZ;
 
-                state = (forwardComponent > 0) ? MacroState.FORWARD_LEFT : MacroState.BACKWARD_LEFT;
+                if (config.selectedCrop.isForwardBack()) {
+                    state = (forwardComponent > 0) ? MacroState.FORWARD_ONLY : MacroState.BACK_ONLY;
+                } else {
+                    state = (forwardComponent > 0) ? MacroState.FORWARD_LEFT : MacroState.BACKWARD_LEFT;
+                }
                 LOGGER.info("[JustFarming] Detected movement – starting {}.", state);
             }
         } else {
             // Player is stationary
-            state = config.selectedCrop.isSShape() ? MacroState.FORWARD_LEFT : MacroState.BACKWARD_LEFT;
+            if (config.selectedCrop.isSShape()) {
+                state = MacroState.FORWARD_LEFT;
+            } else if (config.selectedCrop.isLeftBack()) {
+                state = MacroState.STRAFE_LEFT_ONLY;
+            } else if (config.selectedCrop.isForwardBack()) {
+                state = MacroState.FORWARD_ONLY;
+            } else {
+                state = MacroState.BACKWARD_LEFT;
+            }
             LOGGER.info("[JustFarming] No movement detected – defaulting to {}.", state);
         }
 
@@ -334,25 +377,21 @@ public class MacroManager {
      * Movement phase: presses the appropriate directional keys and monitors the
      * player's position for end-of-row or rewarp-trigger events.
      *
-     * @param forward    {@code true} = moving forward; {@code false} = moving backward.
-     * @param strafeLeft {@code true} = strafe left; {@code false} = strafe right.
+     * @param forward    {@code true} = press the forward key.
+     * @param back       {@code true} = press the back key.
+     * @param strafeLeft {@code true} = press the left-strafe key.
+     * @param strafeRight {@code true} = press the right-strafe key.
      */
-    private void tickMoving(ClientPlayerEntity player, boolean forward, boolean strafeLeft) {
+    private void tickMoving(ClientPlayerEntity player, boolean forward, boolean back,
+                            boolean strafeLeft, boolean strafeRight) {
         // Hold attack (breaks crops in view)
         client.options.attackKey.setPressed(true);
 
-        // Strafe direction
+        // Directional keys
+        client.options.forwardKey.setPressed(forward);
+        client.options.backKey.setPressed(back);
         client.options.leftKey.setPressed(strafeLeft);
-        client.options.rightKey.setPressed(!strafeLeft);
-
-        // Set forward / backward
-        if (forward) {
-            client.options.forwardKey.setPressed(true);
-            client.options.backKey.setPressed(false);
-        } else {
-            client.options.backKey.setPressed(true);
-            client.options.forwardKey.setPressed(false);
-        }
+        client.options.rightKey.setPressed(strafeRight);
 
         // ---- Block breaking ----
         // When no screen is open, Minecraft's handleInputEvents() calls
@@ -391,9 +430,18 @@ public class MacroManager {
                     // S-Shape: keep moving forward, flip strafe direction
                     state = (state == MacroState.FORWARD_LEFT)
                             ? MacroState.FORWARD_RIGHT : MacroState.FORWARD_LEFT;
+                } else if (config.selectedCrop.isLeftBack()) {
+                    // Left-Back: alternate between strafe-left and back-only
+                    state = (state == MacroState.STRAFE_LEFT_ONLY)
+                            ? MacroState.BACK_ONLY : MacroState.STRAFE_LEFT_ONLY;
+                } else if (config.selectedCrop.isForwardBack()) {
+                    // Forward-Back (Mushroom): alternate between forward-only and back-only
+                    state = (state == MacroState.FORWARD_ONLY)
+                            ? MacroState.BACK_ONLY : MacroState.FORWARD_ONLY;
                 } else {
                     // Cocoa Beans: flip forward/backward, always strafe left
-                    state = forward ? MacroState.BACKWARD_LEFT : MacroState.FORWARD_LEFT;
+                    state = (state == MacroState.FORWARD_LEFT)
+                            ? MacroState.BACKWARD_LEFT : MacroState.FORWARD_LEFT;
                 }
                 LOGGER.info("[JustFarming] End of row – switching to {}.", state);
                 return;

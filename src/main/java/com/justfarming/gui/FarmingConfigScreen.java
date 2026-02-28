@@ -143,7 +143,8 @@ public class FarmingConfigScreen extends Screen {
         y += sectionLH;
         cropButton = CyclingButtonWidget.builder(
                         (CropType crop) -> Text.translatable(crop.getTranslationKey()))
-                .values(CropType.COCOA_BEANS, CropType.POTATO_S_SHAPE,
+                .values(CropType.COCOA_BEANS, CropType.MUSHROOM,
+                        CropType.POTATO_S_SHAPE,
                         CropType.NETHER_WART_S_SHAPE, CropType.CARROT_S_SHAPE,
                         CropType.WHEAT_S_SHAPE, CropType.PUMPKIN_S_SHAPE,
                         CropType.MELON_S_SHAPE, CropType.SUGAR_CANE_S_SHAPE,
