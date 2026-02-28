@@ -5,17 +5,15 @@ import com.justfarming.config.FarmingConfig;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.CyclingButtonWidget;
 import net.minecraft.client.gui.widget.SliderWidget;
 import net.minecraft.text.Text;
 
 /**
  * Per-crop settings screen.
  *
- * <p>Lets the player adjust the camera yaw, pitch and the five farming keys
- * (forward, back, left strafe, right strafe, attack) for the currently selected
- * crop.  A <em>Reset to Default</em> button removes any saved override so the
- * built-in values take effect again.
+ * <p>Lets the player adjust the camera yaw and pitch for the currently
+ * selected crop.  A <em>Reset to Default</em> button removes any saved
+ * override so the built-in values take effect again.
  */
 public class CropSettingsScreen extends Screen {
 
@@ -33,7 +31,7 @@ public class CropSettingsScreen extends Screen {
 
     // ── Natural panel dimensions ───────────────────────────────────────────────
     private static final int PANEL_WIDTH   = 320;
-    private static final int PANEL_HEIGHT  = 330;
+    private static final int PANEL_HEIGHT  = 200;
     private static final int HEADER_HEIGHT = 42;
     private static final int BUTTON_WIDTH  = 240;
     private static final int BUTTON_HEIGHT = 20;
@@ -46,17 +44,11 @@ public class CropSettingsScreen extends Screen {
     // ── Widgets ───────────────────────────────────────────────────────────────
     private YawSlider   yawSlider;
     private PitchSlider pitchSlider;
-    private CyclingButtonWidget<Boolean> forwardBtn;
-    private CyclingButtonWidget<Boolean> backBtn;
-    private CyclingButtonWidget<Boolean> leftBtn;
-    private CyclingButtonWidget<Boolean> rightBtn;
-    private CyclingButtonWidget<Boolean> attackBtn;
     private ButtonWidget resetButton;
     private ButtonWidget saveCloseButton;
 
     // ── Section-label Y positions (set in init, used in render) ───────────────
     private int sectionCameraY;
-    private int sectionKeysY;
 
     // ── Scale computed in init (used in render) ────────────────────────────────
     private float scale;
@@ -64,7 +56,6 @@ public class CropSettingsScreen extends Screen {
 
     // ── Initial (working) values ──────────────────────────────────────────────
     private final float   initYaw, initPitch;
-    private final boolean initForward, initBack, initLeft, initRight, initAttack;
 
     public CropSettingsScreen(Screen parent, FarmingConfig config) {
         super(Text.literal("Crop Settings"));
@@ -76,21 +67,11 @@ public class CropSettingsScreen extends Screen {
         FarmingConfig.CropCustomSettings cs = config.getCropSettings(crop);
         FarmingConfig.CropCustomSettings defaults = FarmingConfig.CropCustomSettings.fromDefaults(crop);
         if (cs != null) {
-            initYaw     = cs.yaw;
-            initPitch   = cs.pitch;
-            initForward = cs.forward;
-            initBack    = cs.back;
-            initLeft    = cs.left;
-            initRight   = cs.right;
-            initAttack  = cs.attack;
+            initYaw   = cs.yaw;
+            initPitch = cs.pitch;
         } else {
-            initYaw     = defaults.yaw;
-            initPitch   = defaults.pitch;
-            initForward = defaults.forward;
-            initBack    = defaults.back;
-            initLeft    = defaults.left;
-            initRight   = defaults.right;
-            initAttack  = defaults.attack;
+            initYaw   = defaults.yaw;
+            initPitch = defaults.pitch;
         }
     }
 
@@ -126,29 +107,6 @@ public class CropSettingsScreen extends Screen {
         this.addDrawableChild(pitchSlider);
         y += bh + pad + gap;
 
-        // ── Keys section ──────────────────────────────────────────────────────
-        sectionKeysY = y;
-        y += sLH;
-
-        forwardBtn = buildKeyToggle(widgetX, y, bw, bh, "Forward Key:", initForward);
-        this.addDrawableChild(forwardBtn);
-        y += bh + pad;
-
-        backBtn = buildKeyToggle(widgetX, y, bw, bh, "Back Key:", initBack);
-        this.addDrawableChild(backBtn);
-        y += bh + pad;
-
-        leftBtn = buildKeyToggle(widgetX, y, bw, bh, "Left Strafe Key:", initLeft);
-        this.addDrawableChild(leftBtn);
-        y += bh + pad;
-
-        rightBtn = buildKeyToggle(widgetX, y, bw, bh, "Right Strafe Key:", initRight);
-        this.addDrawableChild(rightBtn);
-        y += bh + pad;
-
-        attackBtn = buildKeyToggle(widgetX, y, bw, bh, "Attack Key:", initAttack);
-        this.addDrawableChild(attackBtn);
-
         // ── Reset + Close (anchored to the bottom of the panel) ───────────────
         int closeY = panelY + panelH - bh - pad;
         int resetY = closeY - bh - pad;
@@ -179,12 +137,13 @@ public class CropSettingsScreen extends Screen {
 
     @Override
     public void close() {
-        // Persist the current widget values as a crop override
+        // Persist the current widget values as a crop override, using default key settings
+        FarmingConfig.CropCustomSettings defaults = FarmingConfig.CropCustomSettings.fromDefaults(crop);
         config.cropSettings.put(crop.name(), new FarmingConfig.CropCustomSettings(
                 yawSlider.getYaw(), pitchSlider.getPitch(),
-                forwardBtn.getValue(), backBtn.getValue(),
-                leftBtn.getValue(), rightBtn.getValue(),
-                attackBtn.getValue()));
+                defaults.forward, defaults.back,
+                defaults.left, defaults.right,
+                defaults.attack));
         config.save();
         if (this.client != null) this.client.setScreen(parent);
     }
@@ -215,15 +174,14 @@ public class CropSettingsScreen extends Screen {
         context.fill(panelR - 6, panelY - 2, panelR + 2, panelY - 1, COL_ACCENT);
         context.fill(panelR + 1, panelY - 2, panelR + 2, panelY + 6, COL_ACCENT);
 
-        // Title: "Crop Settings: <CropName>"
+        // Title: "<CropName> Settings"
         String cropName = Text.translatable(crop.getTranslationKey()).getString();
         context.drawCenteredTextWithShadow(this.textRenderer,
-                Text.literal("Crop Settings: " + cropName),
+                Text.literal(cropName + " Settings"),
                 this.width / 2, panelY + Math.max(4, Math.round(8 * scale)), COL_TITLE);
 
         // Section labels
         drawSectionLabel(context, "Camera", sectionCameraY, sLH, panelR);
-        drawSectionLabel(context, "Keys Pressed", sectionKeysY, sLH, panelR);
 
         super.render(context, mouseX, mouseY, delta);
     }
@@ -242,15 +200,11 @@ public class CropSettingsScreen extends Screen {
         return false;
     }
 
-    // ── Helper ────────────────────────────────────────────────────────────────
-
-    private static CyclingButtonWidget<Boolean> buildKeyToggle(
-            int x, int y, int w, int h, String label, boolean initial) {
-        return CyclingButtonWidget.builder(
-                        (Boolean v) -> v ? Text.literal("ON") : Text.literal("OFF"))
-                .values(Boolean.TRUE, Boolean.FALSE)
-                .initially(initial)
-                .build(x, y, w, h, Text.literal(label));
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        // Consume scroll events so widgets (sliders) cannot be accidentally
+        // changed by scrolling while the crop settings screen is open.
+        return true;
     }
 
     // ── Inner slider classes ──────────────────────────────────────────────────

@@ -3,6 +3,10 @@ package com.justfarming.mixin;
 import com.justfarming.JustFarming;
 import com.justfarming.MacroManager;
 import com.justfarming.config.FarmingConfig;
+import com.justfarming.gui.CropSelectScreen;
+import com.justfarming.gui.CropSettingsScreen;
+import com.justfarming.gui.FarmingConfigScreen;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.Mouse;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -57,11 +61,21 @@ public class MouseMixin {
      * we allow all gameplay inputs to be processed even when a GUI screen is
      * open, so the macro keeps breaking crops regardless of which screen the
      * player has open.
+     *
+     * <p>When the Just Farming config GUI or its sub-screens are open, we do
+     * <em>not</em> override the value so that the camera remains stationary
+     * while the player adjusts settings.
      */
     @Inject(method = "isCursorLocked", at = @At("HEAD"), cancellable = true)
     private void onIsCursorLocked(CallbackInfoReturnable<Boolean> cir) {
         MacroManager mm = JustFarming.getMacroManager();
         if (mm != null && mm.isRunning()) {
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (client.currentScreen instanceof FarmingConfigScreen
+                    || client.currentScreen instanceof CropSettingsScreen
+                    || client.currentScreen instanceof CropSelectScreen) {
+                return;
+            }
             cir.setReturnValue(true);
         }
     }

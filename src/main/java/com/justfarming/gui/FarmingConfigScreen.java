@@ -74,7 +74,6 @@ public class FarmingConfigScreen extends Screen {
     private CyclingButtonWidget<Boolean>  pestLabelsButton;
     private TitleScaleSlider              titleScaleSlider;
     private CyclingButtonWidget<Boolean>  pestEspButton;
-    private CyclingButtonWidget<Boolean>  pestEspSeeThroughButton;
     private CyclingButtonWidget<Boolean>  pestTracerButton;
 
     // ── Tab 2 – Misc widgets ──────────────────────────────────────────────────
@@ -241,15 +240,6 @@ public class FarmingConfigScreen extends Screen {
         this.addDrawableChild(pestEspButton);
         y += bh + pad;
 
-        pestEspSeeThroughButton = CyclingButtonWidget.builder(
-                        (Boolean val) -> val ? Text.literal("ON") : Text.literal("OFF"))
-                .values(Boolean.TRUE, Boolean.FALSE)
-                .initially(config.pestEspSeeThrough)
-                .build(widgetX, y, bw, bh,
-                        Text.translatable("gui.just-farming.pest_esp_see_through_label"));
-        this.addDrawableChild(pestEspSeeThroughButton);
-        y += bh + pad;
-
         pestTracerButton = CyclingButtonWidget.builder(
                         (Boolean val) -> val ? Text.literal("ON") : Text.literal("OFF"))
                 .values(Boolean.TRUE, Boolean.FALSE)
@@ -310,7 +300,6 @@ public class FarmingConfigScreen extends Screen {
         pestLabelsButton.visible        = t1;
         titleScaleSlider.visible        = t1;
         pestEspButton.visible           = t1;
-        pestEspSeeThroughButton.visible = t1;
         pestTracerButton.visible        = t1;
 
         boolean t2 = activeTab == 2;
@@ -424,6 +413,13 @@ public class FarmingConfigScreen extends Screen {
         return false;
     }
 
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        // Consume scroll events so widgets (sliders, cycling buttons) cannot be
+        // accidentally changed by scrolling while the config GUI is open.
+        return true;
+    }
+
     /** Read widget values back into the config object. */
     private void applyConfig() {
         // config.selectedCrop is managed directly by CropSelectScreen
@@ -433,7 +429,6 @@ public class FarmingConfigScreen extends Screen {
         config.pestLabelsEnabled    = pestLabelsButton.getValue();
         config.pestTitleScale       = titleScaleSlider.getTitleScaleValue();
         config.pestEspEnabled       = pestEspButton.getValue();
-        config.pestEspSeeThrough    = pestEspSeeThroughButton.getValue();
         config.pestTracerEnabled    = pestTracerButton.getValue();
         config.unlockedMouseEnabled = unlockedMouseButton.getValue();
         macroManager.setConfig(config);
@@ -447,7 +442,7 @@ public class FarmingConfigScreen extends Screen {
 
     private Text getCropSettingsText() {
         String name = Text.translatable(config.selectedCrop.getTranslationKey()).getString();
-        return Text.literal("Crop Settings: " + name);
+        return Text.literal(name + " Settings");
     }
 
     private Text getMacroToggleText() {
@@ -597,7 +592,7 @@ public class FarmingConfigScreen extends Screen {
 
         @Override
         protected void updateMessage() {
-            setMessage(Text.literal(String.format("Pest Title Scale: %.2f", getTitleScaleValue())));
+            setMessage(Text.literal(String.format("Pest Plot Label Scale: %.2f", getTitleScaleValue())));
         }
 
         @Override
