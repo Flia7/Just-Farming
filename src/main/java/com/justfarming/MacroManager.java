@@ -59,6 +59,18 @@ public class MacroManager {
     /** Maximum freelook camera distance (blocks). */
     private static final double MAX_ZOOM = 20.0;
 
+    /**
+     * Degrees to tilt the camera upward per tick while waiting for the
+     * Squeaky Mousemat crosshair to clear a block in MOUSEMAT_SNAP phase 1.
+     */
+    private static final float MOUSEMAT_PITCH_STEP = 5.0f;
+
+    /**
+     * Minimum pitch (most-upward angle) the macro will tilt to while clearing
+     * a block aim during MOUSEMAT_SNAP phase 1 (-90 = straight up).
+     */
+    private static final float MOUSEMAT_PITCH_MIN = -85.0f;
+
     private final MinecraftClient client;
     private FarmingConfig config;
 
@@ -367,9 +379,7 @@ public class MacroManager {
 
         // Lock pitch and yaw to crop-specific defaults every active tick.
         // Skipped during MOUSEMAT_SNAP so the mousemat's camera snap can take effect.
-        // Also skipped entirely when squeakyMousematEnabled, since the Squeaky Mousemat
-        // performs the camera snap itself and the player's view should remain free.
-        if (state != MacroState.MOUSEMAT_SNAP && !config.squeakyMousematEnabled) {
+        if (state != MacroState.MOUSEMAT_SNAP) {
             player.setPitch(config.getEffectivePitch(config.selectedCrop));
             player.setYaw(config.getEffectiveYaw(config.selectedCrop));
         }
@@ -435,14 +445,20 @@ public class MacroManager {
      *
      * <p>Phase sequence:
      * <ol>
-     *   <li>Phase 0 – find the Squeaky Mousemat in the hotbar, remember the current
-     *       slot (farming tool), switch to the mousemat, record the action time.</li>
-     *   <li>Phase 1 – wait 200 ms after the slot switch, then left-click (arm swing)
-     *       and record the action time again.</li>
+     *   <li>Phase 0 – find the Squeaky Mousemat in the hotbar.  If the player is
+     *       already holding the mousemat, find the farming tool in the hotbar and
+     *       save that slot as {@code preMousematSlot} so it can be restored later.
+     *       Switch to the mousemat slot and record the action time.</li>
+     *   <li>Phase 1 – wait 200 ms after the slot switch.  If the player is still
+     *       aiming at a block, tilt the camera upward (5° per tick) until the
+     *       crosshair moves into air; then send the left-click (arm swing).</li>
      *   <li>Phase 2 – wait 200 ms after the click, then check whether the player's
      *       yaw/pitch match the desired crop angles (within 2°).  If the snap
-     *       succeeded, restore the previous slot and transition to DETECTING.
+     *       succeeded, restore the farming tool slot and advance to phase 3.
      *       If not, resend the click and wait another 200 ms (stay in phase 2).</li>
+     *   <li>Phase 3 – wait 200 ms after the farming tool slot is restored to ensure
+     *       the player is holding the farming tool before farming begins, then
+     *       transition to DETECTING.</li>
      * </ol>
      * If the Squeaky Mousemat is not found in phase 0, the state transitions to
      * DETECTING immediately.
@@ -463,6 +479,21 @@ public class MacroManager {
 
             if (mousematSlot >= 0) {
                 preMousematSlot = player.getInventory().getSelectedSlot();
+                // If the player was already holding the mousemat, find the farming tool.
+                if (preMousematSlot == mousematSlot) {
+                    for (int i = 0; i < 9; i++) {
+                        if (i == mousematSlot) continue;
+                        if (!player.getInventory().getStack(i).isEmpty()) {
+                            preMousematSlot = i;
+                            LOGGER.info("[JustFarming] Player was holding Squeaky Mousemat; "
+                                    + "farming tool detected in hotbar slot {}.", preMousematSlot);
+                            break;
+                        }
+                    }
+                    if (preMousematSlot == mousematSlot) {
+                        LOGGER.warn("[JustFarming] Could not find farming tool in hotbar.");
+                    }
+                }
                 player.getInventory().setSelectedSlot(mousematSlot);
                 LOGGER.info("[JustFarming] Switching to Squeaky Mousemat in hotbar slot {} (was slot {}).",
                         mousematSlot, preMousematSlot);
@@ -476,14 +507,20 @@ public class MacroManager {
                 detectStartPos = null;
             }
         } else if (mousematSnapPhase == 1) {
-            // Phase 1: wait 200 ms after slot switch, then left-click
+            // Phase 1: wait 200 ms after slot switch, then look into air and left-click
             if (System.currentTimeMillis() - mousematActionTime >= 200) {
+                // If the crosshair is hitting a block the mousemat ability won't fire –
+                // tilt the camera upward by 5° per tick until looking into air.
+                if (client.crosshairTarget instanceof BlockHitResult) {
+                    player.setPitch(Math.max(MOUSEMAT_PITCH_MIN, player.getPitch() - MOUSEMAT_PITCH_STEP));
+                    return;
+                }
                 player.swingHand(Hand.MAIN_HAND);
                 LOGGER.info("[JustFarming] Left-clicking Squeaky Mousemat.");
                 mousematActionTime = System.currentTimeMillis();
                 mousematSnapPhase = 2;
             }
-        } else {
+        } else if (mousematSnapPhase == 2) {
             // Phase 2: wait 200 ms after the click, then check if camera snapped
             if (System.currentTimeMillis() - mousematActionTime < 200) return;
 
@@ -499,16 +536,25 @@ public class MacroManager {
                 if (preMousematSlot >= 0) {
                     player.getInventory().setSelectedSlot(preMousematSlot);
                 }
-                mousematSnapPhase = 0;
-                state = MacroState.DETECTING;
-                detectTicks = 0;
-                detectStartPos = null;
+                // Phase 3: wait for the farming tool to be in hand before farming starts
+                mousematActionTime = System.currentTimeMillis();
+                mousematSnapPhase = 3;
             } else {
                 // Snap not confirmed yet – retry the left-click
                 LOGGER.info("[JustFarming] Camera not snapped yet (yaw={}, pitch={}), retrying click.",
                         player.getYaw(), player.getPitch());
                 player.swingHand(Hand.MAIN_HAND);
                 mousematActionTime = System.currentTimeMillis();
+            }
+        } else {
+            // Phase 3: wait 200 ms after restoring the farming tool slot to ensure
+            // the player is holding the tool before farming begins.
+            if (System.currentTimeMillis() - mousematActionTime >= 200) {
+                mousematSnapPhase = 0;
+                state = MacroState.DETECTING;
+                detectTicks = 0;
+                detectStartPos = null;
+                LOGGER.info("[JustFarming] Farming tool equipped. Starting DETECTING phase.");
             }
         }
     }
