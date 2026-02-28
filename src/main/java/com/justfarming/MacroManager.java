@@ -184,7 +184,7 @@ public class MacroManager {
         com.justfarming.config.FarmingConfig.CropCustomSettings cs =
                 config.getCropSettings(config.selectedCrop);
         if (cs != null && shouldBreak()) {
-            return customFlipped ? cs.right : cs.left;
+            return customFlipped && shouldFlipStrafe(cs) ? cs.right : cs.left;
         }
         return state == MacroState.BACKWARD_LEFT || state == MacroState.FORWARD_LEFT
                 || state == MacroState.STRAFE_LEFT_ONLY;
@@ -196,7 +196,7 @@ public class MacroManager {
         com.justfarming.config.FarmingConfig.CropCustomSettings cs =
                 config.getCropSettings(config.selectedCrop);
         if (cs != null && shouldBreak()) {
-            return customFlipped ? cs.left : cs.right;
+            return customFlipped && shouldFlipStrafe(cs) ? cs.left : cs.right;
         }
         return state == MacroState.FORWARD_RIGHT || state == MacroState.STRAFE_RIGHT_ONLY;
     }
@@ -221,8 +221,8 @@ public class MacroManager {
                 client.options.attackKey.setPressed(cs.attack);
                 client.options.forwardKey.setPressed(customFlipped ? cs.back    : cs.forward);
                 client.options.backKey.setPressed(   customFlipped ? cs.forward : cs.back);
-                client.options.leftKey.setPressed(   customFlipped ? cs.right   : cs.left);
-                client.options.rightKey.setPressed(  customFlipped ? cs.left    : cs.right);
+                client.options.leftKey.setPressed(   customFlipped && shouldFlipStrafe(cs) ? cs.right : cs.left);
+                client.options.rightKey.setPressed(  customFlipped && shouldFlipStrafe(cs) ? cs.left  : cs.right);
                 return;
             }
 
@@ -620,8 +620,8 @@ public class MacroManager {
         client.options.attackKey.setPressed(cs.attack);
         client.options.forwardKey.setPressed(customFlipped ? cs.back    : cs.forward);
         client.options.backKey.setPressed(   customFlipped ? cs.forward : cs.back);
-        client.options.leftKey.setPressed(   customFlipped ? cs.right   : cs.left);
-        client.options.rightKey.setPressed(  customFlipped ? cs.left    : cs.right);
+        client.options.leftKey.setPressed(   customFlipped && shouldFlipStrafe(cs) ? cs.right : cs.left);
+        client.options.rightKey.setPressed(  customFlipped && shouldFlipStrafe(cs) ? cs.left  : cs.right);
     }
 
     /**
@@ -639,5 +639,19 @@ public class MacroManager {
         if (cs.left)                return MacroState.STRAFE_LEFT_ONLY;
         if (cs.right)               return MacroState.STRAFE_RIGHT_ONLY;
         return MacroState.FORWARD_ONLY; // fallback
+    }
+
+    /**
+     * Returns {@code true} when the strafe keys (left↔right) should be swapped
+     * on a direction flip.
+     *
+     * <p>Pure-strafe crops like Cactus (no forward/back movement) alternate
+     * their lateral direction on each row, so left↔right must be swapped.
+     * Crops that alternate forward/back (e.g. Cocoa Beans) keep the same
+     * strafe direction on both passes, so left↔right must NOT be swapped.
+     */
+    private static boolean shouldFlipStrafe(
+            com.justfarming.config.FarmingConfig.CropCustomSettings cs) {
+        return !(cs.forward || cs.back);
     }
 }
