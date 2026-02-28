@@ -413,8 +413,7 @@ public class FarmingConfigScreen extends Screen {
 
     private Text getCropSelectText() {
         String name = Text.translatable(config.selectedCrop.getTranslationKey()).getString();
-        return Text.literal("Select Crop: " + name
-                + "  (Speed: " + config.selectedCrop.getRecommendedSpeed() + ")");
+        return Text.literal("Select Crop: " + name);
     }
 
     private Text getCropSettingsText() {
@@ -435,10 +434,7 @@ public class FarmingConfigScreen extends Screen {
     }
 
     private Text getRewarpButtonText() {
-        return config.rewarpSet
-                ? Text.literal(String.format("§7Rewarp: %.1f, %.1f, %.1f",
-                        config.rewarpX, config.rewarpY, config.rewarpZ))
-                : Text.translatable("gui.just-farming.set_rewarp");
+        return Text.translatable("gui.just-farming.set_rewarp");
     }
 
     // -------------------------------------------------------------------------
