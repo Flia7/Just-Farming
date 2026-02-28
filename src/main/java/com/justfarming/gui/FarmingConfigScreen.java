@@ -12,53 +12,58 @@ import net.minecraft.text.Text;
 /**
  * Configuration GUI screen for Just Farming.
  *
- * <p>Three tabs organise the settings:
+ * <p>Layout inspired by the sw mod: a left navigation sidebar with
+ * category tabs and a right content panel. Three categories organise
+ * the settings:
  * <ul>
- *   <li><b>Farming</b> – crop (with recommended speed), rewarp delay, set-rewarp, start/stop macro</li>
+ *   <li><b>Farming</b> – crop selection, rewarp delay, set-rewarp, start/stop macro</li>
  *   <li><b>Pests</b>   – pest highlight, labels, ESP options, tracer</li>
- *   <li><b>Misc</b>    – freelook toggle</li>
+ *   <li><b>Misc</b>    – freelook toggle, unlocked mouse</li>
  * </ul>
  */
 public class FarmingConfigScreen extends Screen {
 
-    // ── Layout (natural/maximum dimensions) ──────────────────────────────────
-    private static final int PANEL_WIDTH    = 320;
-    private static final int PANEL_HEIGHT   = 420;
-    private static final int HEADER_HEIGHT  = 46;
-    private static final int TAB_BAR_HEIGHT = 22;
-    private static final int BUTTON_WIDTH   = 240;
+    // ── Natural/maximum dimensions ────────────────────────────────────────────
+    private static final int WINDOW_WIDTH   = 420;
+    private static final int WINDOW_HEIGHT  = 280;
+    private static final int NAV_WIDTH      = 110;
+    private static final int BUTTON_WIDTH   = 220;
     private static final int BUTTON_HEIGHT  = 20;
-    private static final int PADDING        = 6;
+    private static final int PADDING        = 10;
+    private static final int TAB_HEIGHT     = 26;
 
-    // ── Dynamic layout (computed in init, used in render) ─────────────────────
-    private float scale = 1.0f;
-    private int panelX, panelY, panelW, panelH;
-    private int hdrH, tabH, bw, bh, pad, sectionLH;
-
-    // ── Colour palette (modern dark theme) ────────────────────────────────────
-    private static final int COL_BG            = 0xF00E1018;
-    private static final int COL_HEADER_TOP    = 0xFF1A1040;
-    private static final int COL_HEADER_BOTTOM = 0xFF0D0820;
-    private static final int COL_BORDER_OUTER  = 0xFF2D1B69;
-    private static final int COL_BORDER_INNER  = 0xFF6C3DFF;
-    private static final int COL_SECTION_BG    = 0x18654DFF;
-    private static final int COL_TITLE         = 0xFFEEEEFF;
-    private static final int COL_LABEL         = 0xFFB0A0E0;
-    private static final int COL_ACCENT        = 0xFF7C4DFF;
-    private static final int COL_SHADOW        = 0x60000000;
-    private static final int COL_TAB_ACTIVE    = 0xFF3D2B8F;
-    private static final int COL_TAB_INACTIVE  = 0xFF1A1040;
+    // ── Colour palette (inspired by sw DEFAULT / MONOCHROME theme) ────────────
+    private static final int COL_SCREEN_DIM  = 0x60000000; // full-screen dim
+    private static final int COL_WIN_BG      = 0xBF000000; // rgba(0,0,0,0.75) window
+    private static final int COL_NAV_BG      = 0x99000000; // rgba(0,0,0,0.6)  nav panel
+    private static final int COL_BORDER      = 0x28FFFFFF; // rgba(1,1,1,0.16) border
+    private static final int COL_SEP         = 0x14FFFFFF; // rgba(1,1,1,0.08) separator
+    private static final int COL_SECTION_BG  = 0x14FFFFFF; // section label tint
+    private static final int COL_TEXT        = 0xF2FFFFFF; // rgba(1,1,1,0.95) text
+    private static final int COL_TEXT_MUTED  = 0x66FFFFFF; // rgba(1,1,1,0.40) muted text
+    private static final int COL_ACCENT      = 0xFF7C4DFF; // purple accent
+    private static final int COL_TAB_ACTIVE  = 0x26FFFFFF; // active tab tint
+    private static final int COL_STATUS_ON   = 0xFF50E890; // green  (running)
+    private static final int COL_STATUS_OFF  = 0xFFFF5060; // red    (stopped)
+    private static final int COL_SHADOW      = 0x60000000; // drop shadow
 
     // ── Tabs ──────────────────────────────────────────────────────────────────
     private static final String[] TAB_NAMES = { "Farming", "Pests", "Misc" };
     private int activeTab = 0;
+
+    // ── Dynamic layout (computed in init) ─────────────────────────────────────
+    private float scale = 1.0f;
+    private int winX, winY, winW, winH;
+    private int navW;
+    private int contentX, contentW;
+    private int bw, bh, pad, sLH;
 
     // ── State ─────────────────────────────────────────────────────────────────
     private final Screen parent;
     private final FarmingConfig config;
     private final MacroManager macroManager;
 
-    // ── Tab selector buttons ──────────────────────────────────────────────────
+    // ── Tab selector buttons (in left nav panel) ──────────────────────────────
     private TabButton[] tabButtons;
 
     // ── Tab 0 – Farming widgets ───────────────────────────────────────────────
@@ -77,18 +82,15 @@ public class FarmingConfigScreen extends Screen {
     private CyclingButtonWidget<Boolean>  pestTracerButton;
 
     // ── Tab 2 – Misc widgets ──────────────────────────────────────────────────
-    private ButtonWidget freelookButton;
-    private CyclingButtonWidget<Boolean> unlockedMouseButton;
+    private ButtonWidget                  freelookButton;
+    private CyclingButtonWidget<Boolean>  unlockedMouseButton;
 
     // ── Always-visible widget ─────────────────────────────────────────────────
     private ButtonWidget saveCloseButton;
 
     // ── Section-label Y positions (set in init, used in render) ───────────────
-    private int sectionCropY;
-    private int sectionDelaysY;
-    private int actionSeparatorY;
-    private int sectionPestsY;
-    private int sectionMiscY;
+    private int sectionCropY, sectionDelaysY, actionSeparatorY;
+    private int sectionPestsY, sectionMiscY;
 
     public FarmingConfigScreen(Screen parent, FarmingConfig config, MacroManager macroManager) {
         super(Text.translatable("gui.just-farming.title"));
@@ -99,54 +101,54 @@ public class FarmingConfigScreen extends Screen {
 
     @Override
     protected void init() {
-        // ── Compute scale so the panel fits the screen with a small margin ────
-        float sw = (float)(this.width  - 4) / PANEL_WIDTH;
-        float sh = (float)(this.height - 4) / PANEL_HEIGHT;
-        scale     = Math.min(1.0f, Math.min(sw, sh));
-        panelW    = Math.round(PANEL_WIDTH      * scale);
-        panelH    = Math.round(PANEL_HEIGHT     * scale);
-        hdrH      = Math.round(HEADER_HEIGHT    * scale);
-        tabH      = Math.round(TAB_BAR_HEIGHT   * scale);
-        bw        = Math.round(BUTTON_WIDTH     * scale);
-        bh        = Math.max(8, Math.round(BUTTON_HEIGHT * scale));
-        pad       = Math.max(2, Math.round(PADDING       * scale));
-        sectionLH = Math.max(8, Math.round(10            * scale));
-        int gap   = Math.max(2, Math.round(8             * scale));
+        // ── Compute scale so the window fits the screen with a small margin ────
+        float sw = (float)(this.width  - 4) / WINDOW_WIDTH;
+        float sh = (float)(this.height - 4) / WINDOW_HEIGHT;
+        scale   = Math.min(1.0f, Math.min(sw, sh));
+        winW    = Math.round(WINDOW_WIDTH   * scale);
+        winH    = Math.round(WINDOW_HEIGHT  * scale);
+        navW    = Math.round(NAV_WIDTH      * scale);
+        bw      = Math.round(BUTTON_WIDTH   * scale);
+        bh      = Math.max(8, Math.round(BUTTON_HEIGHT * scale));
+        pad     = Math.max(2, Math.round(PADDING       * scale));
+        sLH     = Math.max(8, Math.round(10            * scale));
+        int tabH = Math.max(16, Math.round(TAB_HEIGHT  * scale));
+        int gap  = Math.max(2, Math.round(8            * scale));
 
-        panelX = (this.width  - panelW) / 2;
-        panelY = (this.height - panelH) / 2;
-        int centerX = panelX + panelW / 2;
-        int widgetX = centerX - bw / 2;
+        winX     = (this.width  - winW) / 2;
+        winY     = (this.height - winH) / 2;
+        contentX = winX + navW + 1;          // +1 for the separator pixel
+        contentW = winW - navW - 1;
 
-        // ── Tab selector buttons ──────────────────────────────────────────────
-        int tabBarY  = panelY + hdrH + 1;
-        int tabW     = (panelW - 4) / TAB_NAMES.length;
-        tabButtons   = new TabButton[TAB_NAMES.length];
+        int centerContent = contentX + contentW / 2;
+        int widgetX       = centerContent - bw / 2;
+
+        // ── Tab buttons in the left nav panel ─────────────────────────────────
+        int firstTabY = winY + Math.round(46 * scale);
+        tabButtons = new TabButton[TAB_NAMES.length];
         for (int i = 0; i < TAB_NAMES.length; i++) {
             tabButtons[i] = new TabButton(
-                    panelX + 2 + i * (tabW + 1), tabBarY,
-                    tabW, tabH - 2, i);
+                    winX, firstTabY + i * (tabH + 2),
+                    navW, tabH, i);
             this.addDrawableChild(tabButtons[i]);
         }
 
-        // Content starts below the tab bar
-        int contentTop = panelY + hdrH + tabH + pad;
+        // Content area starts below a small title/header area
+        int contentTop = winY + Math.round(24 * scale);
         int y;
 
         // ── Tab 0 – Farming ───────────────────────────────────────────────────
         y = contentTop;
         sectionCropY = y;
-        y += sectionLH;
+        y += sLH;
         cropSelectButton = ButtonWidget.builder(
                         getCropSelectText(),
                         btn -> {
                             applyConfig();
-                            if (this.client != null) {
+                            if (this.client != null)
                                 this.client.setScreen(new CropSelectScreen(this, config));
-                            }
                         })
-                .dimensions(widgetX, y, bw, bh)
-                .build();
+                .dimensions(widgetX, y, bw, bh).build();
         this.addDrawableChild(cropSelectButton);
         y += bh + pad;
 
@@ -154,17 +156,15 @@ public class FarmingConfigScreen extends Screen {
                         getCropSettingsText(),
                         btn -> {
                             applyConfig();
-                            if (this.client != null) {
+                            if (this.client != null)
                                 this.client.setScreen(new CropSettingsScreen(this, config));
-                            }
                         })
-                .dimensions(widgetX, y, bw, bh)
-                .build();
+                .dimensions(widgetX, y, bw, bh).build();
         this.addDrawableChild(cropSettingsButton);
         y += bh + pad + gap;
 
         sectionDelaysY = y;
-        y += sectionLH;
+        y += sLH;
         swapDelaySlider = new SwapDelaySlider(widgetX, y, bw, bh, config.rewarpDelayMin);
         this.addDrawableChild(swapDelaySlider);
         y += bh + pad;
@@ -188,8 +188,7 @@ public class FarmingConfigScreen extends Screen {
                                 btn.setMessage(Text.literal("§aRewarp Set!"));
                             }
                         })
-                .dimensions(widgetX, y, bw, bh)
-                .build();
+                .dimensions(widgetX, y, bw, bh).build();
         this.addDrawableChild(setRewarpButton);
         y += bh + pad;
 
@@ -200,14 +199,13 @@ public class FarmingConfigScreen extends Screen {
                             macroManager.toggle();
                             btn.setMessage(getMacroToggleText());
                         })
-                .dimensions(widgetX, y, bw, bh)
-                .build();
+                .dimensions(widgetX, y, bw, bh).build();
         this.addDrawableChild(toggleMacroButton);
 
         // ── Tab 1 – Pests ─────────────────────────────────────────────────────
         y = contentTop;
         sectionPestsY = y;
-        y += sectionLH;
+        y += sLH;
 
         pestHighlightButton = CyclingButtonWidget.builder(
                         (Boolean val) -> val ? Text.literal("ON") : Text.literal("OFF"))
@@ -251,7 +249,7 @@ public class FarmingConfigScreen extends Screen {
         // ── Tab 2 – Misc ──────────────────────────────────────────────────────
         y = contentTop;
         sectionMiscY = y;
-        y += sectionLH;
+        y += sLH;
 
         freelookButton = ButtonWidget.builder(
                         getFreelookButtonText(),
@@ -259,8 +257,7 @@ public class FarmingConfigScreen extends Screen {
                             macroManager.toggleFreelook();
                             btn.setMessage(getFreelookButtonText());
                         })
-                .dimensions(widgetX, y, bw, bh)
-                .build();
+                .dimensions(widgetX, y, bw, bh).build();
         this.addDrawableChild(freelookButton);
         y += bh + pad;
 
@@ -272,16 +269,14 @@ public class FarmingConfigScreen extends Screen {
                         Text.translatable("gui.just-farming.unlocked_mouse_label"));
         this.addDrawableChild(unlockedMouseButton);
 
-        // ── Always-visible: Close button at the very bottom ───────────────────
-        int closeBtnY = panelY + panelH - bh - pad;
+        // ── Always-visible: Close button anchored to the bottom ───────────────
+        int closeBtnY = winY + winH - bh - pad;
         saveCloseButton = ButtonWidget.builder(
                         Text.translatable("gui.just-farming.close"),
                         btn -> close())
-                .dimensions(widgetX, closeBtnY, bw, bh)
-                .build();
+                .dimensions(widgetX, closeBtnY, bw, bh).build();
         this.addDrawableChild(saveCloseButton);
 
-        // Apply initial visibility
         updateTabVisibility();
     }
 
@@ -291,138 +286,120 @@ public class FarmingConfigScreen extends Screen {
         cropSelectButton.visible   = t0;
         cropSettingsButton.visible = t0;
         swapDelaySlider.visible    = t0;
-        swapRandomSlider.visible  = t0;
-        setRewarpButton.visible   = t0;
-        toggleMacroButton.visible = t0;
+        swapRandomSlider.visible   = t0;
+        setRewarpButton.visible    = t0;
+        toggleMacroButton.visible  = t0;
 
         boolean t1 = activeTab == 1;
-        pestHighlightButton.visible     = t1;
-        pestLabelsButton.visible        = t1;
-        titleScaleSlider.visible        = t1;
-        pestEspButton.visible           = t1;
-        pestTracerButton.visible        = t1;
+        pestHighlightButton.visible = t1;
+        pestLabelsButton.visible    = t1;
+        titleScaleSlider.visible    = t1;
+        pestEspButton.visible       = t1;
+        pestTracerButton.visible    = t1;
 
         boolean t2 = activeTab == 2;
-        freelookButton.visible     = t2;
+        freelookButton.visible      = t2;
         unlockedMouseButton.visible = t2;
     }
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        int panelR = panelX + panelW;
-        int panelB = panelY + panelH;
+        int winR = winX + winW;
+        int winB = winY + winH;
+
+        // ── Full-screen dim overlay ───────────────────────────────────────────
+        context.fill(0, 0, this.width, this.height, COL_SCREEN_DIM);
 
         // ── Drop shadow ───────────────────────────────────────────────────────
-        context.fill(panelX + 3, panelY + 3, panelR + 3, panelB + 3, COL_SHADOW);
+        context.fill(winX + 4, winY + 4, winR + 4, winB + 4, COL_SHADOW);
 
-        // ── Outer border (2 px) ───────────────────────────────────────────────
-        context.fill(panelX - 2, panelY - 2, panelR + 2, panelB + 2, COL_BORDER_OUTER);
+        // ── Outer border (1 px) ───────────────────────────────────────────────
+        context.fill(winX - 1, winY - 1, winR + 1, winB + 1, COL_BORDER);
 
-        // ── Accent border (1 px) ──────────────────────────────────────────────
-        context.fill(panelX - 1, panelY - 1, panelR + 1, panelB + 1, COL_BORDER_INNER);
+        // ── Window background ─────────────────────────────────────────────────
+        context.fill(winX, winY, winR, winB, COL_WIN_BG);
 
-        // ── Panel background ──────────────────────────────────────────────────
-        context.fill(panelX, panelY, panelR, panelB, COL_BG);
+        // ── Left nav panel background ─────────────────────────────────────────
+        context.fill(winX, winY, winX + navW, winB, COL_NAV_BG);
 
-        // ── Header gradient ───────────────────────────────────────────────────
-        context.fillGradient(panelX, panelY, panelR, panelY + hdrH,
-                COL_HEADER_TOP, COL_HEADER_BOTTOM);
+        // ── Nav / content vertical separator ─────────────────────────────────
+        context.fill(winX + navW, winY + 6, winX + navW + 1, winB - 6, COL_BORDER);
 
-        // ── Header accent line (bottom) ───────────────────────────────────────
-        context.fillGradient(panelX, panelY + hdrH - 1, panelR,
-                panelY + hdrH + 1, COL_ACCENT, COL_BORDER_OUTER);
-
-        // ── Corner accents (top-left / top-right) ─────────────────────────────
-        context.fill(panelX - 2, panelY - 2, panelX + 6, panelY - 1, COL_ACCENT);
-        context.fill(panelX - 2, panelY - 2, panelX - 1, panelY + 6, COL_ACCENT);
-        context.fill(panelR - 6, panelY - 2, panelR + 2, panelY - 1, COL_ACCENT);
-        context.fill(panelR + 1, panelY - 2, panelR + 2, panelY + 6, COL_ACCENT);
-
-        // ── Title ─────────────────────────────────────────────────────────────
-        int titleY = panelY + Math.max(4, Math.round(10 * scale));
+        // ── Nav: mod title ────────────────────────────────────────────────────
+        int navCenterX = winX + navW / 2;
+        int navTitleY  = winY + Math.max(4, Math.round(8 * scale));
         context.drawCenteredTextWithShadow(this.textRenderer,
-                this.title, this.width / 2, titleY, COL_TITLE);
+                Text.literal("Just Farming").withColor(COL_TEXT),
+                navCenterX, navTitleY, COL_TEXT);
 
-        // ── Status badge ──────────────────────────────────────────────────────
-        boolean running    = macroManager.isRunning();
-        String  statusStr  = running ? "\u25CF RUNNING" : "\u25CF STOPPED";
-        int statusColor    = running ? 0xFF50E890 : 0xFFFF6070;
-        int badgeGlow      = running ? 0x2030D870 : 0x20FF4050;
-        int badgeW         = this.textRenderer.getWidth(statusStr) + 14;
-        int badgeX         = this.width / 2 - badgeW / 2;
-        int badgeY         = panelY + Math.max(14, Math.round(27 * scale));
-        context.fill(badgeX - 2, badgeY - 1, badgeX + badgeW + 2, badgeY + 13, badgeGlow);
-        context.fill(badgeX, badgeY, badgeX + badgeW, badgeY + 12,
-                running ? 0x3020C060 : 0x30D03040);
-        context.fill(badgeX, badgeY, badgeX + badgeW, badgeY + 1, statusColor);
-        context.fill(badgeX, badgeY + 11, badgeX + badgeW, badgeY + 12, statusColor);
-        context.fill(badgeX, badgeY, badgeX + 1, badgeY + 12, statusColor);
-        context.fill(badgeX + badgeW - 1, badgeY, badgeX + badgeW, badgeY + 12, statusColor);
+        // ── Nav: status indicator ─────────────────────────────────────────────
+        boolean running   = macroManager.isRunning();
+        int statusColor   = running ? COL_STATUS_ON : COL_STATUS_OFF;
+        String statusTxt  = running ? "\u25CF Running" : "\u25CF Stopped";
+        int statusY       = navTitleY + 11;
         context.drawCenteredTextWithShadow(this.textRenderer,
-                Text.literal(statusStr).withColor(statusColor),
-                this.width / 2, badgeY + 2, 0xFFFFFF);
+                Text.literal(statusTxt).withColor(statusColor),
+                navCenterX, statusY, statusColor);
 
-        // ── Tab bar background ────────────────────────────────────────────────
-        int tabBarY = panelY + hdrH + 1;
-        context.fill(panelX, tabBarY - 1, panelR, tabBarY + tabH, COL_TAB_INACTIVE);
-        // Highlight active tab
-        int tabW       = (panelW - 4) / TAB_NAMES.length;
-        int activeTabX = panelX + 2 + activeTab * (tabW + 1);
-        context.fill(activeTabX, tabBarY, activeTabX + tabW, tabBarY + tabH - 2,
-                COL_TAB_ACTIVE);
-        // Bottom separator below tab bar
-        context.fill(panelX, tabBarY + tabH - 1, panelR, tabBarY + tabH,
-                COL_ACCENT);
+        // ── Nav: separator line below status ─────────────────────────────────
+        int navSepY = statusY + 12;
+        context.fill(winX + 8, navSepY, winX + navW - 8, navSepY + 1, COL_SEP);
 
-        // ── Section labels per tab ────────────────────────────────────────────
+        // ── Content: current tab section title ────────────────────────────────
+        int contentTitleY = winY + Math.max(4, Math.round(8 * scale));
+        context.drawTextWithShadow(this.textRenderer,
+                Text.literal(TAB_NAMES[activeTab]).withColor(COL_TEXT),
+                contentX + Math.round(8 * scale), contentTitleY, COL_TEXT);
+
+        // ── Content: thin separator below title ───────────────────────────────
+        int contentSepY = contentTitleY + 10;
+        context.fill(contentX + 4, contentSepY, winR - 4, contentSepY + 1, COL_SEP);
+
+        // ── Section labels for the active tab ─────────────────────────────────
         if (activeTab == 0) {
-            drawSectionLabel(context, "Crop",    panelX, sectionCropY,    panelR);
-            drawSectionLabel(context, "Delays",  panelX, sectionDelaysY,  panelR);
-            context.fillGradient(panelX + 20, actionSeparatorY,
-                    panelR - 20, actionSeparatorY + 1, COL_ACCENT, 0x00000000);
+            drawSectionLabel(context, "Crop",   sectionCropY);
+            drawSectionLabel(context, "Delays", sectionDelaysY);
+            context.fill(contentX + 16, actionSeparatorY,
+                    winR - 16, actionSeparatorY + 1, COL_SEP);
         } else if (activeTab == 1) {
-            drawSectionLabel(context, "Pests", panelX, sectionPestsY, panelR);
+            drawSectionLabel(context, "Pests", sectionPestsY);
         } else {
-            drawSectionLabel(context, "Misc", panelX, sectionMiscY, panelR);
+            drawSectionLabel(context, "Misc", sectionMiscY);
         }
 
         // ── Widgets ───────────────────────────────────────────────────────────
         super.render(context, mouseX, mouseY, delta);
     }
 
-    /** Draws a section label with an accent bar and subtle background. */
-    private void drawSectionLabel(DrawContext context, String label, int panelX, int y, int panelR) {
-        context.fill(panelX + 4, y, panelR - 4, y + sectionLH, COL_SECTION_BG);
-        context.fill(panelX + 6, y + 1, panelX + 8, y + sectionLH - 1, COL_ACCENT);
+    /** Draws a labelled section header spanning the content area. */
+    private void drawSectionLabel(DrawContext context, String label, int y) {
+        int winR = winX + winW;
+        context.fill(contentX + 4, y, winR - 4, y + sLH, COL_SECTION_BG);
+        context.fill(contentX + 6, y + 1, contentX + 8, y + sLH - 1, COL_ACCENT);
         context.drawTextWithShadow(this.textRenderer,
-                Text.literal(label).withColor(COL_LABEL),
-                panelX + 14, y + 1, COL_LABEL);
+                Text.literal(label).withColor(COL_TEXT_MUTED),
+                contentX + 12, y + 1, COL_TEXT_MUTED);
     }
 
     @Override
     public void close() {
         applyConfig();
         config.save();
-        if (this.client != null) {
-            this.client.setScreen(parent);
-        }
+        if (this.client != null) this.client.setScreen(parent);
     }
 
     @Override
-    public boolean shouldPause() {
-        return false;
-    }
+    public boolean shouldPause() { return false; }
 
     @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        // Consume scroll events so widgets (sliders, cycling buttons) cannot be
-        // accidentally changed by scrolling while the config GUI is open.
+    public boolean mouseScrolled(double mouseX, double mouseY,
+                                  double horizontalAmount, double verticalAmount) {
+        // Consume scroll so sliders/cycling buttons aren't accidentally changed.
         return true;
     }
 
     /** Read widget values back into the config object. */
     private void applyConfig() {
-        // config.selectedCrop is managed directly by CropSelectScreen
         config.rewarpDelayMin       = swapDelaySlider.getDelayValue();
         config.rewarpDelayRandom    = swapRandomSlider.getRandomValue();
         config.pestHighlightEnabled = pestHighlightButton.getValue();
@@ -465,13 +442,12 @@ public class FarmingConfigScreen extends Screen {
     }
 
     // -------------------------------------------------------------------------
-    // Inner slider classes
+    // Inner classes
     // -------------------------------------------------------------------------
 
     /**
-     * A lightweight tab button that renders as a browser-style tab.
-     * It draws a custom coloured background (no default Minecraft button
-     * texture) and highlights itself when it is the active tab.
+     * Category tab button rendered in the left navigation sidebar.
+     * Draws a custom background with an accent left-edge bar when active.
      */
     private class TabButton extends net.minecraft.client.gui.widget.ClickableWidget {
 
@@ -486,19 +462,25 @@ public class FarmingConfigScreen extends Screen {
         protected void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
             boolean active  = activeTab == tabIndex;
             boolean hovered = this.isHovered();
-            int bg = active  ? COL_TAB_ACTIVE
-                   : hovered ? 0xFF261952
-                   :           COL_TAB_INACTIVE;
-            context.fill(getX(), getY(), getX() + getWidth(), getY() + getHeight(), bg);
+
             if (active) {
-                context.fill(getX(), getY(), getX() + getWidth(), getY() + 2, COL_ACCENT);
+                context.fill(getX(), getY(), getX() + getWidth(), getY() + getHeight(),
+                        COL_TAB_ACTIVE);
+                // Accent left-edge indicator (3 px wide)
+                context.fill(getX(), getY(), getX() + 3, getY() + getHeight(),
+                        COL_ACCENT);
+            } else if (hovered) {
+                context.fill(getX(), getY(), getX() + getWidth(), getY() + getHeight(),
+                        0x14FFFFFF);
             }
-            context.drawCenteredTextWithShadow(
+
+            int textColor = active ? COL_TEXT : COL_TEXT_MUTED;
+            context.drawTextWithShadow(
                     FarmingConfigScreen.this.textRenderer,
                     getMessage(),
-                    getX() + getWidth() / 2,
+                    getX() + (active ? 8 : 6),
                     getY() + (getHeight() - 8) / 2,
-                    active ? COL_TITLE : COL_LABEL);
+                    textColor);
         }
 
         @Override
@@ -515,23 +497,20 @@ public class FarmingConfigScreen extends Screen {
         }
     }
 
-    /**
-     * Slider for the minimum lane-swap delay (0–2000 ms).
-     */
+    /** Slider for the minimum lane-swap delay (0–2000 ms). */
     private static class SwapDelaySlider extends SliderWidget {
 
         private static final int MIN =    0;
         private static final int MAX = 2000;
 
         SwapDelaySlider(int x, int y, int width, int height, int initialValue) {
-            super(x, y, width, height,
-                    Text.empty(),
-                    (double) (initialValue - MIN) / (MAX - MIN));
+            super(x, y, width, height, Text.empty(),
+                    (double)(initialValue - MIN) / (MAX - MIN));
             updateMessage();
         }
 
         int getDelayValue() {
-            return MIN + (int) Math.round(value * (MAX - MIN));
+            return MIN + (int)Math.round(value * (MAX - MIN));
         }
 
         @Override
@@ -543,23 +522,20 @@ public class FarmingConfigScreen extends Screen {
         protected void applyValue() {}
     }
 
-    /**
-     * Slider for the random extra lane-swap delay (0–1000 ms).
-     */
+    /** Slider for the random extra lane-swap delay (0–1000 ms). */
     private static class SwapRandomSlider extends SliderWidget {
 
         private static final int MIN =    0;
         private static final int MAX = 1000;
 
         SwapRandomSlider(int x, int y, int width, int height, int initialValue) {
-            super(x, y, width, height,
-                    Text.empty(),
-                    (double) (initialValue - MIN) / (MAX - MIN));
+            super(x, y, width, height, Text.empty(),
+                    (double)(initialValue - MIN) / (MAX - MIN));
             updateMessage();
         }
 
         int getRandomValue() {
-            return MIN + (int) Math.round(value * (MAX - MIN));
+            return MIN + (int)Math.round(value * (MAX - MIN));
         }
 
         @Override
@@ -571,23 +547,20 @@ public class FarmingConfigScreen extends Screen {
         protected void applyValue() {}
     }
 
-    /**
-     * Slider for the floating pest plot title scale (0.5–6.0).
-     */
+    /** Slider for the floating pest plot title scale (0.5–6.0). */
     private static class TitleScaleSlider extends SliderWidget {
 
         private static final float MIN = 0.5f;
         private static final float MAX = 6.0f;
 
         TitleScaleSlider(int x, int y, int width, int height, float initialValue) {
-            super(x, y, width, height,
-                    Text.empty(),
-                    (double) (initialValue - MIN) / (MAX - MIN));
+            super(x, y, width, height, Text.empty(),
+                    (double)(initialValue - MIN) / (MAX - MIN));
             updateMessage();
         }
 
         float getTitleScaleValue() {
-            return MIN + (float) value * (MAX - MIN);
+            return MIN + (float)value * (MAX - MIN);
         }
 
         @Override

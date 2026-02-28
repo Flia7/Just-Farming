@@ -17,17 +17,16 @@ import net.minecraft.text.Text;
  */
 public class CropSettingsScreen extends Screen {
 
-    // ── Colour palette (matches FarmingConfigScreen) ──────────────────────────
-    private static final int COL_BG            = 0xF00E1018;
-    private static final int COL_HEADER_TOP    = 0xFF1A1040;
-    private static final int COL_HEADER_BOTTOM = 0xFF0D0820;
-    private static final int COL_BORDER_OUTER  = 0xFF2D1B69;
-    private static final int COL_BORDER_INNER  = 0xFF6C3DFF;
-    private static final int COL_SECTION_BG    = 0x18654DFF;
-    private static final int COL_TITLE         = 0xFFEEEEFF;
-    private static final int COL_LABEL         = 0xFFB0A0E0;
-    private static final int COL_ACCENT        = 0xFF7C4DFF;
-    private static final int COL_SHADOW        = 0x60000000;
+    // ── Colour palette (matches FarmingConfigScreen new style) ──────────────
+    private static final int COL_SCREEN_DIM  = 0x60000000;
+    private static final int COL_WIN_BG      = 0xBF000000;
+    private static final int COL_BORDER      = 0x28FFFFFF;
+    private static final int COL_SEP         = 0x14FFFFFF;
+    private static final int COL_SECTION_BG  = 0x14FFFFFF;
+    private static final int COL_TEXT        = 0xF2FFFFFF;
+    private static final int COL_TEXT_MUTED  = 0x66FFFFFF;
+    private static final int COL_ACCENT      = 0xFF7C4DFF;
+    private static final int COL_SHADOW      = 0x60000000;
 
     // ── Natural panel dimensions ───────────────────────────────────────────────
     private static final int PANEL_WIDTH   = 320;
@@ -155,30 +154,24 @@ public class CropSettingsScreen extends Screen {
         int hdrH   = Math.round(HEADER_HEIGHT * scale);
         int sLH    = Math.max(8, Math.round(10 * scale));
 
+        // Full-screen dim
+        context.fill(0, 0, this.width, this.height, COL_SCREEN_DIM);
         // Drop shadow
-        context.fill(panelX + 3, panelY + 3, panelR + 3, panelB + 3, COL_SHADOW);
-        // Outer / accent borders
-        context.fill(panelX - 2, panelY - 2, panelR + 2, panelB + 2, COL_BORDER_OUTER);
-        context.fill(panelX - 1, panelY - 1, panelR + 1, panelB + 1, COL_BORDER_INNER);
+        context.fill(panelX + 4, panelY + 4, panelR + 4, panelB + 4, COL_SHADOW);
+        // Outer border
+        context.fill(panelX - 1, panelY - 1, panelR + 1, panelB + 1, COL_BORDER);
         // Panel body
-        context.fill(panelX, panelY, panelR, panelB, COL_BG);
-        // Header gradient
-        context.fillGradient(panelX, panelY, panelR, panelY + hdrH,
-                COL_HEADER_TOP, COL_HEADER_BOTTOM);
-        // Header accent line
-        context.fillGradient(panelX, panelY + hdrH - 1,
-                panelR, panelY + hdrH + 1, COL_ACCENT, COL_BORDER_OUTER);
-        // Corner accents
-        context.fill(panelX - 2, panelY - 2, panelX + 6, panelY - 1, COL_ACCENT);
-        context.fill(panelX - 2, panelY - 2, panelX - 1, panelY + 6, COL_ACCENT);
-        context.fill(panelR - 6, panelY - 2, panelR + 2, panelY - 1, COL_ACCENT);
-        context.fill(panelR + 1, panelY - 2, panelR + 2, panelY + 6, COL_ACCENT);
+        context.fill(panelX, panelY, panelR, panelB, COL_WIN_BG);
+        // Header accent bar (left edge)
+        context.fill(panelX, panelY, panelX + 3, panelY + hdrH, COL_ACCENT);
+        // Header separator
+        context.fill(panelX + 3, panelY + hdrH - 1, panelR, panelY + hdrH, COL_SEP);
 
-        // Title: "<CropName> Settings"
+        // Title
         String cropName = Text.translatable(crop.getTranslationKey()).getString();
-        context.drawCenteredTextWithShadow(this.textRenderer,
-                Text.literal(cropName + " Settings"),
-                this.width / 2, panelY + Math.max(4, Math.round(8 * scale)), COL_TITLE);
+        context.drawTextWithShadow(this.textRenderer,
+                Text.literal(cropName + " Settings").withColor(COL_TEXT),
+                panelX + 10, panelY + (hdrH - 8) / 2, COL_TEXT);
 
         // Section labels
         drawSectionLabel(context, "Camera", sectionCameraY, sLH, panelR);
@@ -191,8 +184,8 @@ public class CropSettingsScreen extends Screen {
         context.fill(panelX + 4, y, panelR - 4, y + sLH, COL_SECTION_BG);
         context.fill(panelX + 6, y + 1, panelX + 8, y + sLH - 1, COL_ACCENT);
         context.drawTextWithShadow(this.textRenderer,
-                Text.literal(label).withColor(COL_LABEL),
-                panelX + 14, y + 1, COL_LABEL);
+                Text.literal(label).withColor(COL_TEXT_MUTED),
+                panelX + 14, y + 1, COL_TEXT_MUTED);
     }
 
     @Override
