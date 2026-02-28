@@ -48,7 +48,7 @@ public class FarmingConfigScreen extends Screen {
     private static final int COL_SHADOW      = 0x60000000; // drop shadow
 
     // ── Tabs ──────────────────────────────────────────────────────────────────
-    private static final String[] TAB_NAMES = { "Farming", "Pests", "Misc" };
+    private static final String[] TAB_NAMES = { "Farming", "Pests", "Misc", "Delays" };
     private int activeTab = 0;
 
     // ── Dynamic layout (computed in init) ─────────────────────────────────────
@@ -69,8 +69,6 @@ public class FarmingConfigScreen extends Screen {
     // ── Tab 0 – Farming widgets ───────────────────────────────────────────────
     private ButtonWidget                  cropSelectButton;
     private ButtonWidget                  cropSettingsButton;
-    private SwapDelaySlider               swapDelaySlider;
-    private SwapRandomSlider              swapRandomSlider;
     private ButtonWidget                  setRewarpButton;
     private ButtonWidget                  toggleMacroButton;
 
@@ -85,12 +83,19 @@ public class FarmingConfigScreen extends Screen {
     private ButtonWidget                  freelookButton;
     private CyclingButtonWidget<Boolean>  unlockedMouseButton;
 
+    // ── Tab 3 – Delays widgets ────────────────────────────────────────────────
+    private LaneSwapDelaySlider           laneSwapDelaySlider;
+    private LaneSwapRandomSlider          laneSwapRandomSlider;
+    private RewarpDelaySlider             rewarpDelaySlider;
+    private RewarpRandomSlider            rewarpRandomSlider;
+
     // ── Always-visible widget ─────────────────────────────────────────────────
     private ButtonWidget saveCloseButton;
 
     // ── Section-label Y positions (set in init, used in render) ───────────────
-    private int sectionCropY, sectionDelaysY, actionSeparatorY;
+    private int sectionCropY, actionSeparatorY;
     private int sectionPestsY, sectionMiscY;
+    private int sectionLaneSwapY, sectionRewarpDelayY;
 
     public FarmingConfigScreen(Screen parent, FarmingConfig config, MacroManager macroManager) {
         super(Text.translatable("gui.just-farming.title"));
@@ -161,16 +166,6 @@ public class FarmingConfigScreen extends Screen {
                         })
                 .dimensions(widgetX, y, bw, bh).build();
         this.addDrawableChild(cropSettingsButton);
-        y += bh + pad + gap;
-
-        sectionDelaysY = y;
-        y += sLH;
-        swapDelaySlider = new SwapDelaySlider(widgetX, y, bw, bh, config.rewarpDelayMin);
-        this.addDrawableChild(swapDelaySlider);
-        y += bh + pad;
-
-        swapRandomSlider = new SwapRandomSlider(widgetX, y, bw, bh, config.rewarpDelayRandom);
-        this.addDrawableChild(swapRandomSlider);
         y += bh + pad + gap;
 
         actionSeparatorY = y;
@@ -269,6 +264,27 @@ public class FarmingConfigScreen extends Screen {
                         Text.translatable("gui.just-farming.unlocked_mouse_label"));
         this.addDrawableChild(unlockedMouseButton);
 
+        // ── Tab 3 – Delays ────────────────────────────────────────────────────
+        y = contentTop;
+        sectionLaneSwapY = y;
+        y += sLH;
+        laneSwapDelaySlider = new LaneSwapDelaySlider(widgetX, y, bw, bh, config.laneSwapDelayMin);
+        this.addDrawableChild(laneSwapDelaySlider);
+        y += bh + pad;
+
+        laneSwapRandomSlider = new LaneSwapRandomSlider(widgetX, y, bw, bh, config.laneSwapDelayRandom);
+        this.addDrawableChild(laneSwapRandomSlider);
+        y += bh + pad + gap;
+
+        sectionRewarpDelayY = y;
+        y += sLH;
+        rewarpDelaySlider = new RewarpDelaySlider(widgetX, y, bw, bh, config.rewarpDelayMin);
+        this.addDrawableChild(rewarpDelaySlider);
+        y += bh + pad;
+
+        rewarpRandomSlider = new RewarpRandomSlider(widgetX, y, bw, bh, config.rewarpDelayRandom);
+        this.addDrawableChild(rewarpRandomSlider);
+
         // ── Always-visible: Close button anchored to the bottom ───────────────
         int closeBtnY = winY + winH - bh - pad;
         saveCloseButton = ButtonWidget.builder(
@@ -285,8 +301,6 @@ public class FarmingConfigScreen extends Screen {
         boolean t0 = activeTab == 0;
         cropSelectButton.visible   = t0;
         cropSettingsButton.visible = t0;
-        swapDelaySlider.visible    = t0;
-        swapRandomSlider.visible   = t0;
         setRewarpButton.visible    = t0;
         toggleMacroButton.visible  = t0;
 
@@ -300,6 +314,12 @@ public class FarmingConfigScreen extends Screen {
         boolean t2 = activeTab == 2;
         freelookButton.visible      = t2;
         unlockedMouseButton.visible = t2;
+
+        boolean t3 = activeTab == 3;
+        laneSwapDelaySlider.visible  = t3;
+        laneSwapRandomSlider.visible = t3;
+        rewarpDelaySlider.visible    = t3;
+        rewarpRandomSlider.visible   = t3;
     }
 
     @Override
@@ -358,13 +378,15 @@ public class FarmingConfigScreen extends Screen {
         // ── Section labels for the active tab ─────────────────────────────────
         if (activeTab == 0) {
             drawSectionLabel(context, "Crop",   sectionCropY);
-            drawSectionLabel(context, "Delays", sectionDelaysY);
             context.fill(contentX + 16, actionSeparatorY,
                     winR - 16, actionSeparatorY + 1, COL_SEP);
         } else if (activeTab == 1) {
             drawSectionLabel(context, "Pests", sectionPestsY);
-        } else {
+        } else if (activeTab == 2) {
             drawSectionLabel(context, "Misc", sectionMiscY);
+        } else {
+            drawSectionLabel(context, "Lane Swap", sectionLaneSwapY);
+            drawSectionLabel(context, "Rewarp",    sectionRewarpDelayY);
         }
 
         // ── Widgets ───────────────────────────────────────────────────────────
@@ -400,8 +422,10 @@ public class FarmingConfigScreen extends Screen {
 
     /** Read widget values back into the config object. */
     private void applyConfig() {
-        config.rewarpDelayMin       = swapDelaySlider.getDelayValue();
-        config.rewarpDelayRandom    = swapRandomSlider.getRandomValue();
+        config.laneSwapDelayMin     = laneSwapDelaySlider.getDelayValue();
+        config.laneSwapDelayRandom  = laneSwapRandomSlider.getRandomValue();
+        config.rewarpDelayMin       = rewarpDelaySlider.getDelayValue();
+        config.rewarpDelayRandom    = rewarpRandomSlider.getRandomValue();
         config.pestHighlightEnabled = pestHighlightButton.getValue();
         config.pestLabelsEnabled    = pestLabelsButton.getValue();
         config.pestTitleScale       = titleScaleSlider.getTitleScaleValue();
@@ -494,12 +518,12 @@ public class FarmingConfigScreen extends Screen {
     }
 
     /** Slider for the minimum lane-swap delay (0–2000 ms). */
-    private static class SwapDelaySlider extends SliderWidget {
+    private static class LaneSwapDelaySlider extends SliderWidget {
 
         private static final int MIN =    0;
         private static final int MAX = 2000;
 
-        SwapDelaySlider(int x, int y, int width, int height, int initialValue) {
+        LaneSwapDelaySlider(int x, int y, int width, int height, int initialValue) {
             super(x, y, width, height, Text.empty(),
                     (double)(initialValue - MIN) / (MAX - MIN));
             updateMessage();
@@ -511,7 +535,7 @@ public class FarmingConfigScreen extends Screen {
 
         @Override
         protected void updateMessage() {
-            setMessage(Text.literal(String.format("Min Swap Delay: %d ms", getDelayValue())));
+            setMessage(Text.literal(String.format("Lane Swap Delay: %d ms", getDelayValue())));
         }
 
         @Override
@@ -519,12 +543,12 @@ public class FarmingConfigScreen extends Screen {
     }
 
     /** Slider for the random extra lane-swap delay (0–1000 ms). */
-    private static class SwapRandomSlider extends SliderWidget {
+    private static class LaneSwapRandomSlider extends SliderWidget {
 
         private static final int MIN =    0;
         private static final int MAX = 1000;
 
-        SwapRandomSlider(int x, int y, int width, int height, int initialValue) {
+        LaneSwapRandomSlider(int x, int y, int width, int height, int initialValue) {
             super(x, y, width, height, Text.empty(),
                     (double)(initialValue - MIN) / (MAX - MIN));
             updateMessage();
@@ -536,7 +560,57 @@ public class FarmingConfigScreen extends Screen {
 
         @Override
         protected void updateMessage() {
-            setMessage(Text.literal(String.format("Swap Randomization: %d ms", getRandomValue())));
+            setMessage(Text.literal(String.format("Lane Swap Randomization: %d ms", getRandomValue())));
+        }
+
+        @Override
+        protected void applyValue() {}
+    }
+
+    /** Slider for the minimum rewarp delay (0–2000 ms). */
+    private static class RewarpDelaySlider extends SliderWidget {
+
+        private static final int MIN =    0;
+        private static final int MAX = 2000;
+
+        RewarpDelaySlider(int x, int y, int width, int height, int initialValue) {
+            super(x, y, width, height, Text.empty(),
+                    (double)(initialValue - MIN) / (MAX - MIN));
+            updateMessage();
+        }
+
+        int getDelayValue() {
+            return MIN + (int)Math.round(value * (MAX - MIN));
+        }
+
+        @Override
+        protected void updateMessage() {
+            setMessage(Text.literal(String.format("Rewarp Delay: %d ms", getDelayValue())));
+        }
+
+        @Override
+        protected void applyValue() {}
+    }
+
+    /** Slider for the random extra rewarp delay (0–1000 ms). */
+    private static class RewarpRandomSlider extends SliderWidget {
+
+        private static final int MIN =    0;
+        private static final int MAX = 1000;
+
+        RewarpRandomSlider(int x, int y, int width, int height, int initialValue) {
+            super(x, y, width, height, Text.empty(),
+                    (double)(initialValue - MIN) / (MAX - MIN));
+            updateMessage();
+        }
+
+        int getRandomValue() {
+            return MIN + (int)Math.round(value * (MAX - MIN));
+        }
+
+        @Override
+        protected void updateMessage() {
+            setMessage(Text.literal(String.format("Rewarp Randomization: %d ms", getRandomValue())));
         }
 
         @Override

@@ -44,15 +44,13 @@ import java.util.Set;
 public class OverlayRenderer {
 
     // Colours as packed ARGB ints
-    private static final int COLOR_RED      = 0xFFFF0000;
-    private static final int COLOR_DARK_RED = 0xFF8B0000;
-    private static final int COLOR_GOLD     = 0xFFFFAD00;
-    private static final int COLOR_GREEN    = 0xFF00FF00;
-    private static final int COLOR_ESP      = 0xFFFF4444;
-    private static final int COLOR_REWARP   = 0xFFFFFF55; // bright yellow rewarp block outline
+    private static final int COLOR_PURPLE   = 0xFFAA44FF; // purple for ESP, tracer, rewarp, plot corners
+    private static final int COLOR_WHITE    = 0xFFFFFFFF; // white for plot border lines
+    private static final int COLOR_ESP      = COLOR_PURPLE;
+    private static final int COLOR_REWARP   = COLOR_PURPLE; // purple rewarp block outline
 
-    // Label colour (ARGB)
-    private static final int LABEL_COLOR = 0xFFFF3333;
+    // Label colour (ARGB) – purple for "Plot N" text
+    private static final int LABEL_COLOR = COLOR_PURPLE;
 
     // Semi-transparent black background behind floating text for readability
     private static final int TEXT_BG_COLOR = 0x40000000;
@@ -178,7 +176,7 @@ public class OverlayRenderer {
                     double targetZ = (espBox.minZ + espBox.maxZ) / 2.0 - cz;
                     drawLine(entry, tracerLines,
                             tracerStartX, tracerStartY, tracerStartZ,
-                            targetX, targetY, targetZ, COLOR_GREEN);
+                            targetX, targetY, targetZ, COLOR_PURPLE);
                 }
             }
         }
@@ -188,9 +186,6 @@ public class OverlayRenderer {
 
         Set<String> pestPlots = pestDetector.getPestPlots();
         if (pestPlots.isEmpty()) return;
-
-        // Determine which plot the player is in (if any)
-        String playerPlot = GardenPlot.getPlotNameAt(camPos.x, camPos.z);
 
         List<Map.Entry<String, double[]>> validPlots = new ArrayList<>();
         for (String plotName : pestPlots) {
@@ -204,11 +199,8 @@ public class OverlayRenderer {
 
         for (Map.Entry<String, double[]> e : validPlots) {
             double[] b = e.getValue();
-            boolean playerInside = e.getKey().equals(playerPlot);
-            int lineColor   = playerInside ? COLOR_RED      : COLOR_GOLD;
-            int cornerColor = playerInside ? COLOR_DARK_RED  : COLOR_RED;
             renderPlotBorders(matrices, lineBuffer, b, cx, cy, cz,
-                    lineColor, cornerColor);
+                    COLOR_WHITE, COLOR_PURPLE);
         }
 
         // Draw large floating title and smaller label for each infested plot
@@ -291,15 +283,6 @@ public class OverlayRenderer {
             double z = minZ + dz;
             drawLine(entry, lines, minX, minH - cy, z, minX, maxH - cy, z, lineColor);
             drawLine(entry, lines, maxX, minH - cy, z, maxX, maxH - cy, z, lineColor);
-        }
-
-        // --- Horizontal border rectangles every 4 blocks in height ---
-        for (int y = minH; y <= maxH; y += 4) {
-            double ry = y - cy;
-            drawLine(entry, lines, minX, ry, minZ, minX, ry, maxZ, lineColor);
-            drawLine(entry, lines, minX, ry, maxZ, maxX, ry, maxZ, lineColor);
-            drawLine(entry, lines, maxX, ry, maxZ, maxX, ry, minZ, lineColor);
-            drawLine(entry, lines, maxX, ry, minZ, minX, ry, minZ, lineColor);
         }
     }
 

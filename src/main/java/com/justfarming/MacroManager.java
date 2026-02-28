@@ -65,7 +65,8 @@ public class MacroManager {
     // -----------------------------------------------------------------------
 
     private enum MacroState { IDLE, DETECTING, BACKWARD_LEFT, FORWARD_LEFT, FORWARD_RIGHT,
-            STRAFE_LEFT_ONLY, STRAFE_RIGHT_ONLY, BACK_ONLY, FORWARD_ONLY, WARPING }
+            STRAFE_LEFT_ONLY, STRAFE_RIGHT_ONLY, BACK_ONLY, FORWARD_ONLY, WARPING,
+            LANE_SWAP_WAITING }
 
     private MacroState state = MacroState.IDLE;
     private boolean running = false;
@@ -92,6 +93,24 @@ public class MacroManager {
 
     /** Total delay (ms) to wait in WARPING state before sending /warp garden. */
     private long warpTargetDelay = 0;
+
+    /** System-time (ms) when the LANE_SWAP_WAITING state was entered. */
+    private long laneSwapStartTime = 0;
+
+    /** Total delay (ms) to wait in LANE_SWAP_WAITING state before flipping direction. */
+    private long laneSwapTargetDelay = 0;
+
+    /**
+     * The state to transition to after the lane-swap delay expires.
+     * Only valid when {@code state == LANE_SWAP_WAITING} and {@link #laneSwapPendingCustomFlip} is false.
+     */
+    private MacroState laneSwapNextState = null;
+
+    /**
+     * When {@code true}, the lane-swap delay will toggle {@link #customFlipped} instead
+     * of switching to {@link #laneSwapNextState}.
+     */
+    private boolean laneSwapPendingCustomFlip = false;
 
     // -----------------------------------------------------------------------
     // Constructor / config
@@ -354,6 +373,21 @@ public class MacroManager {
                 lastPos = null;
                 stuckTicks = 0;
             }
+            case LANE_SWAP_WAITING -> {
+                releaseKeys();
+                if (System.currentTimeMillis() - laneSwapStartTime >= laneSwapTargetDelay) {
+                    if (laneSwapPendingCustomFlip) {
+                        customFlipped = !customFlipped;
+                        LOGGER.info("[JustFarming] Custom key flip (delayed) – {}.",
+                                customFlipped ? "flipped" : "normal");
+                    } else {
+                        LOGGER.info("[JustFarming] End of row (delayed) – switching to {}.", laneSwapNextState);
+                    }
+                    state = laneSwapPendingCustomFlip
+                            ? deriveStateFromCustomKeys(config.getCropSettings(config.selectedCrop))
+                            : laneSwapNextState;
+                }
+            }
             default -> {}
         }
 
@@ -493,39 +527,58 @@ public class MacroManager {
             }
 
             if (stuckTicks >= STUCK_THRESHOLD) {
-                // End of row reached – flip direction
+                // End of row reached – flip direction (with optional lane-swap delay)
                 stuckTicks = 0;
                 com.justfarming.config.FarmingConfig.CropCustomSettings cs =
                         config.getCropSettings(config.selectedCrop);
+                long swapDelay = config.laneSwapDelayMin
+                        + (long) (Math.random() * (config.laneSwapDelayRandom + 1));
                 if (cs != null) {
                     // Custom key mode: toggle the flip flag (forward↔back, left↔right)
-                    customFlipped = !customFlipped;
-                    LOGGER.info("[JustFarming] Custom key flip – {}.",
-                            customFlipped ? "flipped" : "normal");
+                    if (swapDelay > 0) {
+                        laneSwapStartTime = System.currentTimeMillis();
+                        laneSwapTargetDelay = swapDelay;
+                        laneSwapPendingCustomFlip = true;
+                        state = MacroState.LANE_SWAP_WAITING;
+                    } else {
+                        customFlipped = !customFlipped;
+                        LOGGER.info("[JustFarming] Custom key flip – {}.",
+                                customFlipped ? "flipped" : "normal");
+                    }
                     return;
                 }
+                MacroState nextState;
                 if (config.selectedCrop.isSShape()) {
                     // S-Shape: keep moving forward, flip strafe direction
-                    state = (state == MacroState.FORWARD_LEFT)
+                    nextState = (state == MacroState.FORWARD_LEFT)
                             ? MacroState.FORWARD_RIGHT : MacroState.FORWARD_LEFT;
                 } else if (config.selectedCrop.isLeftBack()) {
                     // Left-Back: alternate between strafe-left and back-only
-                    state = (state == MacroState.STRAFE_LEFT_ONLY)
+                    nextState = (state == MacroState.STRAFE_LEFT_ONLY)
                             ? MacroState.BACK_ONLY : MacroState.STRAFE_LEFT_ONLY;
                 } else if (config.selectedCrop.isCactus()) {
                     // Cactus: alternate between strafe-left and strafe-right
-                    state = (state == MacroState.STRAFE_LEFT_ONLY)
+                    nextState = (state == MacroState.STRAFE_LEFT_ONLY)
                             ? MacroState.STRAFE_RIGHT_ONLY : MacroState.STRAFE_LEFT_ONLY;
                 } else if (config.selectedCrop.isForwardBack()) {
                     // Forward-Back (Mushroom): alternate between forward-only and back-only
-                    state = (state == MacroState.FORWARD_ONLY)
+                    nextState = (state == MacroState.FORWARD_ONLY)
                             ? MacroState.BACK_ONLY : MacroState.FORWARD_ONLY;
                 } else {
                     // Cocoa Beans: flip forward/backward, always strafe left
-                    state = (state == MacroState.FORWARD_LEFT)
+                    nextState = (state == MacroState.FORWARD_LEFT)
                             ? MacroState.BACKWARD_LEFT : MacroState.FORWARD_LEFT;
                 }
-                LOGGER.info("[JustFarming] End of row – switching to {}.", state);
+                if (swapDelay > 0) {
+                    laneSwapStartTime = System.currentTimeMillis();
+                    laneSwapTargetDelay = swapDelay;
+                    laneSwapPendingCustomFlip = false;
+                    laneSwapNextState = nextState;
+                    state = MacroState.LANE_SWAP_WAITING;
+                } else {
+                    state = nextState;
+                    LOGGER.info("[JustFarming] End of row – switching to {}.", state);
+                }
                 return;
             }
         }

@@ -97,6 +97,18 @@ public class FarmingConfig {
      */
     public int rewarpDelayRandom = 0;
 
+    /**
+     * Minimum delay in milliseconds between detecting the end of a farming row
+     * and actually flipping direction (i.e. the lane-swap delay).
+     */
+    public int laneSwapDelayMin = 0;
+
+    /**
+     * Extra random milliseconds added on top of {@link #laneSwapDelayMin}.
+     * The actual delay will be {@code laneSwapDelayMin + random(0, laneSwapDelayRandom)}.
+     */
+    public int laneSwapDelayRandom = 0;
+
     // --- Per-Crop Settings ---
 
     /**
