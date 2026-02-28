@@ -6,7 +6,6 @@
     "CameraMixin",
     "ClientPlayerEntityMixin",
     "EntityMixin",
-    "EntityRendererMixin",
     "GameRendererMixin",
     "KeyBindingMixin",
     "KeyboardInputMixin",
