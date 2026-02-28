@@ -15,7 +15,7 @@ import net.minecraft.text.Text;
  *
  * <p>Three tabs organise the settings:
  * <ul>
- *   <li><b>Farming</b> – crop, pitch/yaw angles, rewarp delay, set-rewarp, start/stop macro</li>
+ *   <li><b>Farming</b> – crop (with recommended speed), rewarp delay, set-rewarp, start/stop macro</li>
  *   <li><b>Pests</b>   – pest highlight, labels, ESP options, tracer</li>
  *   <li><b>Misc</b>    – freelook toggle</li>
  * </ul>
@@ -24,7 +24,7 @@ public class FarmingConfigScreen extends Screen {
 
     // ── Layout (natural/maximum dimensions) ──────────────────────────────────
     private static final int PANEL_WIDTH    = 320;
-    private static final int PANEL_HEIGHT   = 490;
+    private static final int PANEL_HEIGHT   = 420;
     private static final int HEADER_HEIGHT  = 46;
     private static final int TAB_BAR_HEIGHT = 22;
     private static final int BUTTON_WIDTH   = 240;
@@ -64,8 +64,6 @@ public class FarmingConfigScreen extends Screen {
 
     // ── Tab 0 – Farming widgets ───────────────────────────────────────────────
     private CyclingButtonWidget<CropType> cropButton;
-    private PitchSlider                   pitchSlider;
-    private YawSlider                     yawSlider;
     private SwapDelaySlider               swapDelaySlider;
     private SwapRandomSlider              swapRandomSlider;
     private ButtonWidget                  setRewarpButton;
@@ -88,7 +86,6 @@ public class FarmingConfigScreen extends Screen {
 
     // ── Section-label Y positions (set in init, used in render) ───────────────
     private int sectionCropY;
-    private int sectionAnglesY;
     private int sectionDelaysY;
     private int actionSeparatorY;
     private int sectionPestsY;
@@ -142,8 +139,10 @@ public class FarmingConfigScreen extends Screen {
         sectionCropY = y;
         y += sectionLH;
         cropButton = CyclingButtonWidget.builder(
-                        (CropType crop) -> Text.translatable(crop.getTranslationKey()))
-                .values(CropType.COCOA_BEANS, CropType.MUSHROOM,
+                        (CropType crop) -> Text.literal(
+                                Text.translatable(crop.getTranslationKey()).getString()
+                                        + " (Speed: " + crop.getRecommendedSpeed() + ")"))
+                .values(CropType.COCOA_BEANS, CropType.MUSHROOM, CropType.CACTUS,
                         CropType.POTATO_S_SHAPE,
                         CropType.NETHER_WART_S_SHAPE, CropType.CARROT_S_SHAPE,
                         CropType.WHEAT_S_SHAPE, CropType.PUMPKIN_S_SHAPE,
@@ -154,16 +153,6 @@ public class FarmingConfigScreen extends Screen {
                 .build(widgetX, y, bw, bh,
                         Text.translatable("gui.just-farming.crop_label"));
         this.addDrawableChild(cropButton);
-        y += bh + pad + gap;
-
-        sectionAnglesY = y;
-        y += sectionLH;
-        pitchSlider = new PitchSlider(widgetX, y, bw, bh, config.farmingPitch);
-        this.addDrawableChild(pitchSlider);
-        y += bh + pad;
-
-        yawSlider = new YawSlider(widgetX, y, bw, bh, config.farmingYaw);
-        this.addDrawableChild(yawSlider);
         y += bh + pad + gap;
 
         sectionDelaysY = y;
@@ -301,8 +290,6 @@ public class FarmingConfigScreen extends Screen {
     private void updateTabVisibility() {
         boolean t0 = activeTab == 0;
         cropButton.visible        = t0;
-        pitchSlider.visible       = t0;
-        yawSlider.visible         = t0;
         swapDelaySlider.visible   = t0;
         swapRandomSlider.visible  = t0;
         setRewarpButton.visible   = t0;
@@ -391,7 +378,6 @@ public class FarmingConfigScreen extends Screen {
         // ── Section labels per tab ────────────────────────────────────────────
         if (activeTab == 0) {
             drawSectionLabel(context, "Crop",    panelX, sectionCropY,    panelR);
-            drawSectionLabel(context, "Angles",  panelX, sectionAnglesY,  panelR);
             drawSectionLabel(context, "Delays",  panelX, sectionDelaysY,  panelR);
             context.fillGradient(panelX + 20, actionSeparatorY,
                     panelR - 20, actionSeparatorY + 1, COL_ACCENT, 0x00000000);
@@ -431,8 +417,6 @@ public class FarmingConfigScreen extends Screen {
     /** Read widget values back into the config object. */
     private void applyConfig() {
         config.selectedCrop         = cropButton.getValue();
-        config.farmingPitch         = pitchSlider.getPitchValue();
-        config.farmingYaw           = yawSlider.getYawValue();
         config.rewarpDelayMin       = swapDelaySlider.getDelayValue();
         config.rewarpDelayRandom    = swapRandomSlider.getRandomValue();
         config.pestHighlightEnabled = pestHighlightButton.getValue();
@@ -512,66 +496,6 @@ public class FarmingConfigScreen extends Screen {
         protected void appendClickableNarrations(
                 net.minecraft.client.gui.screen.narration.NarrationMessageBuilder builder) {
             this.appendDefaultNarrations(builder);
-        }
-    }
-
-    /**
-     * Slider for pitch angle in range [-90, 90] degrees.
-     */
-    private static class PitchSlider extends SliderWidget {
-
-        private static final float MIN = -90.0f;
-        private static final float MAX =  90.0f;
-
-        PitchSlider(int x, int y, int width, int height, float initialPitch) {
-            super(x, y, width, height,
-                    Text.empty(),
-                    (double) (initialPitch - MIN) / (MAX - MIN));
-            updateMessage();
-        }
-
-        float getPitchValue() {
-            return MIN + (float) value * (MAX - MIN);
-        }
-
-        @Override
-        protected void updateMessage() {
-            setMessage(Text.literal(String.format("Pitch: %.0f\u00B0", getPitchValue())));
-        }
-
-        @Override
-        protected void applyValue() {
-            // value is stored in the parent field; read via getPitchValue()
-        }
-    }
-
-    /**
-     * Slider for yaw angle in range [-180, 180] degrees.
-     */
-    private static class YawSlider extends SliderWidget {
-
-        private static final float MIN = -180.0f;
-        private static final float MAX =  180.0f;
-
-        YawSlider(int x, int y, int width, int height, float initialYaw) {
-            super(x, y, width, height,
-                    Text.empty(),
-                    (double) (initialYaw - MIN) / (MAX - MIN));
-            updateMessage();
-        }
-
-        float getYawValue() {
-            return MIN + (float) value * (MAX - MIN);
-        }
-
-        @Override
-        protected void updateMessage() {
-            setMessage(Text.literal(String.format("Yaw: %.0f\u00B0", getYawValue())));
-        }
-
-        @Override
-        protected void applyValue() {
-            // value is stored in the parent field; read via getYawValue()
         }
     }
 

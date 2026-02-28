@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory;
  *   <li>FORWARD_LEFT – holds forward + strafe-left + attack.</li>
  *   <li>FORWARD_RIGHT – holds forward + strafe-right + attack (S-Shape crops).</li>
  *   <li>STRAFE_LEFT_ONLY – holds strafe-left only + attack (Sugar Cane / Moonflower / Sunflower / Wild Rose).</li>
+ *   <li>STRAFE_RIGHT_ONLY – holds strafe-right only + attack (Cactus, second half of each row pair).</li>
  *   <li>BACK_ONLY – holds back only + attack (end-of-row for left-back and forward-back crops).</li>
  *   <li>FORWARD_ONLY – holds forward only + attack (Mushroom).</li>
  *   <li>WARPING – releases keys and sends {@code /warp garden}.</li>
@@ -64,7 +65,7 @@ public class MacroManager {
     // -----------------------------------------------------------------------
 
     private enum MacroState { IDLE, DETECTING, BACKWARD_LEFT, FORWARD_LEFT, FORWARD_RIGHT,
-            STRAFE_LEFT_ONLY, BACK_ONLY, FORWARD_ONLY, WARPING }
+            STRAFE_LEFT_ONLY, STRAFE_RIGHT_ONLY, BACK_ONLY, FORWARD_ONLY, WARPING }
 
     private MacroState state = MacroState.IDLE;
     private boolean running = false;
@@ -118,6 +119,7 @@ public class MacroManager {
     public boolean shouldBreak() {
         return running && (state == MacroState.BACKWARD_LEFT || state == MacroState.FORWARD_LEFT
                 || state == MacroState.FORWARD_RIGHT || state == MacroState.STRAFE_LEFT_ONLY
+                || state == MacroState.STRAFE_RIGHT_ONLY
                 || state == MacroState.BACK_ONLY || state == MacroState.FORWARD_ONLY);
     }
 
@@ -144,9 +146,9 @@ public class MacroManager {
                 || state == MacroState.STRAFE_LEFT_ONLY);
     }
 
-    /** Returns {@code true} when the right-strafe key should be held (FORWARD_RIGHT). */
+    /** Returns {@code true} when the right-strafe key should be held (FORWARD_RIGHT or STRAFE_RIGHT_ONLY). */
     public boolean isStrafeRight() {
-        return running && state == MacroState.FORWARD_RIGHT;
+        return running && (state == MacroState.FORWARD_RIGHT || state == MacroState.STRAFE_RIGHT_ONLY);
     }
 
     /**
@@ -160,12 +162,13 @@ public class MacroManager {
         if (!running || client.options == null) return;
         if (state == MacroState.BACKWARD_LEFT || state == MacroState.FORWARD_LEFT
                 || state == MacroState.FORWARD_RIGHT || state == MacroState.STRAFE_LEFT_ONLY
+                || state == MacroState.STRAFE_RIGHT_ONLY
                 || state == MacroState.BACK_ONLY || state == MacroState.FORWARD_ONLY) {
             client.options.attackKey.setPressed(true);
             boolean goForward  = (state == MacroState.FORWARD_LEFT || state == MacroState.FORWARD_RIGHT || state == MacroState.FORWARD_ONLY);
             boolean goBack     = (state == MacroState.BACKWARD_LEFT || state == MacroState.BACK_ONLY);
             boolean goLeft     = (state == MacroState.BACKWARD_LEFT || state == MacroState.FORWARD_LEFT || state == MacroState.STRAFE_LEFT_ONLY);
-            boolean goRight    = (state == MacroState.FORWARD_RIGHT);
+            boolean goRight    = (state == MacroState.FORWARD_RIGHT || state == MacroState.STRAFE_RIGHT_ONLY);
             client.options.forwardKey.setPressed(goForward);
             client.options.backKey.setPressed(goBack);
             client.options.leftKey.setPressed(goLeft);
@@ -280,9 +283,9 @@ public class MacroManager {
             return;
         }
 
-        // Lock pitch and yaw every active tick
-        player.setPitch(config.farmingPitch);
-        player.setYaw(config.farmingYaw);
+        // Lock pitch and yaw to crop-specific defaults every active tick
+        player.setPitch(config.selectedCrop.getDefaultPitch());
+        player.setYaw(config.selectedCrop.getDefaultYaw());
 
         switch (state) {
             case DETECTING         -> tickDetecting(player);
@@ -290,6 +293,7 @@ public class MacroManager {
             case FORWARD_LEFT      -> tickMoving(player, true,  false, true,  false);
             case FORWARD_RIGHT     -> tickMoving(player, true,  false, false, true);
             case STRAFE_LEFT_ONLY  -> tickMoving(player, false, false, true,  false);
+            case STRAFE_RIGHT_ONLY -> tickMoving(player, false, false, false, true);
             case BACK_ONLY         -> tickMoving(player, false, true,  false, false);
             case FORWARD_ONLY      -> tickMoving(player, true,  false, false, false);
             case WARPING           -> {
@@ -341,9 +345,12 @@ public class MacroManager {
             } else if (config.selectedCrop.isLeftBack()) {
                 state = MacroState.STRAFE_LEFT_ONLY;
                 LOGGER.info("[JustFarming] Detected movement – left-back crop, starting STRAFE_LEFT_ONLY.");
+            } else if (config.selectedCrop.isCactus()) {
+                state = MacroState.STRAFE_LEFT_ONLY;
+                LOGGER.info("[JustFarming] Detected movement – cactus, starting STRAFE_LEFT_ONLY.");
             } else {
                 // Project delta onto the player's forward axis
-                double yawRad = Math.toRadians(config.farmingYaw);
+                double yawRad = Math.toRadians(config.selectedCrop.getDefaultYaw());
                 double fwdX = -Math.sin(yawRad);
                 double fwdZ =  Math.cos(yawRad);
                 double forwardComponent = delta.x * fwdX + delta.z * fwdZ;
@@ -359,7 +366,7 @@ public class MacroManager {
             // Player is stationary
             if (config.selectedCrop.isSShape()) {
                 state = MacroState.FORWARD_LEFT;
-            } else if (config.selectedCrop.isLeftBack()) {
+            } else if (config.selectedCrop.isLeftBack() || config.selectedCrop.isCactus()) {
                 state = MacroState.STRAFE_LEFT_ONLY;
             } else if (config.selectedCrop.isForwardBack()) {
                 state = MacroState.FORWARD_ONLY;
@@ -434,6 +441,10 @@ public class MacroManager {
                     // Left-Back: alternate between strafe-left and back-only
                     state = (state == MacroState.STRAFE_LEFT_ONLY)
                             ? MacroState.BACK_ONLY : MacroState.STRAFE_LEFT_ONLY;
+                } else if (config.selectedCrop.isCactus()) {
+                    // Cactus: alternate between strafe-left and strafe-right
+                    state = (state == MacroState.STRAFE_LEFT_ONLY)
+                            ? MacroState.STRAFE_RIGHT_ONLY : MacroState.STRAFE_LEFT_ONLY;
                 } else if (config.selectedCrop.isForwardBack()) {
                     // Forward-Back (Mushroom): alternate between forward-only and back-only
                     state = (state == MacroState.FORWARD_ONLY)

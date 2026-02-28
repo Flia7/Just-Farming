@@ -31,18 +31,6 @@ public class FarmingConfig {
     public CropType selectedCrop = CropType.COCOA_BEANS;
 
     /**
-     * Pitch angle (vertical look angle, degrees) while farming.
-     * Typical range: 30–80 degrees looking down at crops.
-     */
-    public float farmingPitch = 55.0f;
-
-    /**
-     * Yaw angle (horizontal rotation, degrees) while farming.
-     * Range: -180 to 180. Locks the player's horizontal facing direction.
-     */
-    public float farmingYaw = 0.0f;
-
-    /**
      * Whether to highlight chunk borders and plot numbers for plots with pests
      * on Hypixel Skyblock Garden.
      */
