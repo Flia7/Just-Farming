@@ -27,15 +27,14 @@ import java.util.Set;
 
 /**
  * Renders highlighted plot borders for Hypixel Skyblock Garden plots that
- * contain pests, following SkyHanni's rendering approach:
+ * contain pests.
  * <ul>
- *   <li>3D line borders around each infested plot</li>
- *   <li>Corner vertical lines at the 4 corners of each plot</li>
- *   <li>Horizontal border lines every 4 blocks in height</li>
- *   <li>Vertical edge lines every 4 blocks along the borders</li>
- *   <li>Red/DarkRed colours when the player is inside an infested plot,
- *       Gold/Red when outside</li>
+ *   <li>4 vertical corner lines at each plot corner in purple</li>
+ *   <li>Horizontal rectangle at the bottom (MIN_Y) connecting all corners</li>
+ *   <li>Horizontal rectangle at the top (MAX_Y) connecting all corners</li>
  * </ul>
+ * <p>This produces a cube-outline overlay (similar to the rewarp block highlight)
+ * with no interior grid lines.</p>
  *
  * <p>Registered as a
  * {@link net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents#AFTER_ENTITIES}
@@ -45,7 +44,6 @@ public class OverlayRenderer {
 
     // Colours as packed ARGB ints
     private static final int COLOR_PURPLE   = 0xFFAA44FF; // purple for ESP, tracer, rewarp, plot corners
-    private static final int COLOR_WHITE    = 0xFFFFFFFF; // white for plot border lines
     private static final int COLOR_ESP      = COLOR_PURPLE;
     private static final int COLOR_REWARP   = COLOR_PURPLE; // purple rewarp block outline
 
@@ -199,8 +197,7 @@ public class OverlayRenderer {
 
         for (Map.Entry<String, double[]> e : validPlots) {
             double[] b = e.getValue();
-            renderPlotBorders(matrices, lineBuffer, b, cx, cy, cz,
-                    COLOR_WHITE, COLOR_PURPLE);
+            renderPlotBorders(matrices, lineBuffer, b, cx, cy, cz, COLOR_PURPLE);
         }
 
         // Draw large floating title and smaller label for each infested plot
@@ -249,12 +246,12 @@ public class OverlayRenderer {
     }
 
     /**
-     * Renders SkyHanni-style plot borders with 3D lines.
+     * Renders a cube-style plot outline: four vertical corner lines plus
+     * horizontal rectangles at the top and bottom, all in purple.
      */
     private void renderPlotBorders(MatrixStack matrices, VertexConsumer lines,
                                    double[] b, double cx, double cy, double cz,
-                                   int lineColor, int cornerColor) {
-        int plotSize = GardenPlot.PLOT_SIZE;
+                                   int color) {
         int minH = GardenPlot.MIN_Y;
         int maxH = GardenPlot.MAX_Y;
 
@@ -265,25 +262,23 @@ public class OverlayRenderer {
 
         MatrixStack.Entry entry = matrices.peek();
 
-        // --- Corner vertical lines (thick appearance via 4 corners) ---
-        drawLine(entry, lines, minX, minH - cy, minZ, minX, maxH - cy, minZ, cornerColor);
-        drawLine(entry, lines, maxX, minH - cy, minZ, maxX, maxH - cy, minZ, cornerColor);
-        drawLine(entry, lines, minX, minH - cy, maxZ, minX, maxH - cy, maxZ, cornerColor);
-        drawLine(entry, lines, maxX, minH - cy, maxZ, maxX, maxH - cy, maxZ, cornerColor);
+        // --- Four vertical corner lines ---
+        drawLine(entry, lines, minX, minH - cy, minZ, minX, maxH - cy, minZ, color);
+        drawLine(entry, lines, maxX, minH - cy, minZ, maxX, maxH - cy, minZ, color);
+        drawLine(entry, lines, minX, minH - cy, maxZ, minX, maxH - cy, maxZ, color);
+        drawLine(entry, lines, maxX, minH - cy, maxZ, maxX, maxH - cy, maxZ, color);
 
-        // --- Vertical edge lines every 4 blocks along X on front/back edges ---
-        for (int dx = 4; dx < plotSize; dx += 4) {
-            double x = minX + dx;
-            drawLine(entry, lines, x, minH - cy, minZ, x, maxH - cy, minZ, lineColor);
-            drawLine(entry, lines, x, minH - cy, maxZ, x, maxH - cy, maxZ, lineColor);
-        }
+        // --- Horizontal rectangle at the bottom ---
+        drawLine(entry, lines, minX, minH - cy, minZ, maxX, minH - cy, minZ, color);
+        drawLine(entry, lines, maxX, minH - cy, minZ, maxX, minH - cy, maxZ, color);
+        drawLine(entry, lines, maxX, minH - cy, maxZ, minX, minH - cy, maxZ, color);
+        drawLine(entry, lines, minX, minH - cy, maxZ, minX, minH - cy, minZ, color);
 
-        // --- Vertical edge lines every 4 blocks along Z on left/right edges ---
-        for (int dz = 4; dz < plotSize; dz += 4) {
-            double z = minZ + dz;
-            drawLine(entry, lines, minX, minH - cy, z, minX, maxH - cy, z, lineColor);
-            drawLine(entry, lines, maxX, minH - cy, z, maxX, maxH - cy, z, lineColor);
-        }
+        // --- Horizontal rectangle at the top ---
+        drawLine(entry, lines, minX, maxH - cy, minZ, maxX, maxH - cy, minZ, color);
+        drawLine(entry, lines, maxX, maxH - cy, minZ, maxX, maxH - cy, maxZ, color);
+        drawLine(entry, lines, maxX, maxH - cy, maxZ, minX, maxH - cy, maxZ, color);
+        drawLine(entry, lines, minX, maxH - cy, maxZ, minX, maxH - cy, minZ, color);
     }
 
     /**
