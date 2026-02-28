@@ -52,12 +52,11 @@ public class ClientPlayerEntityMixin {
         MacroManager mm = JustFarming.getMacroManager();
         if (mm == null || !mm.shouldBreak()) return;
 
-        boolean forward = mm.isMovingForward();
         this.input.playerInput = new PlayerInput(
-                forward,    // forward key
-                !forward,   // back key
-                true,       // left key (always strafe left)
-                false,      // right key
+                mm.isMovingForward(),
+                mm.isMovingBack(),
+                mm.isStrafeLeft(),
+                mm.isStrafeRight(),
                 false,      // jump
                 false,      // sneak
                 false       // sprint
