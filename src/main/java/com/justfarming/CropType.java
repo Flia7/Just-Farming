@@ -77,13 +77,17 @@ public enum CropType {
     }
 
     public boolean isSShape() {
-        return this == POTATO_S_SHAPE || this == NETHER_WART_S_SHAPE
-                || this == CARROT_S_SHAPE || this == WHEAT_S_SHAPE
-                || this == PUMPKIN_S_SHAPE || this == MELON_S_SHAPE;
+        return this == POTATO || this == POTATO_S_SHAPE
+                || this == NETHER_WART || this == NETHER_WART_S_SHAPE
+                || this == CARROT || this == CARROT_S_SHAPE
+                || this == WHEAT || this == WHEAT_S_SHAPE
+                || this == PUMPKIN || this == PUMPKIN_S_SHAPE
+                || this == MELON || this == MELON_S_SHAPE;
     }
 
     public boolean isLeftBack() {
-        return this == SUGAR_CANE_S_SHAPE || this == MOONFLOWER_S_SHAPE
+        return this == SUGAR_CANE || this == SUGAR_CANE_S_SHAPE
+                || this == MOONFLOWER_S_SHAPE
                 || this == SUNFLOWER_S_SHAPE || this == WILD_ROSE_S_SHAPE;
     }
 
