@@ -2,10 +2,9 @@ package com.justfarming.gui;
 
 import com.justfarming.MacroManager;
 import com.justfarming.config.FarmingConfig;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.CyclingButtonWidget;
 import net.minecraft.client.gui.widget.SliderWidget;
 import net.minecraft.text.Text;
 
@@ -67,22 +66,22 @@ public class FarmingConfigScreen extends Screen {
     private TabButton[] tabButtons;
 
     // ── Tab 0 – Farming widgets ───────────────────────────────────────────────
-    private ButtonWidget                  cropSelectButton;
-    private ButtonWidget                  cropSettingsButton;
-    private ButtonWidget                  setRewarpButton;
-    private ButtonWidget                  toggleMacroButton;
+    private FlatButtonWidget                  cropSelectButton;
+    private FlatButtonWidget                  cropSettingsButton;
+    private FlatButtonWidget                  setRewarpButton;
+    private FlatButtonWidget                  toggleMacroButton;
 
     // ── Tab 1 – Pests widgets ─────────────────────────────────────────────────
-    private CyclingButtonWidget<Boolean>  pestHighlightButton;
-    private CyclingButtonWidget<Boolean>  pestLabelsButton;
+    private FlatBoolToggleWidget  pestHighlightButton;
+    private FlatBoolToggleWidget  pestLabelsButton;
     private TitleScaleSlider              titleScaleSlider;
-    private CyclingButtonWidget<Boolean>  pestEspButton;
-    private CyclingButtonWidget<Boolean>  pestTracerButton;
+    private FlatBoolToggleWidget  pestEspButton;
+    private FlatBoolToggleWidget  pestTracerButton;
 
     // ── Tab 2 – Misc widgets ──────────────────────────────────────────────────
-    private ButtonWidget                  freelookButton;
-    private CyclingButtonWidget<Boolean>  unlockedMouseButton;
-    private CyclingButtonWidget<Boolean>  squeakyMousematButton;
+    private FlatButtonWidget                  freelookButton;
+    private FlatBoolToggleWidget  unlockedMouseButton;
+    private FlatBoolToggleWidget  squeakyMousematButton;
 
     // ── Tab 3 – Delays widgets ────────────────────────────────────────────────
     private LaneSwapDelaySlider           laneSwapDelaySlider;
@@ -91,7 +90,7 @@ public class FarmingConfigScreen extends Screen {
     private RewarpRandomSlider            rewarpRandomSlider;
 
     // ── Always-visible widget ─────────────────────────────────────────────────
-    private ButtonWidget saveCloseButton;
+    private FlatButtonWidget saveCloseButton;
 
     // ── Section-label Y positions (set in init, used in render) ───────────────
     private int sectionCropY, actionSeparatorY;
@@ -147,32 +146,30 @@ public class FarmingConfigScreen extends Screen {
         y = contentTop;
         sectionCropY = y;
         y += sLH;
-        cropSelectButton = ButtonWidget.builder(
+        cropSelectButton = new FlatButtonWidget(widgetX, y, bw, bh,
                         getCropSelectText(),
                         btn -> {
                             applyConfig();
                             if (this.client != null)
                                 this.client.setScreen(new CropSelectScreen(this, config));
-                        })
-                .dimensions(widgetX, y, bw, bh).build();
+                        });
         this.addDrawableChild(cropSelectButton);
         y += bh + pad;
 
-        cropSettingsButton = ButtonWidget.builder(
+        cropSettingsButton = new FlatButtonWidget(widgetX, y, bw, bh,
                         getCropSettingsText(),
                         btn -> {
                             applyConfig();
                             if (this.client != null)
                                 this.client.setScreen(new CropSettingsScreen(this, config));
-                        })
-                .dimensions(widgetX, y, bw, bh).build();
+                        });
         this.addDrawableChild(cropSettingsButton);
         y += bh + pad + gap;
 
         actionSeparatorY = y;
         y += Math.max(2, Math.round(4 * scale));
 
-        setRewarpButton = ButtonWidget.builder(
+        setRewarpButton = new FlatButtonWidget(widgetX, y, bw, bh,
                         getRewarpButtonText(),
                         btn -> {
                             if (this.client != null && this.client.player != null) {
@@ -183,19 +180,17 @@ public class FarmingConfigScreen extends Screen {
                                 config.save();
                                 btn.setMessage(Text.literal("§aRewarp Set!"));
                             }
-                        })
-                .dimensions(widgetX, y, bw, bh).build();
+                        });
         this.addDrawableChild(setRewarpButton);
         y += bh + pad;
 
-        toggleMacroButton = ButtonWidget.builder(
+        toggleMacroButton = new FlatButtonWidget(widgetX, y, bw, bh,
                         getMacroToggleText(),
                         btn -> {
                             applyConfig();
                             macroManager.toggle();
                             btn.setMessage(getMacroToggleText());
-                        })
-                .dimensions(widgetX, y, bw, bh).build();
+                        });
         this.addDrawableChild(toggleMacroButton);
 
         // ── Tab 1 – Pests ─────────────────────────────────────────────────────
@@ -203,21 +198,15 @@ public class FarmingConfigScreen extends Screen {
         sectionPestsY = y;
         y += sLH;
 
-        pestHighlightButton = CyclingButtonWidget.builder(
-                        (Boolean val) -> val ? Text.literal("ON") : Text.literal("OFF"))
-                .values(Boolean.TRUE, Boolean.FALSE)
-                .initially(config.pestHighlightEnabled)
-                .build(widgetX, y, bw, bh,
-                        Text.translatable("gui.just-farming.pest_highlight_label"));
+        pestHighlightButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
+                        Text.translatable("gui.just-farming.pest_highlight_label"),
+                        config.pestHighlightEnabled);
         this.addDrawableChild(pestHighlightButton);
         y += bh + pad;
 
-        pestLabelsButton = CyclingButtonWidget.builder(
-                        (Boolean val) -> val ? Text.literal("ON") : Text.literal("OFF"))
-                .values(Boolean.TRUE, Boolean.FALSE)
-                .initially(config.pestLabelsEnabled)
-                .build(widgetX, y, bw, bh,
-                        Text.translatable("gui.just-farming.pest_labels_label"));
+        pestLabelsButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
+                        Text.translatable("gui.just-farming.pest_labels_label"),
+                        config.pestLabelsEnabled);
         this.addDrawableChild(pestLabelsButton);
         y += bh + pad;
 
@@ -225,21 +214,15 @@ public class FarmingConfigScreen extends Screen {
         this.addDrawableChild(titleScaleSlider);
         y += bh + pad;
 
-        pestEspButton = CyclingButtonWidget.builder(
-                        (Boolean val) -> val ? Text.literal("ON") : Text.literal("OFF"))
-                .values(Boolean.TRUE, Boolean.FALSE)
-                .initially(config.pestEspEnabled)
-                .build(widgetX, y, bw, bh,
-                        Text.translatable("gui.just-farming.pest_esp_label"));
+        pestEspButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
+                        Text.translatable("gui.just-farming.pest_esp_label"),
+                        config.pestEspEnabled);
         this.addDrawableChild(pestEspButton);
         y += bh + pad;
 
-        pestTracerButton = CyclingButtonWidget.builder(
-                        (Boolean val) -> val ? Text.literal("ON") : Text.literal("OFF"))
-                .values(Boolean.TRUE, Boolean.FALSE)
-                .initially(config.pestTracerEnabled)
-                .build(widgetX, y, bw, bh,
-                        Text.translatable("gui.just-farming.pest_tracer_label"));
+        pestTracerButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
+                        Text.translatable("gui.just-farming.pest_tracer_label"),
+                        config.pestTracerEnabled);
         this.addDrawableChild(pestTracerButton);
 
         // ── Tab 2 – Misc ──────────────────────────────────────────────────────
@@ -247,31 +230,24 @@ public class FarmingConfigScreen extends Screen {
         sectionMiscY = y;
         y += sLH;
 
-        freelookButton = ButtonWidget.builder(
+        freelookButton = new FlatButtonWidget(widgetX, y, bw, bh,
                         getFreelookButtonText(),
                         btn -> {
                             macroManager.toggleFreelook();
                             btn.setMessage(getFreelookButtonText());
-                        })
-                .dimensions(widgetX, y, bw, bh).build();
+                        });
         this.addDrawableChild(freelookButton);
         y += bh + pad;
 
-        unlockedMouseButton = CyclingButtonWidget.builder(
-                        (Boolean val) -> val ? Text.literal("ON") : Text.literal("OFF"))
-                .values(Boolean.TRUE, Boolean.FALSE)
-                .initially(config.unlockedMouseEnabled)
-                .build(widgetX, y, bw, bh,
-                        Text.translatable("gui.just-farming.unlocked_mouse_label"));
+        unlockedMouseButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
+                        Text.translatable("gui.just-farming.unlocked_mouse_label"),
+                        config.unlockedMouseEnabled);
         this.addDrawableChild(unlockedMouseButton);
         y += bh + pad;
 
-        squeakyMousematButton = CyclingButtonWidget.builder(
-                        (Boolean val) -> val ? Text.literal("ON") : Text.literal("OFF"))
-                .values(Boolean.TRUE, Boolean.FALSE)
-                .initially(config.squeakyMousematEnabled)
-                .build(widgetX, y, bw, bh,
-                        Text.translatable("gui.just-farming.squeaky_mousemat_label"));
+        squeakyMousematButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
+                        Text.translatable("gui.just-farming.squeaky_mousemat_label"),
+                        config.squeakyMousematEnabled);
         this.addDrawableChild(squeakyMousematButton);
 
         // ── Tab 3 – Delays ────────────────────────────────────────────────────
@@ -297,10 +273,9 @@ public class FarmingConfigScreen extends Screen {
 
         // ── Always-visible: Close button anchored to the bottom ───────────────
         int closeBtnY = winY + winH - bh - pad;
-        saveCloseButton = ButtonWidget.builder(
+        saveCloseButton = new FlatButtonWidget(widgetX, closeBtnY, bw, bh,
                         Text.translatable("gui.just-farming.close"),
-                        btn -> close())
-                .dimensions(widgetX, closeBtnY, bw, bh).build();
+                        btn -> close());
         this.addDrawableChild(saveCloseButton);
 
         updateTabVisibility();
@@ -477,6 +452,76 @@ public class FarmingConfigScreen extends Screen {
     // Inner classes
     // -------------------------------------------------------------------------
 
+    /** Draws a flat custom slider – shared by all slider inner classes. */
+    private static void renderFlatSlider(DrawContext context, int x, int y, int w, int h,
+                                          double value, net.minecraft.text.Text message) {
+        FlatButtonWidget.renderFlatSlider(context, x, y, w, h, value, message);
+    }
+
+    /**
+     * Boolean toggle widget that renders in the dark flat style instead of
+     * using the default Minecraft button texture.
+     */
+    private static class FlatBoolToggleWidget extends net.minecraft.client.gui.widget.ClickableWidget {
+
+        private static final int COL_BG_NORMAL = 0x1AFFFFFF;
+        private static final int COL_BG_HOVER  = 0x33FFFFFF;
+        private static final int COL_BORDER    = 0x28FFFFFF;
+        private static final int COL_ACCENT    = 0xFF7C4DFF;
+        private static final int COL_TEXT      = 0xF2FFFFFF;
+        private static final int COL_ON        = 0xFF50E890;
+        private static final int COL_OFF       = 0xFFFF5060;
+
+        private final net.minecraft.text.Text label;
+        private boolean value;
+
+        FlatBoolToggleWidget(int x, int y, int width, int height,
+                             net.minecraft.text.Text label, boolean initialValue) {
+            super(x, y, width, height, label);
+            this.label = label;
+            this.value = initialValue;
+        }
+
+        boolean getValue() {
+            return value;
+        }
+
+        @Override
+        public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
+            int x = getX(), y = getY(), w = getWidth(), h = getHeight();
+            int bg = isHovered() ? COL_BG_HOVER : COL_BG_NORMAL;
+            context.fill(x, y, x + w, y + h, bg);
+            // 1-px border
+            context.fill(x,         y,         x + w, y + 1,     COL_BORDER);
+            context.fill(x,         y + h - 1, x + w, y + h,     COL_BORDER);
+            context.fill(x,         y + 1,     x + 1, y + h - 1, COL_BORDER);
+            context.fill(x + w - 1, y + 1,     x + w, y + h - 1, COL_BORDER);
+            // 2-px left accent bar (purple when ON, dim when OFF)
+            context.fill(x, y, x + 2, y + h, value ? COL_ACCENT : COL_BORDER);
+            // Label (left-aligned)
+            var tr = MinecraftClient.getInstance().textRenderer;
+            context.drawTextWithShadow(tr, label, x + 8, y + (h - 8) / 2, COL_TEXT);
+            // ON / OFF indicator (right-aligned, coloured)
+            String indicator     = value ? "\u25CF ON" : "\u25CF OFF";
+            int    indicatorColor = value ? COL_ON : COL_OFF;
+            int    indicatorX    = x + w - tr.getWidth(indicator) - 8;
+            context.drawTextWithShadow(tr,
+                    net.minecraft.text.Text.literal(indicator).withColor(indicatorColor),
+                    indicatorX, y + (h - 8) / 2, indicatorColor);
+        }
+
+        @Override
+        public void onClick(net.minecraft.client.gui.Click click, boolean toggle) {
+            value = !value;
+        }
+
+        @Override
+        protected void appendClickableNarrations(
+                net.minecraft.client.gui.screen.narration.NarrationMessageBuilder builder) {
+            appendDefaultNarrations(builder);
+        }
+    }
+
     /**
      * Category tab button rendered in the left navigation sidebar.
      * Draws a custom background with an accent left-edge bar when active.
@@ -491,7 +536,7 @@ public class FarmingConfigScreen extends Screen {
         }
 
         @Override
-        protected void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
+        public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
             boolean active  = activeTab == tabIndex;
             boolean hovered = this.isHovered();
 
@@ -551,6 +596,11 @@ public class FarmingConfigScreen extends Screen {
         }
 
         @Override
+        public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
+            renderFlatSlider(context, getX(), getY(), getWidth(), getHeight(), value, getMessage());
+        }
+
+        @Override
         protected void applyValue() {}
     }
 
@@ -573,6 +623,11 @@ public class FarmingConfigScreen extends Screen {
         @Override
         protected void updateMessage() {
             setMessage(Text.literal(String.format("Lane Swap Randomization: %d ms", getRandomValue())));
+        }
+
+        @Override
+        public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
+            renderFlatSlider(context, getX(), getY(), getWidth(), getHeight(), value, getMessage());
         }
 
         @Override
@@ -601,6 +656,11 @@ public class FarmingConfigScreen extends Screen {
         }
 
         @Override
+        public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
+            renderFlatSlider(context, getX(), getY(), getWidth(), getHeight(), value, getMessage());
+        }
+
+        @Override
         protected void applyValue() {}
     }
 
@@ -626,6 +686,11 @@ public class FarmingConfigScreen extends Screen {
         }
 
         @Override
+        public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
+            renderFlatSlider(context, getX(), getY(), getWidth(), getHeight(), value, getMessage());
+        }
+
+        @Override
         protected void applyValue() {}
     }
 
@@ -648,6 +713,11 @@ public class FarmingConfigScreen extends Screen {
         @Override
         protected void updateMessage() {
             setMessage(Text.literal(String.format("Pest Plot Label Scale: %.2f", getTitleScaleValue())));
+        }
+
+        @Override
+        public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
+            renderFlatSlider(context, getX(), getY(), getWidth(), getHeight(), value, getMessage());
         }
 
         @Override
