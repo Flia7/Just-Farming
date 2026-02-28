@@ -72,6 +72,13 @@ public class MacroManager {
     private boolean freelookEnabled = false;
     private double freelookZoom = DEFAULT_ZOOM;
 
+    /**
+     * When a crop has a custom key configuration this flag tracks which
+     * "half" of the direction cycle we are in.  {@code false} = primary keys,
+     * {@code true} = flipped keys (forward↔back, left↔right swapped).
+     */
+    private boolean customFlipped = false;
+
     /** Position recorded at the start of the DETECTING phase. */
     private Vec3d detectStartPos = null;
     private int detectTicks = 0;
@@ -131,24 +138,48 @@ public class MacroManager {
      * re-asserting movement inputs while a GUI screen is open.
      */
     public boolean isMovingForward() {
-        return running && (state == MacroState.FORWARD_LEFT || state == MacroState.FORWARD_RIGHT
-                || state == MacroState.FORWARD_ONLY);
+        if (!running) return false;
+        com.justfarming.config.FarmingConfig.CropCustomSettings cs =
+                config.getCropSettings(config.selectedCrop);
+        if (cs != null && shouldBreak()) {
+            return customFlipped ? cs.back : cs.forward;
+        }
+        return state == MacroState.FORWARD_LEFT || state == MacroState.FORWARD_RIGHT
+                || state == MacroState.FORWARD_ONLY;
     }
 
     /** Returns {@code true} when the back key should be held (BACKWARD_LEFT or BACK_ONLY). */
     public boolean isMovingBack() {
-        return running && (state == MacroState.BACKWARD_LEFT || state == MacroState.BACK_ONLY);
+        if (!running) return false;
+        com.justfarming.config.FarmingConfig.CropCustomSettings cs =
+                config.getCropSettings(config.selectedCrop);
+        if (cs != null && shouldBreak()) {
+            return customFlipped ? cs.forward : cs.back;
+        }
+        return state == MacroState.BACKWARD_LEFT || state == MacroState.BACK_ONLY;
     }
 
     /** Returns {@code true} when the left-strafe key should be held. */
     public boolean isStrafeLeft() {
-        return running && (state == MacroState.BACKWARD_LEFT || state == MacroState.FORWARD_LEFT
-                || state == MacroState.STRAFE_LEFT_ONLY);
+        if (!running) return false;
+        com.justfarming.config.FarmingConfig.CropCustomSettings cs =
+                config.getCropSettings(config.selectedCrop);
+        if (cs != null && shouldBreak()) {
+            return customFlipped ? cs.right : cs.left;
+        }
+        return state == MacroState.BACKWARD_LEFT || state == MacroState.FORWARD_LEFT
+                || state == MacroState.STRAFE_LEFT_ONLY;
     }
 
     /** Returns {@code true} when the right-strafe key should be held (FORWARD_RIGHT or STRAFE_RIGHT_ONLY). */
     public boolean isStrafeRight() {
-        return running && (state == MacroState.FORWARD_RIGHT || state == MacroState.STRAFE_RIGHT_ONLY);
+        if (!running) return false;
+        com.justfarming.config.FarmingConfig.CropCustomSettings cs =
+                config.getCropSettings(config.selectedCrop);
+        if (cs != null && shouldBreak()) {
+            return customFlipped ? cs.left : cs.right;
+        }
+        return state == MacroState.FORWARD_RIGHT || state == MacroState.STRAFE_RIGHT_ONLY;
     }
 
     /**
@@ -164,6 +195,18 @@ public class MacroManager {
                 || state == MacroState.FORWARD_RIGHT || state == MacroState.STRAFE_LEFT_ONLY
                 || state == MacroState.STRAFE_RIGHT_ONLY
                 || state == MacroState.BACK_ONLY || state == MacroState.FORWARD_ONLY) {
+
+            com.justfarming.config.FarmingConfig.CropCustomSettings cs =
+                    config.getCropSettings(config.selectedCrop);
+            if (cs != null) {
+                client.options.attackKey.setPressed(cs.attack);
+                client.options.forwardKey.setPressed(customFlipped ? cs.back    : cs.forward);
+                client.options.backKey.setPressed(   customFlipped ? cs.forward : cs.back);
+                client.options.leftKey.setPressed(   customFlipped ? cs.right   : cs.left);
+                client.options.rightKey.setPressed(  customFlipped ? cs.left    : cs.right);
+                return;
+            }
+
             client.options.attackKey.setPressed(true);
             boolean goForward  = (state == MacroState.FORWARD_LEFT || state == MacroState.FORWARD_RIGHT || state == MacroState.FORWARD_ONLY);
             boolean goBack     = (state == MacroState.BACKWARD_LEFT || state == MacroState.BACK_ONLY);
@@ -216,6 +259,7 @@ public class MacroManager {
         detectStartPos = null;
         lastPos = null;
         stuckTicks = 0;
+        customFlipped = false;
         if (config.unlockedMouseEnabled) {
             client.mouse.unlockCursor();
         }
@@ -284,8 +328,8 @@ public class MacroManager {
         }
 
         // Lock pitch and yaw to crop-specific defaults every active tick
-        player.setPitch(config.selectedCrop.getDefaultPitch());
-        player.setYaw(config.selectedCrop.getDefaultYaw());
+        player.setPitch(config.getEffectivePitch(config.selectedCrop));
+        player.setYaw(config.getEffectiveYaw(config.selectedCrop));
 
         switch (state) {
             case DETECTING         -> tickDetecting(player);
@@ -312,6 +356,11 @@ public class MacroManager {
             }
             default -> {}
         }
+
+        // If a custom key configuration is active for this crop, override the
+        // keys that the state machine just set so the player presses exactly the
+        // user-configured keys (swapped when customFlipped is true).
+        applyCustomKeyOverrides();
     }
 
     // -----------------------------------------------------------------------
@@ -324,6 +373,19 @@ public class MacroManager {
      */
     private void tickDetecting(ClientPlayerEntity player) {
         releaseKeys();
+
+        // If a custom key configuration is active, skip the movement-detection
+        // heuristic and jump straight into the user-configured key state.
+        com.justfarming.config.FarmingConfig.CropCustomSettings cs =
+                config.getCropSettings(config.selectedCrop);
+        if (cs != null) {
+            customFlipped = false;
+            state = deriveStateFromCustomKeys(cs);
+            lastPos = new Vec3d(player.getX(), player.getY(), player.getZ());
+            stuckTicks = 0;
+            LOGGER.info("[JustFarming] Custom key config – starting {}.", state);
+            return;
+        }
 
         if (detectStartPos == null) {
             detectStartPos = new Vec3d(player.getX(), player.getY(), player.getZ());
@@ -433,6 +495,15 @@ public class MacroManager {
             if (stuckTicks >= STUCK_THRESHOLD) {
                 // End of row reached – flip direction
                 stuckTicks = 0;
+                com.justfarming.config.FarmingConfig.CropCustomSettings cs =
+                        config.getCropSettings(config.selectedCrop);
+                if (cs != null) {
+                    // Custom key mode: toggle the flip flag (forward↔back, left↔right)
+                    customFlipped = !customFlipped;
+                    LOGGER.info("[JustFarming] Custom key flip – {}.",
+                            customFlipped ? "flipped" : "normal");
+                    return;
+                }
                 if (config.selectedCrop.isSShape()) {
                     // S-Shape: keep moving forward, flip strafe direction
                     state = (state == MacroState.FORWARD_LEFT)
@@ -482,5 +553,38 @@ public class MacroManager {
         client.options.leftKey.setPressed(false);
         client.options.rightKey.setPressed(false);
         client.options.attackKey.setPressed(false);
+    }
+
+    /**
+     * After every tick where the macro is actively moving, override the
+     * state-machine-set keys with the user's custom configuration (if any).
+     */
+    private void applyCustomKeyOverrides() {
+        if (!shouldBreak()) return;
+        com.justfarming.config.FarmingConfig.CropCustomSettings cs =
+                config.getCropSettings(config.selectedCrop);
+        if (cs == null || client.options == null) return;
+        client.options.attackKey.setPressed(cs.attack);
+        client.options.forwardKey.setPressed(customFlipped ? cs.back    : cs.forward);
+        client.options.backKey.setPressed(   customFlipped ? cs.forward : cs.back);
+        client.options.leftKey.setPressed(   customFlipped ? cs.right   : cs.left);
+        client.options.rightKey.setPressed(  customFlipped ? cs.left    : cs.right);
+    }
+
+    /**
+     * Map a {@link com.justfarming.config.FarmingConfig.CropCustomSettings}
+     * key combination to the closest {@link MacroState} so that the stuck
+     * detection logic keeps working normally.
+     */
+    private MacroState deriveStateFromCustomKeys(
+            com.justfarming.config.FarmingConfig.CropCustomSettings cs) {
+        if (cs.forward && cs.left)  return MacroState.FORWARD_LEFT;
+        if (cs.forward && cs.right) return MacroState.FORWARD_RIGHT;
+        if (cs.forward)             return MacroState.FORWARD_ONLY;
+        if (cs.back    && cs.left)  return MacroState.BACKWARD_LEFT;
+        if (cs.back)                return MacroState.BACK_ONLY;
+        if (cs.left)                return MacroState.STRAFE_LEFT_ONLY;
+        if (cs.right)               return MacroState.STRAFE_RIGHT_ONLY;
+        return MacroState.FORWARD_ONLY; // fallback
     }
 }
