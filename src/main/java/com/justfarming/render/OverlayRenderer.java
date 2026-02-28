@@ -20,7 +20,6 @@ import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalDouble;
@@ -112,47 +111,13 @@ public class OverlayRenderer {
         double cx = camPos.x, cy = camPos.y, cz = camPos.z;
 
         // ── Pest entity ESP & Tracer ──────────────────────────────────────────
-        // Entity-based detection works within Minecraft's entity loading range
-        // (~32–64 blocks on Hypixel). For pest plots that are detected via the
-        // scoreboard/tab list but have no loaded entity yet, a fallback tracer
-        // is drawn toward the horizontal centre of the plot at mid-height so
-        // the player knows which direction to head. ESP boxes are only drawn
-        // for actually detected entities (exact positions), while fallback
-        // tracers use a distinct gold colour to signal they are approximate.
         List<PestEntityDetector.PestEntity> entityPests = pestEntityDetector.getDetectedPests();
 
-        // Build fallback tracer targets: plots known to have pests but whose
-        // entities are not yet loaded (too far away for entity tracking).
-        List<PestEntityDetector.PestEntity> fallbackPests = new ArrayList<>();
-        Set<String> knownPestPlots = pestDetector.getPestPlots();
-        if (!knownPestPlots.isEmpty()) {
-            // Collect plots already covered by entity-based detection in O(m).
-            HashSet<String> coveredPlots = new HashSet<>();
-            for (PestEntityDetector.PestEntity pe : entityPests) {
-                String p = GardenPlot.getPlotNameAt(pe.position().x, pe.position().z);
-                if (p != null) coveredPlots.add(p);
-            }
-            for (String plotName : knownPestPlots) {
-                if (coveredPlots.contains(plotName)) continue;
-                double[] b = GardenPlot.getBounds(plotName);
-                if (b == null) continue;
-                double fx = (b[0] + b[3]) / 2.0;
-                double fz = (b[2] + b[5]) / 2.0;
-                // Use mid-height of the plot so the tracer points to a sensible
-                // position rather than to the floor (MIN_Y).
-                double fy = (GardenPlot.MIN_Y + GardenPlot.MAX_Y) / 2.0;
-                Box fallbackBox = new Box(fx - 0.4, fy - 0.4, fz - 0.4,
-                                          fx + 0.4, fy + 0.4, fz + 0.4);
-                fallbackPests.add(new PestEntityDetector.PestEntity(
-                        new Vec3d(fx, fy, fz), fallbackBox, "Plot " + plotName));
-            }
-        }
-
-        if (!entityPests.isEmpty() || !fallbackPests.isEmpty()) {
+        if (!entityPests.isEmpty()) {
             MatrixStack.Entry entry = matrices.peek();
 
-            // ESP boxes: only for actually detected entities (exact positions).
-            if (config.pestEspEnabled && !entityPests.isEmpty()) {
+            // ESP boxes: see-through wireframe around each detected pest entity.
+            if (config.pestEspEnabled) {
                 VertexConsumer espLines = consumers.getBuffer(PEST_ESP_SEE_THROUGH_LINES);
                 for (PestEntityDetector.PestEntity pest : entityPests) {
                     renderEspBox(entry, espLines, adjustedEspBox(pest.boundingBox()), cx, cy, cz, COLOR_ESP);
@@ -160,8 +125,7 @@ public class OverlayRenderer {
             }
 
             // Tracer lines: always see-through, draw from a point in front of the
-            // camera to the centre of each ESP box (entities) or plot mid-point
-            // (fallback).
+            // camera to the centre of each ESP box.
             //
             // Drawing from the exact camera position (0,0,0) clips against the near
             // frustum plane and produces an invisible line.  Following Wurst7's
@@ -179,7 +143,6 @@ public class OverlayRenderer {
                 double tracerStartY = -Math.sin(pitchRad)       * 10.0;
                 double tracerStartZ =  Math.cos(yawRad) * cosP * 10.0;
 
-                // Green tracers → actual detected pest entities (exact position).
                 for (PestEntityDetector.PestEntity pest : entityPests) {
                     Box espBox = adjustedEspBox(pest.boundingBox());
                     double targetX = (espBox.minX + espBox.maxX) / 2.0 - cx;
@@ -188,17 +151,6 @@ public class OverlayRenderer {
                     drawLine(entry, tracerLines,
                             tracerStartX, tracerStartY, tracerStartZ,
                             targetX, targetY, targetZ, COLOR_GREEN);
-                }
-
-                // Gold tracers → pest plots detected via scoreboard but not yet
-                // close enough for entity loading (approximate plot direction).
-                for (PestEntityDetector.PestEntity pest : fallbackPests) {
-                    double targetX = pest.position().x - cx;
-                    double targetY = pest.position().y - cy;
-                    double targetZ = pest.position().z - cz;
-                    drawLine(entry, tracerLines,
-                            tracerStartX, tracerStartY, tracerStartZ,
-                            targetX, targetY, targetZ, COLOR_GOLD);
                 }
             }
         }
