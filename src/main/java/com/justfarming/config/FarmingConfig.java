@@ -52,11 +52,6 @@ public class FarmingConfig {
     public boolean pestEspEnabled = true;
 
     /**
-     * Whether the pest ESP renders through blocks (no depth test).
-     */
-    public boolean pestEspSeeThrough = true;
-
-    /**
      * Scale multiplier for the large floating plot title in the world.
      * Adjust to make the "Plot N" label larger or smaller.
      */

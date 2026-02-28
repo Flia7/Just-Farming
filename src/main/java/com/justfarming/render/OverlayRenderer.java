@@ -116,11 +116,9 @@ public class OverlayRenderer {
         if (!pests.isEmpty()) {
             MatrixStack.Entry entry = matrices.peek();
 
-            // ESP boxes (conditional on setting; respects see-through toggle)
+            // ESP boxes (always see-through when enabled)
             if (config.pestEspEnabled) {
-                boolean seeThrough = config.pestEspSeeThrough;
-                RenderLayer espLayer = seeThrough ? PEST_ESP_SEE_THROUGH_LINES : RenderLayer.getLines();
-                VertexConsumer espLines = consumers.getBuffer(espLayer);
+                VertexConsumer espLines = consumers.getBuffer(PEST_ESP_SEE_THROUGH_LINES);
                 for (PestEntityDetector.PestEntity pest : pests) {
                     renderEspBox(entry, espLines, adjustedEspBox(pest.boundingBox()), cx, cy, cz, COLOR_ESP);
                 }
