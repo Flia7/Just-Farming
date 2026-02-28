@@ -4,7 +4,6 @@ import com.justfarming.CropType;
 import com.justfarming.config.FarmingConfig;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Text;
 
 /**
@@ -45,7 +44,7 @@ public class CropSelectScreen extends Screen {
     private final FarmingConfig config;
 
     private int panelX, panelY, panelW, panelH;
-    private final ButtonWidget[] cropButtons = new ButtonWidget[CROPS.length];
+    private final FlatButtonWidget[] cropButtons = new FlatButtonWidget[CROPS.length];
 
     /** How many crop rows have been scrolled past. */
     private int scrollOffset   = 0;
@@ -86,26 +85,24 @@ public class CropSelectScreen extends Screen {
             final CropType crop = CROPS[i];
             String label = Text.translatable(crop.getTranslationKey()).getString();
             int visibleIndex = i - scrollOffset;
-            cropButtons[i] = ButtonWidget.builder(
+            cropButtons[i] = new FlatButtonWidget(
+                    wx, y + visibleIndex * (bh + PADDING), bw, bh,
                     Text.literal(label),
                     btn -> {
                         config.selectedCrop = crop;
                         config.save();
                         if (this.client != null) this.client.setScreen(parent);
-                    })
-                    .dimensions(wx, y + visibleIndex * (bh + PADDING), bw, bh)
-                    .build();
+                    });
             // Only register buttons that are within the visible window
             if (visibleIndex >= 0 && visibleIndex < maxVisibleCrops) {
                 this.addDrawableChild(cropButtons[i]);
             }
         }
 
-        this.addDrawableChild(ButtonWidget.builder(
+        this.addDrawableChild(new FlatButtonWidget(
+                wx, panelY + panelH - bh - PADDING, bw, bh,
                 Text.literal("Cancel"),
-                btn -> { if (this.client != null) this.client.setScreen(parent); })
-                .dimensions(wx, panelY + panelH - bh - PADDING, bw, bh)
-                .build());
+                btn -> { if (this.client != null) this.client.setScreen(parent); }));
     }
 
     @Override
@@ -147,7 +144,7 @@ public class CropSelectScreen extends Screen {
         for (int i = 0; i < CROPS.length; i++) {
             int visibleIndex = i - scrollOffset;
             if (CROPS[i] == config.selectedCrop && visibleIndex >= 0 && visibleIndex < maxVisibleCrops) {
-                ButtonWidget b = cropButtons[i];
+                FlatButtonWidget b = cropButtons[i];
                 context.fill(b.getX() - 1, b.getY() - 1,
                         b.getX() + b.getWidth() + 1, b.getY() + b.getHeight() + 1,
                         COL_SELECTED_HL);

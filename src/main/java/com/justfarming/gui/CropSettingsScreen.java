@@ -2,9 +2,9 @@ package com.justfarming.gui;
 
 import com.justfarming.CropType;
 import com.justfarming.config.FarmingConfig;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.SliderWidget;
 import net.minecraft.text.Text;
 
@@ -41,10 +41,10 @@ public class CropSettingsScreen extends Screen {
     private final CropType      crop;
 
     // ── Widgets ───────────────────────────────────────────────────────────────
-    private YawSlider   yawSlider;
-    private PitchSlider pitchSlider;
-    private ButtonWidget resetButton;
-    private ButtonWidget saveCloseButton;
+    private YawSlider         yawSlider;
+    private PitchSlider       pitchSlider;
+    private FlatButtonWidget  resetButton;
+    private FlatButtonWidget  saveCloseButton;
 
     // ── Section-label Y positions (set in init, used in render) ───────────────
     private int sectionCameraY;
@@ -110,18 +110,14 @@ public class CropSettingsScreen extends Screen {
         int closeY = panelY + panelH - bh - pad;
         int resetY = closeY - bh - pad;
 
-        resetButton = ButtonWidget.builder(
+        resetButton = new FlatButtonWidget(widgetX, resetY, bw, bh,
                 Text.literal("Reset to Default"),
-                btn -> resetToDefault())
-                .dimensions(widgetX, resetY, bw, bh)
-                .build();
+                btn -> resetToDefault());
         this.addDrawableChild(resetButton);
 
-        saveCloseButton = ButtonWidget.builder(
+        saveCloseButton = new FlatButtonWidget(widgetX, closeY, bw, bh,
                 Text.literal("Save & Close"),
-                btn -> close())
-                .dimensions(widgetX, closeY, bw, bh)
-                .build();
+                btn -> close());
         this.addDrawableChild(saveCloseButton);
     }
 
@@ -225,6 +221,9 @@ public class CropSettingsScreen extends Screen {
         @Override protected void updateMessage() {
             setMessage(Text.literal(String.format("Yaw: %.1f°", getYaw())));
         }
+        @Override public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
+            renderFlatSlider(context, getX(), getY(), getWidth(), getHeight(), value, getMessage());
+        }
         @Override protected void applyValue() {}
     }
 
@@ -246,6 +245,15 @@ public class CropSettingsScreen extends Screen {
         @Override protected void updateMessage() {
             setMessage(Text.literal(String.format("Pitch: %.1f°", getPitch())));
         }
+        @Override public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
+            renderFlatSlider(context, getX(), getY(), getWidth(), getHeight(), value, getMessage());
+        }
         @Override protected void applyValue() {}
+    }
+
+    /** Shared flat slider renderer for this screen's slider inner classes. */
+    private static void renderFlatSlider(DrawContext context, int x, int y, int w, int h,
+                                          double value, net.minecraft.text.Text message) {
+        FlatButtonWidget.renderFlatSlider(context, x, y, w, h, value, message);
     }
 }
