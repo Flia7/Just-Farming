@@ -31,5 +31,15 @@
   "crop.just-farming.cactus": "Cactus",
   "crop.just-farming.mushroom": "Mushroom",
   "crop.just-farming.cocoa_beans": "Cocoa Beans",
-  "crop.just-farming.nether_wart": "Nether Wart"
+  "crop.just-farming.nether_wart": "Nether Wart",
+  "crop.just-farming.potato_s_shape": "Potato",
+  "crop.just-farming.nether_wart_s_shape": "Nether Wart",
+  "crop.just-farming.carrot_s_shape": "Carrot",
+  "crop.just-farming.wheat_s_shape": "Wheat",
+  "crop.just-farming.pumpkin_s_shape": "Pumpkin",
+  "crop.just-farming.melon_s_shape": "Melon",
+  "crop.just-farming.sugar_cane_s_shape": "Sugar Cane",
+  "crop.just-farming.moonflower_s_shape": "Moonflower",
+  "crop.just-farming.sunflower_s_shape": "Sunflower",
+  "crop.just-farming.wild_rose_s_shape": "Wild Rose"
 }

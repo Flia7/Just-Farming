@@ -45,15 +45,17 @@ public abstract class KeyboardInputMixin extends Input {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.currentScreen == null) return;
 
-        boolean forward = mm.isMovingForward();
+        boolean forward   = mm.isMovingForward();
+        boolean back      = mm.isMovingBack();
+        boolean strafeLeft  = mm.isStrafeLeft();
+        boolean strafeRight = mm.isStrafeRight();
 
         // Re-apply the movement intent as a PlayerInput record.
-        // The macro always strafes left; direction toggles between forward and backward.
         this.playerInput = new PlayerInput(
-                forward,    // forward key
-                !forward,   // back key
-                true,       // left key  (always strafe left)
-                false,      // right key
+                forward,
+                back,
+                strafeLeft,
+                strafeRight,
                 false,      // jump
                 false,      // sneak
                 false       // sprint
@@ -68,7 +70,9 @@ public abstract class KeyboardInputMixin extends Input {
         // With forwardKey=true, backKey=false → y = +1.0f (forward)
         // With forwardKey=false, backKey=true  → y = -1.0f (backward)
         // Normalize to match vanilla KeyboardInput.tick() behavior.
-        this.movementVector = new Vec2f(1.0f, forward ? 1.0f : -1.0f).normalize();
+        float x = strafeLeft ? 1.0f : (strafeRight ? -1.0f : 0.0f);
+        float y = forward    ? 1.0f : (back        ? -1.0f : 0.0f);
+        this.movementVector = (x == 0f && y == 0f) ? new Vec2f(0f, 0f) : new Vec2f(x, y).normalize();
 
         // Also refresh the KeyBinding press states so that any code path that reads
         // isPressed() directly (e.g. handleInputEvents in the same or next tick) sees
