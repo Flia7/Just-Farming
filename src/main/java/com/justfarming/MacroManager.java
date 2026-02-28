@@ -116,11 +116,17 @@ public class MacroManager {
 
     /**
      * Tracks which phase of the MOUSEMAT_SNAP state we are in.
-     * {@code 0} = slot not yet switched; {@code 1} = slot switched, swing pending.
-     * The two-tick split ensures the server receives the slot-change packet
-     * before the arm-swing packet.
+     * {@code 0} = slot not yet switched;
+     * {@code 1} = slot switched, waiting 200 ms before clicking;
+     * {@code 2} = click sent, waiting for camera to snap to desired angle.
      */
     private int mousematSnapPhase = 0;
+
+    /** Hotbar slot that was active before the Squeaky Mousemat switch; -1 if unknown. */
+    private int preMousematSlot = -1;
+
+    /** System-time (ms) when the last Squeaky Mousemat action (slot switch or click) occurred. */
+    private long mousematActionTime = 0;
 
     // -----------------------------------------------------------------------
     // Constructor / config
@@ -290,6 +296,8 @@ public class MacroManager {
         stuckTicks = 0;
         customFlipped = false;
         mousematSnapPhase = 0;
+        preMousematSlot = -1;
+        mousematActionTime = 0;
         if (config.unlockedMouseEnabled) {
             client.mouse.unlockCursor();
         }
@@ -359,7 +367,9 @@ public class MacroManager {
 
         // Lock pitch and yaw to crop-specific defaults every active tick.
         // Skipped during MOUSEMAT_SNAP so the mousemat's camera snap can take effect.
-        if (state != MacroState.MOUSEMAT_SNAP) {
+        // Also skipped entirely when squeakyMousematEnabled, since the Squeaky Mousemat
+        // performs the camera snap itself and the player's view should remain free.
+        if (state != MacroState.MOUSEMAT_SNAP && !config.squeakyMousematEnabled) {
             player.setPitch(config.getEffectivePitch(config.selectedCrop));
             player.setYaw(config.getEffectiveYaw(config.selectedCrop));
         }
@@ -418,23 +428,30 @@ public class MacroManager {
 
     /**
      * Mousemat snap phase: searches the player's hotbar for a Squeaky Mousemat,
-     * switches to that slot, and performs a left-click (arm swing) so that
-     * Hypixel Skyblock's plugin snaps the camera to the mousemat's configured
-     * yaw and pitch.
+     * switches to that slot, waits 200 ms, performs a left-click (arm swing) so
+     * that Hypixel Skyblock's plugin snaps the camera to the mousemat's configured
+     * yaw and pitch, then verifies the snap succeeded before restoring the
+     * previously held farming tool.
      *
-     * <p>Runs over two ticks so that the slot-change packet is guaranteed to
-     * reach the server before the arm-swing packet:
+     * <p>Phase sequence:
      * <ol>
-     *   <li>Tick 0 – find the item and switch the hotbar slot.</li>
-     *   <li>Tick 1 – swing the main hand and transition to DETECTING.</li>
+     *   <li>Phase 0 – find the Squeaky Mousemat in the hotbar, remember the current
+     *       slot (farming tool), switch to the mousemat, record the action time.</li>
+     *   <li>Phase 1 – wait 200 ms after the slot switch, then left-click (arm swing)
+     *       and record the action time again.</li>
+     *   <li>Phase 2 – wait 200 ms after the click, then check whether the player's
+     *       yaw/pitch match the desired crop angles (within 2°).  If the snap
+     *       succeeded, restore the previous slot and transition to DETECTING.
+     *       If not, resend the click and wait another 200 ms (stay in phase 2).</li>
      * </ol>
-     * If the item is not found on tick 0, the state transitions to DETECTING
-     * immediately.
+     * If the Squeaky Mousemat is not found in phase 0, the state transitions to
+     * DETECTING immediately.
      */
     private void tickMousematSnap(ClientPlayerEntity player) {
         releaseKeys();
 
         if (mousematSnapPhase == 0) {
+            // Phase 0: find the mousemat and switch to it
             int mousematSlot = -1;
             for (int i = 0; i < 9; i++) {
                 ItemStack stack = player.getInventory().getStack(i);
@@ -445,8 +462,11 @@ public class MacroManager {
             }
 
             if (mousematSlot >= 0) {
+                preMousematSlot = player.getInventory().getSelectedSlot();
                 player.getInventory().setSelectedSlot(mousematSlot);
-                LOGGER.info("[JustFarming] Switching to Squeaky Mousemat in hotbar slot {}.", mousematSlot);
+                LOGGER.info("[JustFarming] Switching to Squeaky Mousemat in hotbar slot {} (was slot {}).",
+                        mousematSlot, preMousematSlot);
+                mousematActionTime = System.currentTimeMillis();
                 mousematSnapPhase = 1;
             } else {
                 LOGGER.info("[JustFarming] Squeaky Mousemat not found in hotbar, skipping mousemat snap.");
@@ -455,15 +475,50 @@ public class MacroManager {
                 detectTicks = 0;
                 detectStartPos = null;
             }
+        } else if (mousematSnapPhase == 1) {
+            // Phase 1: wait 200 ms after slot switch, then left-click
+            if (System.currentTimeMillis() - mousematActionTime >= 200) {
+                player.swingHand(Hand.MAIN_HAND);
+                LOGGER.info("[JustFarming] Left-clicking Squeaky Mousemat.");
+                mousematActionTime = System.currentTimeMillis();
+                mousematSnapPhase = 2;
+            }
         } else {
-            // Phase 1: slot change packet was sent last tick – swing now
-            player.swingHand(Hand.MAIN_HAND);
-            LOGGER.info("[JustFarming] Attempting to use Squeaky Mousemat.");
-            mousematSnapPhase = 0;
-            state = MacroState.DETECTING;
-            detectTicks = 0;
-            detectStartPos = null;
+            // Phase 2: wait 200 ms after the click, then check if camera snapped
+            if (System.currentTimeMillis() - mousematActionTime < 200) return;
+
+            float desiredYaw   = config.getEffectiveYaw(config.selectedCrop);
+            float desiredPitch = config.getEffectivePitch(config.selectedCrop);
+            float yawDiff   = Math.abs(normalizeAngleDiff(player.getYaw()   - desiredYaw));
+            float pitchDiff = Math.abs(player.getPitch() - desiredPitch);
+
+            if (yawDiff <= 2.0f && pitchDiff <= 2.0f) {
+                // Camera snapped successfully – restore the farming tool slot
+                LOGGER.info("[JustFarming] Camera snapped to desired angle (yaw={}, pitch={}). Restoring slot {}.",
+                        player.getYaw(), player.getPitch(), preMousematSlot);
+                if (preMousematSlot >= 0) {
+                    player.getInventory().setSelectedSlot(preMousematSlot);
+                }
+                mousematSnapPhase = 0;
+                state = MacroState.DETECTING;
+                detectTicks = 0;
+                detectStartPos = null;
+            } else {
+                // Snap not confirmed yet – retry the left-click
+                LOGGER.info("[JustFarming] Camera not snapped yet (yaw={}, pitch={}), retrying click.",
+                        player.getYaw(), player.getPitch());
+                player.swingHand(Hand.MAIN_HAND);
+                mousematActionTime = System.currentTimeMillis();
+            }
         }
+    }
+
+    /** Normalizes an angle difference to the range [-180, 180]. */
+    private static float normalizeAngleDiff(float diff) {
+        diff = diff % 360.0f;
+        if (diff > 180.0f)  diff -= 360.0f;
+        if (diff < -180.0f) diff += 360.0f;
+        return diff;
     }
 
     /**
