@@ -6,8 +6,6 @@
   "key.category.just-farming.categories": "Just Farming",
   "gui.just-farming.title": "Just Farming Config",
   "gui.just-farming.crop_label": "Selected Crop:",
-  "gui.just-farming.pitch_label": "Pitch Angle:",
-  "gui.just-farming.yaw_label": "Yaw Angle:",
   "gui.just-farming.pest_highlight_label": "Pest Plot Highlight:",
   "gui.just-farming.pest_labels_label": "Pest Plot Labels:",
   "gui.just-farming.pest_esp_label": "Pest ESP:",
