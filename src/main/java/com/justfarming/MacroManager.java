@@ -119,14 +119,18 @@ public class MacroManager {
 
     /**
      * Tracks which phase of the MOUSEMAT_CLICK state we are in.
-     * {@code 0} = slot not yet switched;
-     * {@code 1} = slot switched, waiting {@code mousematPreDelay} ms before clicking;
-     * {@code 2} = click sent, waiting {@code mousematPostDelay} ms before restoring slot.
+     * {@code 0} = waiting for swap-to delay (or detecting slot on first tick);
+     * {@code 1} = on mousemat slot, waiting {@code mousematPreDelay} ms before clicking;
+     * {@code 2} = click sent, waiting {@code mousematPostDelay} ms before restoring slot;
+     * {@code 3} = slot restored, waiting {@code mousematResumeDelay} ms before farming.
      */
     private int mousematPhase = 0;
 
     /** Hotbar slot that was active before the Squeaky Mousemat switch; -1 if unknown. */
     private int preMousematSlot = -1;
+
+    /** Hotbar slot of the Squeaky Mousemat discovered in phase 0; -1 if unknown. */
+    private int mousematTargetSlot = -1;
 
     /** System-time (ms) when the last mousemat phase transition occurred. */
     private long mousematActionTime = 0;
@@ -301,6 +305,7 @@ public class MacroManager {
         customFlipped = false;
         mousematPhase = 0;
         preMousematSlot = -1;
+        mousematTargetSlot = -1;
         mousematActionTime = 0;
         if (config.unlockedMouseEnabled) {
             client.mouse.unlockCursor();
@@ -440,74 +445,99 @@ public class MacroManager {
     // -----------------------------------------------------------------------
 
     /**
-     * Mousemat click phase: switches to the Squeaky Mousemat slot, waits
-     * {@code mousematPreDelay} ms, sends a left-click (using
-     * {@code attackBlock} when the crosshair is on a block so Hypixel
-     * Skyblock's item ability fires server-side), then waits
-     * {@code mousematPostDelay} ms before restoring the original hotbar slot
-     * and transitioning to {@link MacroState#DETECTING}.
-     *
-     * <p>No camera-snap verification is performed – the macro proceeds
-     * unconditionally after the click.  If the Squeaky Mousemat is not found
-     * in the hotbar, the phase is skipped and DETECTING begins immediately.
+     * Mousemat click phases:
+     * <ol>
+     *   <li>Phase 0 – discover the Squeaky Mousemat slot.  If the player is not
+     *       already holding it, wait {@code mousematSwapToDelay} ms then switch
+     *       to its slot.  If already holding, skip the delay and go to phase 1.</li>
+     *   <li>Phase 1 – wait {@code mousematPreDelay} ms, then activate the ability.</li>
+     *   <li>Phase 2 – wait {@code mousematPostDelay} ms, then restore the original slot.</li>
+     *   <li>Phase 3 – wait {@code mousematResumeDelay} ms, then start DETECTING.</li>
+     * </ol>
      */
     private void tickMousematClick(ClientPlayerEntity player) {
         releaseKeys();
+        long now = System.currentTimeMillis();
 
-        if (mousematPhase == 0) {
-            // Phase 0: find the Squeaky Mousemat and switch to it.
-            int mousematSlot = -1;
-            for (int i = 0; i < 9; i++) {
-                net.minecraft.item.ItemStack stack = player.getInventory().getStack(i);
-                if (!stack.isEmpty() && stack.getName().getString().equals("Squeaky Mousemat")) {
-                    mousematSlot = i;
-                    break;
-                }
-            }
-            if (mousematSlot >= 0) {
-                preMousematSlot = player.getInventory().getSelectedSlot();
-                if (preMousematSlot == mousematSlot) {
-                    // Player was already holding the mousemat – find the farming tool.
+        switch (mousematPhase) {
+            case 0 -> {
+                if (mousematActionTime == 0) {
+                    // First tick in this state: find the Squeaky Mousemat.
+                    int mousematSlot = -1;
                     for (int i = 0; i < 9; i++) {
-                        if (i == mousematSlot) continue;
-                        if (!player.getInventory().getStack(i).isEmpty()) {
-                            preMousematSlot = i;
+                        net.minecraft.item.ItemStack stack = player.getInventory().getStack(i);
+                        if (!stack.isEmpty() && stack.getName().getString().equals("Squeaky Mousemat")) {
+                            mousematSlot = i;
                             break;
                         }
                     }
+                    if (mousematSlot < 0) {
+                        LOGGER.info("[JustFarming] Squeaky Mousemat not found in hotbar – skipping.");
+                        state = MacroState.DETECTING;
+                        detectTicks = 0;
+                        detectStartPos = null;
+                        return;
+                    }
+                    mousematTargetSlot = mousematSlot;
+                    int currentSlot = player.getInventory().getSelectedSlot();
+                    if (currentSlot == mousematSlot) {
+                        // Already holding mousemat – find the farming tool for later restore.
+                        preMousematSlot = -1;
+                        for (int i = 0; i < 9; i++) {
+                            if (i != mousematSlot && !player.getInventory().getStack(i).isEmpty()) {
+                                preMousematSlot = i;
+                                break;
+                            }
+                        }
+                        // No swap needed – jump straight to pre-click delay.
+                        mousematActionTime = now;
+                        mousematPhase = 1;
+                    } else {
+                        // Need to switch – record farming slot and start swap-to delay.
+                        preMousematSlot = currentSlot;
+                        mousematActionTime = now;
+                        // Stay in phase 0 until delay elapses.
+                    }
+                } else if (now - mousematActionTime >= config.mousematSwapToDelay) {
+                    // Swap-to delay elapsed – switch to mousemat slot.
+                    player.getInventory().setSelectedSlot(mousematTargetSlot);
+                    LOGGER.info("[JustFarming] Switched to Squeaky Mousemat slot {} (was slot {}).",
+                            mousematTargetSlot, preMousematSlot);
+                    mousematActionTime = now;
+                    mousematPhase = 1;
                 }
-                player.getInventory().setSelectedSlot(mousematSlot);
-                LOGGER.info("[JustFarming] Switched to Squeaky Mousemat slot {} (was slot {}).",
-                        mousematSlot, preMousematSlot);
-                mousematActionTime = System.currentTimeMillis();
-                mousematPhase = 1;
-            } else {
-                LOGGER.info("[JustFarming] Squeaky Mousemat not found in hotbar – skipping.");
-                mousematPhase = 0;
-                state = MacroState.DETECTING;
-                detectTicks = 0;
-                detectStartPos = null;
             }
-
-        } else if (mousematPhase == 1) {
-            // Phase 1: wait pre-click delay, then send the left-click.
-            if (System.currentTimeMillis() - mousematActionTime < config.mousematPreDelay) return;
-            performMousematClick(player);
-            LOGGER.info("[JustFarming] Squeaky Mousemat left-click sent.");
-            mousematActionTime = System.currentTimeMillis();
-            mousematPhase = 2;
-
-        } else {
-            // Phase 2: wait post-click delay, then restore slot and start detecting.
-            if (System.currentTimeMillis() - mousematActionTime < config.mousematPostDelay) return;
-            if (preMousematSlot >= 0) {
-                player.getInventory().setSelectedSlot(preMousematSlot);
-                LOGGER.info("[JustFarming] Restored hotbar slot {}.", preMousematSlot);
+            case 1 -> {
+                // Wait pre-click delay, then activate ability.
+                if (now - mousematActionTime >= config.mousematPreDelay) {
+                    performMousematClick(player);
+                    LOGGER.info("[JustFarming] Squeaky Mousemat left-click sent.");
+                    mousematActionTime = now;
+                    mousematPhase = 2;
+                }
             }
-            mousematPhase = 0;
-            state = MacroState.DETECTING;
-            detectTicks = 0;
-            detectStartPos = null;
+            case 2 -> {
+                // Wait post-click delay, then restore slot.
+                if (now - mousematActionTime >= config.mousematPostDelay) {
+                    if (preMousematSlot >= 0) {
+                        player.getInventory().setSelectedSlot(preMousematSlot);
+                        LOGGER.info("[JustFarming] Restored hotbar slot {}.", preMousematSlot);
+                    }
+                    mousematActionTime = now;
+                    mousematPhase = 3;
+                }
+            }
+            case 3 -> {
+                // Wait resume delay, then begin farming.
+                if (now - mousematActionTime >= config.mousematResumeDelay) {
+                    mousematPhase = 0;
+                    mousematTargetSlot = -1;
+                    state = MacroState.DETECTING;
+                    detectTicks = 0;
+                    detectStartPos = null;
+                }
+            }
+            default -> {}
         }
     }
 

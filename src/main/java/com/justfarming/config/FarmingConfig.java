@@ -77,6 +77,12 @@ public class FarmingConfig {
     public boolean squeakyMousematEnabled = false;
 
     /**
+     * Delay in milliseconds before switching to the Squeaky Mousemat hotbar slot.
+     * Only applies when the player is not already holding the mousemat.
+     */
+    public int mousematSwapToDelay = 0;
+
+    /**
      * Delay in milliseconds between switching to the Squeaky Mousemat
      * hotbar slot and sending the left-click ability.
      */
@@ -87,6 +93,12 @@ public class FarmingConfig {
      * left-click and restoring the player's original hotbar slot.
      */
     public int mousematPostDelay = 200;
+
+    /**
+     * Delay in milliseconds between restoring the farming tool slot and
+     * resuming farming (entering the DETECTING state).
+     */
+    public int mousematResumeDelay = 0;
 
     // --- Rewarp trigger position ---
 

@@ -20,6 +20,7 @@ import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalDouble;
@@ -49,9 +50,6 @@ public class OverlayRenderer {
 
     // Label colour (ARGB) – white for "Plot N" text
     private static final int LABEL_COLOR = COLOR_WHITE;
-
-    // Semi-transparent black background behind floating text for readability
-    private static final int TEXT_BG_COLOR = 0x40000000;
 
     // See-through wireframe ESP: lines rendered with no depth test (through blocks)
     private static final RenderLayer PEST_ESP_SEE_THROUGH_LINES = RenderLayer.of(
@@ -204,12 +202,25 @@ public class OverlayRenderer {
         if (config.pestLabelsEnabled) {
             MinecraftClient mc = MinecraftClient.getInstance();
             Map<String, Integer> pestCounts = pestDetector.getPestCounts();
+
+            // Count pests per plot from entity positions (more reliable than scoreboard)
+            Map<String, Integer> entityCounts = new HashMap<>();
+            for (PestEntityDetector.PestEntity pest : entityPests) {
+                String plotName = GardenPlot.getPlotNameAt(pest.position().x, pest.position().z);
+                if (plotName != null) {
+                    entityCounts.merge(plotName, 1, Integer::sum);
+                }
+            }
+
             float titleScale = config.pestTitleScale;
             for (Map.Entry<String, double[]> e : validPlots) {
                 double[] b = e.getValue();
                 double centreX = (b[0] + b[3]) / 2.0;
                 double centreZ = (b[2] + b[5]) / 2.0;
-                Integer count = pestCounts.get(e.getKey());
+                // Prefer entity-based count (most accurate); fall back to scoreboard count
+                Integer count = entityCounts.containsKey(e.getKey())
+                        ? entityCounts.get(e.getKey())
+                        : pestCounts.get(e.getKey());
 
                 // --- Large title: "Plot <N>" in the middle of the plot ---
                 String title = "Plot " + e.getKey();
@@ -222,14 +233,15 @@ public class OverlayRenderer {
                 float titleHalf = mc.textRenderer.getWidth(title) / 2.0f;
                 mc.textRenderer.draw(title, -titleHalf, 0, LABEL_COLOR, false,
                         titleMatrix, consumers, TextRenderer.TextLayerType.SEE_THROUGH,
-                        TEXT_BG_COLOR, 0xF000F0);
+                        0, 0xF000F0);
                 matrices.pop();
 
                 // --- Pest count subtitle below the title ---
                 String subtitle = count != null
                         ? PestDetector.formatPestCount(count)
                         : "Pests: ?";
-                double subtitleY = titleY - 3.0;
+                // Place subtitle below the title: title text extends down by (font_height * titleScale)
+                double subtitleY = titleY - 9.0 * titleScale - 2.0;
                 matrices.push();
                 matrices.translate(centreX - cx, subtitleY - cy, centreZ - cz);
                 matrices.multiply(camera.getRotation());
@@ -239,7 +251,7 @@ public class OverlayRenderer {
                 float subHalf = mc.textRenderer.getWidth(subtitle) / 2.0f;
                 mc.textRenderer.draw(subtitle, -subHalf, 0, LABEL_COLOR, false,
                         subMatrix, consumers, TextRenderer.TextLayerType.SEE_THROUGH,
-                        TEXT_BG_COLOR, 0xF000F0);
+                        0, 0xF000F0);
                 matrices.pop();
             }
         }
