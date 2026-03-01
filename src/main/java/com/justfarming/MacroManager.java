@@ -59,15 +59,6 @@ public class MacroManager {
     /** Maximum freelook camera distance (blocks). */
     private static final double MAX_ZOOM = 20.0;
 
-    /**
-     * Pitch snapped to (degrees) when the crosshair is on a block at the moment
-     * the Squeaky Mousemat is clicked in MOUSEMAT_SNAP phase 1.  The server's
-     * own raycast uses the player's look direction; pointing upward guarantees
-     * the raycast finds air so the ability fires.  The change lasts a single
-     * tick and is immediately overwritten by the mousemat's own camera snap.
-     */
-    private static final float MOUSEMAT_PITCH_MIN = -85.0f;
-
     private final MinecraftClient client;
     private FarmingConfig config;
 
@@ -446,12 +437,12 @@ public class MacroManager {
      *       already holding the mousemat, find the farming tool in the hotbar and
      *       save that slot as {@code preMousematSlot} so it can be restored later.
      *       Switch to the mousemat slot and record the action time.</li>
-     *   <li>Phase 1 – wait 200 ms after the slot switch.  If the crosshair is on
-     *       a block (the ability only fires when looking at air), snap the pitch
-     *       to {@link #MOUSEMAT_PITCH_MIN} in the same tick as the click so the
-     *       server's raycast finds air.  The snap lasts one tick and is
-     *       immediately overwritten by the mousemat's own camera correction.
-     *       Send the left-click (arm swing).</li>
+     *   <li>Phase 1 – wait 200 ms after the slot switch, then send the left-click
+     *       (arm swing).  {@link ClientPlayerEntity#swingHand} sends only
+     *       {@code HandSwingC2SPacket} — no block interaction, no breaking
+     *       animation — which is sufficient for Hypixel Skyblock's Squeaky
+     *       Mousemat ability to fire regardless of what the crosshair is
+     *       targeting.</li>
      *   <li>Phase 2 – wait 200 ms after the click, then check whether the player's
      *       yaw/pitch match the desired crop angles (within 2°).  If the snap
      *       succeeded, restore the farming tool slot and advance to phase 3.
@@ -508,16 +499,10 @@ public class MacroManager {
             }
         } else if (mousematSnapPhase == 1) {
             // Phase 1: wait 200 ms after slot switch, then left-click.
-            // The Squeaky Mousemat ability only fires when the server's own raycast
-            // finds air (not a block).  If the crosshair is on a block, snap the
-            // pitch upward to MOUSEMAT_PITCH_MIN in this same tick so the position
-            // packet sent with the swing reflects an upward look direction.  The
-            // snap lasts exactly one tick and is immediately overwritten by the
-            // mousemat's own camera correction in phase 2.
+            // swingHand sends only HandSwingC2SPacket — no block interaction,
+            // no breaking animation — which is all Hypixel Skyblock needs to
+            // trigger the Squeaky Mousemat ability regardless of crosshair target.
             if (System.currentTimeMillis() - mousematActionTime >= 200) {
-                if (client.crosshairTarget instanceof BlockHitResult) {
-                    player.setPitch(MOUSEMAT_PITCH_MIN);
-                }
                 player.swingHand(Hand.MAIN_HAND);
                 LOGGER.info("[JustFarming] Left-clicking Squeaky Mousemat.");
                 mousematActionTime = System.currentTimeMillis();
