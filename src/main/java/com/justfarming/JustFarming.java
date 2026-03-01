@@ -108,8 +108,16 @@ public class JustFarming implements ClientModInitializer {
                                                                 net.minecraft.text.Text.literal("§a[JustFarming] All rewarp positions cleared."), true);
                                                     }
                                                     return 1;
-                                                })))));
-
+                                                })))
+                                .then(literal("visitor")
+                                        .executes(ctx -> {
+                                            visitorManager.start();
+                                            if (ctx.getSource().getPlayer() != null) {
+                                                ctx.getSource().getPlayer().sendMessage(
+                                                        net.minecraft.text.Text.literal("§a[JustFarming] Visitor routine started. Teleporting to barn..."), true);
+                                            }
+                                            return 1;
+                                        }))));
         // Block the F5 perspective toggle while freelook is active.
         // START_CLIENT_TICK fires before handleKeyBindings(), so consuming
         // the key press here prevents Minecraft from acting on it.
@@ -206,7 +214,7 @@ public class JustFarming implements ClientModInitializer {
             renderer.render(ctx);
         });
 
-        LOGGER.info("[JustFarming] Ready. Toggle macro: R | Open GUI: I | Freelook: L | Commands: /just rewarp, /just rewarp clear | Visitor mode: /just visitors");
+        LOGGER.info("[JustFarming] Ready. Toggle macro: R | Open GUI: I | Freelook: L | Commands: /just rewarp, /just rewarp clear, /just visitor");
     }
 
     /** Returns the shared config instance. */
