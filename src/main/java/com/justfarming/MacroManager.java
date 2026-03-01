@@ -3,8 +3,6 @@ package com.justfarming;
 import com.justfarming.config.FarmingConfig;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.Vec3d;
 import org.slf4j.Logger;
@@ -66,7 +64,7 @@ public class MacroManager {
     // State
     // -----------------------------------------------------------------------
 
-    private enum MacroState { IDLE, MOUSEMAT_SNAP, DETECTING, BACKWARD_LEFT, FORWARD_LEFT, FORWARD_RIGHT,
+    private enum MacroState { IDLE, DETECTING, BACKWARD_LEFT, FORWARD_LEFT, FORWARD_RIGHT,
             STRAFE_LEFT_ONLY, STRAFE_RIGHT_ONLY, BACK_ONLY, FORWARD_ONLY, WARPING,
             LANE_SWAP_WAITING }
 
@@ -114,22 +112,6 @@ public class MacroManager {
      */
     private boolean laneSwapPendingCustomFlip = false;
 
-    /**
-     * Tracks which phase of the MOUSEMAT_SNAP state we are in.
-     * {@code 0} = slot not yet switched;
-     * {@code 1} = slot switched, waiting 200 ms before clicking;
-     * {@code 2} = click sent, waiting for camera to snap to desired angle.
-     */
-    private int mousematSnapPhase = 0;
-
-    /** Hotbar slot that was active before the Squeaky Mousemat switch; -1 if unknown. */
-    private int preMousematSlot = -1;
-
-    /** System-time (ms) when the last Squeaky Mousemat action (slot switch or click) occurred. */
-    private long mousematActionTime = 0;
-
-    /** Number of consecutive times the Squeaky Mousemat camera snap has failed. */
-    private int mousematFailCount = 0;
 
     // -----------------------------------------------------------------------
     // Constructor / config
@@ -292,16 +274,12 @@ public class MacroManager {
     public void start() {
         if (running) return;
         running = true;
-        state = config.squeakyMousematEnabled ? MacroState.MOUSEMAT_SNAP : MacroState.DETECTING;
+        state = MacroState.DETECTING;
         detectTicks = 0;
         detectStartPos = null;
         lastPos = null;
         stuckTicks = 0;
         customFlipped = false;
-        mousematSnapPhase = 0;
-        preMousematSlot = -1;
-        mousematActionTime = 0;
-        mousematFailCount = 0;
         if (config.unlockedMouseEnabled) {
             client.mouse.unlockCursor();
         }
@@ -380,14 +358,10 @@ public class MacroManager {
         }
 
         // Lock pitch and yaw to crop-specific defaults every active tick.
-        // Skipped during MOUSEMAT_SNAP so the mousemat's camera snap can take effect.
-        if (state != MacroState.MOUSEMAT_SNAP) {
-            player.setPitch(config.getEffectivePitch(config.selectedCrop));
-            player.setYaw(config.getEffectiveYaw(config.selectedCrop));
-        }
+        player.setPitch(config.getEffectivePitch(config.selectedCrop));
+        player.setYaw(config.getEffectiveYaw(config.selectedCrop));
 
         switch (state) {
-            case MOUSEMAT_SNAP      -> tickMousematSnap(player);
             case DETECTING         -> tickDetecting(player);
             case BACKWARD_LEFT     -> tickMoving(player, false, true,  true,  false);
             case FORWARD_LEFT      -> tickMoving(player, true,  false, true,  false);
@@ -437,163 +411,6 @@ public class MacroManager {
     // -----------------------------------------------------------------------
     // State handlers
     // -----------------------------------------------------------------------
-
-    /**
-     * Mousemat snap phase: searches the player's hotbar for a Squeaky Mousemat,
-     * switches to that slot, waits 200 ms, performs a left-click (arm swing) so
-     * that Hypixel Skyblock's plugin snaps the camera to the mousemat's configured
-     * yaw and pitch, then verifies the snap succeeded before restoring the
-     * previously held farming tool.
-     *
-     * <p>Phase sequence:
-     * <ol>
-     *   <li>Phase 0 – find the Squeaky Mousemat in the hotbar.  If the player is
-     *       already holding the mousemat, find the farming tool in the hotbar and
-     *       save that slot as {@code preMousematSlot} so it can be restored later.
-     *       Switch to the mousemat slot and record the action time.</li>
-     *   <li>Phase 1 – wait 200 ms after the slot switch, then send the left-click
-     *       (arm swing).  {@link ClientPlayerEntity#swingHand} sends only
-     *       {@code HandSwingC2SPacket} — no block interaction, no breaking
-     *       animation — which is sufficient for Hypixel Skyblock's Squeaky
-     *       Mousemat ability to fire regardless of what the crosshair is
-     *       targeting.</li>
-     *   <li>Phase 2 – wait 200 ms after the click, then check whether the player's
-     *       yaw/pitch match the desired crop angles (within 2°).  If the snap
-     *       succeeded, restore the farming tool slot and advance to phase 3.
-     *       If not, resend the click and wait another 200 ms (stay in phase 2).</li>
-     *   <li>Phase 3 – wait 200 ms after the farming tool slot is restored to ensure
-     *       the player is holding the farming tool before farming begins, then
-     *       transition to DETECTING.</li>
-     * </ol>
-     * If the Squeaky Mousemat is not found in phase 0, the state transitions to
-     * DETECTING immediately.
-     */
-    private void tickMousematSnap(ClientPlayerEntity player) {
-        releaseKeys();
-
-        if (mousematSnapPhase == 0) {
-            // Phase 0: find the mousemat and switch to it
-            int mousematSlot = -1;
-            for (int i = 0; i < 9; i++) {
-                ItemStack stack = player.getInventory().getStack(i);
-                if (!stack.isEmpty() && stack.getName().getString().equals("Squeaky Mousemat")) {
-                    mousematSlot = i;
-                    break;
-                }
-            }
-
-            if (mousematSlot >= 0) {
-                preMousematSlot = player.getInventory().getSelectedSlot();
-                // If the player was already holding the mousemat, find the farming tool.
-                if (preMousematSlot == mousematSlot) {
-                    for (int i = 0; i < 9; i++) {
-                        if (i == mousematSlot) continue;
-                        if (!player.getInventory().getStack(i).isEmpty()) {
-                            preMousematSlot = i;
-                            LOGGER.info("[JustFarming] Player was holding Squeaky Mousemat; "
-                                    + "farming tool detected in hotbar slot {}.", preMousematSlot);
-                            break;
-                        }
-                    }
-                    if (preMousematSlot == mousematSlot) {
-                        LOGGER.warn("[JustFarming] Could not find farming tool in hotbar.");
-                    }
-                }
-                player.getInventory().setSelectedSlot(mousematSlot);
-                LOGGER.info("[JustFarming] Switching to Squeaky Mousemat in hotbar slot {} (was slot {}).",
-                        mousematSlot, preMousematSlot);
-                mousematActionTime = System.currentTimeMillis();
-                mousematSnapPhase = 1;
-            } else {
-                LOGGER.info("[JustFarming] Squeaky Mousemat not found in hotbar, skipping mousemat snap.");
-                mousematSnapPhase = 0;
-                state = MacroState.DETECTING;
-                detectTicks = 0;
-                detectStartPos = null;
-            }
-        } else if (mousematSnapPhase == 1) {
-            // Phase 1: wait 200 ms after slot switch, then left-click.
-            // When the crosshair is on a block, send a full attackBlock interaction
-            // (PlayerActionC2SPacket + HandSwingC2SPacket) so Hypixel Skyblock
-            // recognises the click regardless of crosshair target.
-            if (System.currentTimeMillis() - mousematActionTime >= 200) {
-                performMousematClick(player);
-                LOGGER.info("[JustFarming] Left-clicking Squeaky Mousemat.");
-                mousematActionTime = System.currentTimeMillis();
-                mousematSnapPhase = 2;
-            }
-        } else if (mousematSnapPhase == 2) {
-            // Phase 2: wait 200 ms after the click, then check if camera snapped
-            if (System.currentTimeMillis() - mousematActionTime < 200) return;
-
-            float desiredYaw   = config.getEffectiveYaw(config.selectedCrop);
-            float desiredPitch = config.getEffectivePitch(config.selectedCrop);
-            float yawDiff   = Math.abs(normalizeAngleDiff(player.getYaw()   - desiredYaw));
-            float pitchDiff = Math.abs(player.getPitch() - desiredPitch);
-
-            if (yawDiff <= 2.0f && pitchDiff <= 2.0f) {
-                // Camera snapped successfully – restore the farming tool slot
-                LOGGER.info("[JustFarming] Camera snapped to desired angle (yaw={}, pitch={}). Restoring slot {}.",
-                        player.getYaw(), player.getPitch(), preMousematSlot);
-                if (preMousematSlot >= 0) {
-                    player.getInventory().setSelectedSlot(preMousematSlot);
-                }
-                // Phase 3: wait for the farming tool to be in hand before farming starts
-                mousematActionTime = System.currentTimeMillis();
-                mousematSnapPhase = 3;
-            } else {
-                // Snap not confirmed yet – retry the left-click or give up after 4 failures
-                mousematFailCount++;
-                LOGGER.info("[JustFarming] Camera not snapped yet (yaw={}, pitch={}), attempt {}.",
-                        player.getYaw(), player.getPitch(), mousematFailCount);
-                if (mousematFailCount >= 4) {
-                    // Give up and proceed to farming without the mousemat snap
-                    LOGGER.info("[JustFarming] Squeaky Mousemat failed {} times – snapping to crops directly.", mousematFailCount);
-                    if (preMousematSlot >= 0) {
-                        player.getInventory().setSelectedSlot(preMousematSlot);
-                    }
-                    mousematSnapPhase = 0;
-                    mousematFailCount = 0;
-                    state = MacroState.DETECTING;
-                    detectTicks = 0;
-                    detectStartPos = null;
-                    return;
-                }
-                performMousematClick(player);
-                mousematActionTime = System.currentTimeMillis();
-            }
-        } else {
-            // Phase 3: wait 200 ms after restoring the farming tool slot to ensure
-            // the player is holding the tool before farming begins.
-            if (System.currentTimeMillis() - mousematActionTime >= 200) {
-                mousematSnapPhase = 0;
-                state = MacroState.DETECTING;
-                detectTicks = 0;
-                detectStartPos = null;
-                LOGGER.info("[JustFarming] Farming tool equipped. Starting DETECTING phase.");
-            }
-        }
-    }
-
-    /**
-     * Performs a left-click interaction for the Squeaky Mousemat.
-     *
-     * <p>When the crosshair is aimed at a block, sends a full
-     * {@code attackBlock} interaction (which internally issues both
-     * {@code PlayerActionC2SPacket} and {@code HandSwingC2SPacket}) so
-     * that Hypixel Skyblock's server-side handler recognises the click
-     * as a genuine left-click when aimed at a block.
-     * Falls back to a plain arm swing when looking at air or an entity.
-     */
-    private void performMousematClick(ClientPlayerEntity player) {
-        if (client.crosshairTarget instanceof BlockHitResult blockHit
-                && client.interactionManager != null
-                && client.world != null) {
-            client.interactionManager.attackBlock(blockHit.getBlockPos(), blockHit.getSide());
-        } else {
-            player.swingHand(Hand.MAIN_HAND);
-        }
-    }
 
     /** Normalizes an angle difference to the range [-180, 180]. */
     private static float normalizeAngleDiff(float diff) {

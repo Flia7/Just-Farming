@@ -81,7 +81,6 @@ public class FarmingConfigScreen extends Screen {
     // ── Tab 2 – Misc widgets ──────────────────────────────────────────────────
     private FlatButtonWidget                  freelookButton;
     private FlatBoolToggleWidget  unlockedMouseButton;
-    private FlatBoolToggleWidget  squeakyMousematButton;
 
     // ── Tab 3 – Delays widgets ────────────────────────────────────────────────
     private LaneSwapDelaySlider           laneSwapDelaySlider;
@@ -246,12 +245,6 @@ public class FarmingConfigScreen extends Screen {
                         Text.translatable("gui.just-farming.unlocked_mouse_label"),
                         config.unlockedMouseEnabled);
         this.addDrawableChild(unlockedMouseButton);
-        y += bh + pad;
-
-        squeakyMousematButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
-                        Text.translatable("gui.just-farming.squeaky_mousemat_label"),
-                        config.squeakyMousematEnabled);
-        this.addDrawableChild(squeakyMousematButton);
 
         // ── Tab 3 – Delays ────────────────────────────────────────────────────
         y = contentTop;
@@ -302,7 +295,6 @@ public class FarmingConfigScreen extends Screen {
         boolean t2 = activeTab == 2;
         freelookButton.visible        = t2;
         unlockedMouseButton.visible   = t2;
-        squeakyMousematButton.visible = t2;
 
         boolean t3 = activeTab == 3;
         laneSwapDelaySlider.visible  = t3;
@@ -423,7 +415,6 @@ public class FarmingConfigScreen extends Screen {
         config.pestEspEnabled       = pestEspButton.getValue();
         config.pestTracerEnabled    = pestTracerButton.getValue();
         config.unlockedMouseEnabled = unlockedMouseButton.getValue();
-        config.squeakyMousematEnabled = squeakyMousematButton.getValue();
         macroManager.setConfig(config);
     }
 
