@@ -110,6 +110,9 @@ public class OverlayRenderer {
 
     /** Called by the WorldRenderEvents.AFTER_ENTITIES callback. */
     public void render(WorldRenderContext context) {
+        // All mod features are Garden-only; skip rendering on other islands.
+        if (!pestDetector.isInGarden()) return;
+
         Camera camera = context.gameRenderer().getCamera();
         if (camera == null) return;
         Vec3d camPos = camera.getPos();

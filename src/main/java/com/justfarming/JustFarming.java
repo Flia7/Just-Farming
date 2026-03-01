@@ -120,6 +120,14 @@ public class JustFarming implements ClientModInitializer {
         // Register client tick callback
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (toggleMacroKey.wasPressed()) {
+                if (!macroManager.isRunning() && !pestDetector.isInGarden()) {
+                    // Prevent starting the macro outside the Garden.
+                    if (client.player != null) {
+                        client.player.sendMessage(net.minecraft.text.Text.literal(
+                                "§c[JustFarming] You must be in the Garden to use this macro."), true);
+                    }
+                    continue;
+                }
                 macroManager.toggle();
                 if (client.player != null) {
                     if (macroManager.isRunning()) {
@@ -155,10 +163,23 @@ public class JustFarming implements ClientModInitializer {
 
             // Update pest detection every tick
             pestDetector.update(client);
-            pestEntityDetector.update(client);
+            if (pestDetector.isInGarden()) {
+                pestEntityDetector.update(client);
+            } else {
+                // Clear stale pest entities when outside the Garden and stop
+                // the macro so it does not run on other islands.
+                pestEntityDetector.clear();
+                if (macroManager.isRunning()) {
+                    macroManager.stop();
+                    if (client.player != null) {
+                        client.player.sendMessage(net.minecraft.text.Text.literal(
+                                "§c[JustFarming] Not in Garden – macro stopped."), false);
+                    }
+                }
+            }
 
-            // Notify the player when pests appear in new plots
-            if (client.player != null) {
+            // Notify the player when pests appear in new plots (Garden only)
+            if (client.player != null && pestDetector.isInGarden()) {
                 for (String plot : pestDetector.getNewlyInfestedPlots()) {
                     int count = pestDetector.getPestCounts().getOrDefault(plot, 0);
                     String suffix = count > 0 ? " " + PestDetector.formatPestCount(count) : "";
