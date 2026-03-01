@@ -392,26 +392,14 @@ public class VisitorManager {
         net.minecraft.util.math.BlockPos floorPos =
                 new net.minecraft.util.math.BlockPos(
                         (int) Math.floor(nextX), feetY - 1, (int) Math.floor(nextZ));
-        net.minecraft.util.math.BlockPos wallPos  =
-                new net.minecraft.util.math.BlockPos(
-                        (int) Math.floor(nextX), feetY,     (int) Math.floor(nextZ));
-        net.minecraft.util.math.BlockPos headPos  =
-                new net.minecraft.util.math.BlockPos(
-                        (int) Math.floor(nextX), feetY + 1, (int) Math.floor(nextZ));
 
         boolean floorAhead = !client.world.getBlockState(floorPos).isAir();
-        boolean wallAhead  = !client.world.getBlockState(wallPos).isAir()
-                          || !client.world.getBlockState(headPos).isAir();
 
-        if (floorAhead) {
-            // Path is walkable; jump over any wall / step
-            client.options.jumpKey.setPressed(wallAhead);
-            client.options.forwardKey.setPressed(true);
-        } else {
-            // No floor ahead – do not walk forward to avoid falling off an edge.
-            client.options.forwardKey.setPressed(false);
-            client.options.jumpKey.setPressed(false);
-        }
+        // Only walk forward when there is solid ground ahead to avoid falling off edges.
+        // Never trigger a jump – on Hypixel SkyBlock speed/jump buffs can reach level 10,
+        // so autonomous jumping causes erratic movement near visitor NPCs.
+        client.options.forwardKey.setPressed(floorAhead);
+        client.options.jumpKey.setPressed(false);
         client.options.backKey.setPressed(false);
         client.options.leftKey.setPressed(false);
         client.options.rightKey.setPressed(false);
