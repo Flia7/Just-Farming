@@ -164,7 +164,9 @@ public class MacroManager {
      * phase (BACKWARD_LEFT or FORWARD_LEFT).
      *
      * <p>Used by {@code MinecraftClientMixin} to decide whether to force
-     * block-breaking even when a GUI screen is open.
+     * block-breaking even when a GUI screen is open, and to skip
+     * {@link net.minecraft.client.option.KeyBinding#unpressAll()} so that
+     * movement and attack keys stay pressed when a GUI is opened.
      */
     public boolean shouldBreak() {
         return running && (state == MacroState.BACKWARD_LEFT || state == MacroState.FORWARD_LEFT
@@ -172,96 +174,6 @@ public class MacroManager {
                 || state == MacroState.STRAFE_RIGHT_ONLY
                 || state == MacroState.BACK_ONLY || state == MacroState.FORWARD_ONLY);
     }
-
-    /**
-     * Returns {@code true} when the macro is in the FORWARD_LEFT state,
-     * {@code false} when in BACKWARD_LEFT.
-     *
-     * <p>Used by input-layer mixins to determine which direction to apply when
-     * re-asserting movement inputs while a GUI screen is open.
-     */
-    public boolean isMovingForward() {
-        if (!running) return false;
-        com.justfarming.config.FarmingConfig.CropCustomSettings cs =
-                config.getCropSettings(config.selectedCrop);
-        if (cs != null && shouldBreak()) {
-            return customFlipped ? cs.back : cs.forward;
-        }
-        return state == MacroState.FORWARD_LEFT || state == MacroState.FORWARD_RIGHT
-                || state == MacroState.FORWARD_ONLY;
-    }
-
-    /** Returns {@code true} when the back key should be held (BACKWARD_LEFT or BACK_ONLY). */
-    public boolean isMovingBack() {
-        if (!running) return false;
-        com.justfarming.config.FarmingConfig.CropCustomSettings cs =
-                config.getCropSettings(config.selectedCrop);
-        if (cs != null && shouldBreak()) {
-            return customFlipped ? cs.forward : cs.back;
-        }
-        return state == MacroState.BACKWARD_LEFT || state == MacroState.BACK_ONLY;
-    }
-
-    /** Returns {@code true} when the left-strafe key should be held. */
-    public boolean isStrafeLeft() {
-        if (!running) return false;
-        com.justfarming.config.FarmingConfig.CropCustomSettings cs =
-                config.getCropSettings(config.selectedCrop);
-        if (cs != null && shouldBreak()) {
-            return customFlipped && shouldFlipStrafe(cs) ? cs.right : cs.left;
-        }
-        return state == MacroState.BACKWARD_LEFT || state == MacroState.FORWARD_LEFT
-                || state == MacroState.STRAFE_LEFT_ONLY;
-    }
-
-    /** Returns {@code true} when the right-strafe key should be held (FORWARD_RIGHT or STRAFE_RIGHT_ONLY). */
-    public boolean isStrafeRight() {
-        if (!running) return false;
-        com.justfarming.config.FarmingConfig.CropCustomSettings cs =
-                config.getCropSettings(config.selectedCrop);
-        if (cs != null && shouldBreak()) {
-            return customFlipped && shouldFlipStrafe(cs) ? cs.left : cs.right;
-        }
-        return state == MacroState.FORWARD_RIGHT || state == MacroState.STRAFE_RIGHT_ONLY;
-    }
-
-    /**
-     * Re-apply the programmatic key states that the macro holds during a
-     * movement+breaking phase.  Called from {@code KeyBindingMixin} immediately
-     * after {@link net.minecraft.client.option.KeyBinding#unpressAll()} runs so
-     * that only the keys the macro explicitly controls are kept pressed while
-     * all other key states are reset normally.
-     */
-    public void reapplyMovementKeys() {
-        if (!running || client.options == null) return;
-        if (state == MacroState.BACKWARD_LEFT || state == MacroState.FORWARD_LEFT
-                || state == MacroState.FORWARD_RIGHT || state == MacroState.STRAFE_LEFT_ONLY
-                || state == MacroState.STRAFE_RIGHT_ONLY
-                || state == MacroState.BACK_ONLY || state == MacroState.FORWARD_ONLY) {
-
-            com.justfarming.config.FarmingConfig.CropCustomSettings cs =
-                    config.getCropSettings(config.selectedCrop);
-            if (cs != null) {
-                client.options.attackKey.setPressed(cs.attack);
-                client.options.forwardKey.setPressed(customFlipped ? cs.back    : cs.forward);
-                client.options.backKey.setPressed(   customFlipped ? cs.forward : cs.back);
-                client.options.leftKey.setPressed(   customFlipped && shouldFlipStrafe(cs) ? cs.right : cs.left);
-                client.options.rightKey.setPressed(  customFlipped && shouldFlipStrafe(cs) ? cs.left  : cs.right);
-                return;
-            }
-
-            client.options.attackKey.setPressed(true);
-            boolean goForward  = (state == MacroState.FORWARD_LEFT || state == MacroState.FORWARD_RIGHT || state == MacroState.FORWARD_ONLY);
-            boolean goBack     = (state == MacroState.BACKWARD_LEFT || state == MacroState.BACK_ONLY);
-            boolean goLeft     = (state == MacroState.BACKWARD_LEFT || state == MacroState.FORWARD_LEFT || state == MacroState.STRAFE_LEFT_ONLY);
-            boolean goRight    = (state == MacroState.FORWARD_RIGHT || state == MacroState.STRAFE_RIGHT_ONLY);
-            client.options.forwardKey.setPressed(goForward);
-            client.options.backKey.setPressed(goBack);
-            client.options.leftKey.setPressed(goLeft);
-            client.options.rightKey.setPressed(goRight);
-        }
-    }
-
     /** Returns {@code true} if freelook mode is enabled. */
     public boolean isFreelookEnabled() {
         return freelookEnabled;

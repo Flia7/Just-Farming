@@ -6,7 +6,6 @@
     "CameraMixin",
     "EntityMixin",
     "GameRendererMixin",
-    "KeyBindingMixin",
     "MinecraftClientMixin",
     "MouseMixin"
   ],
