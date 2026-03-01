@@ -82,6 +82,7 @@ public class FarmingConfigScreen extends Screen {
     // ── Tab 2 – Misc widgets ──────────────────────────────────────────────────
     private FlatButtonWidget                  freelookButton;
     private FlatBoolToggleWidget  unlockedMouseButton;
+    private FlatBoolToggleWidget  gardenOnlyButton;
     private FlatBoolToggleWidget  squeakyMousematButton;
 
     // ── Tab 3 – Delays widgets ────────────────────────────────────────────────
@@ -265,6 +266,13 @@ public class FarmingConfigScreen extends Screen {
         unlockedMouseButton.setTooltip(Tooltip.of(Text.literal("Release the cursor while the macro runs so you can interact with other windows")));
         y += bh + pad;
 
+        gardenOnlyButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
+                        Text.translatable("gui.just-farming.garden_only_label"),
+                        config.gardenOnlyEnabled);
+        this.addDrawableChild(gardenOnlyButton);
+        gardenOnlyButton.setTooltip(Tooltip.of(Text.literal("When enabled, only allow the macro to run in the Hypixel Skyblock Garden.\nAuto-stops the macro if you leave the Garden.")));
+        y += bh + pad;
+
         squeakyMousematButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
                         Text.translatable("gui.just-farming.squeaky_mousemat_label"),
                         config.squeakyMousematEnabled);
@@ -346,6 +354,7 @@ public class FarmingConfigScreen extends Screen {
         boolean t2 = activeTab == 2;
         freelookButton.visible        = t2;
         unlockedMouseButton.visible   = t2;
+        gardenOnlyButton.visible      = t2;
         squeakyMousematButton.visible = t2;
 
         boolean t3 = activeTab == 3;
@@ -476,6 +485,7 @@ public class FarmingConfigScreen extends Screen {
         config.pestEspEnabled       = pestEspButton.getValue();
         config.pestTracerEnabled    = pestTracerButton.getValue();
         config.unlockedMouseEnabled = unlockedMouseButton.getValue();
+        config.gardenOnlyEnabled    = gardenOnlyButton.getValue();
         config.squeakyMousematEnabled = squeakyMousematButton.getValue();
         macroManager.setConfig(config);
     }

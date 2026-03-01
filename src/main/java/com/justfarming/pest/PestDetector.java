@@ -156,7 +156,7 @@ public class PestDetector {
         String clean = text.replaceAll("§[0-9a-fklmnorA-FKLMNOR]", "").trim();
 
         // Detect Garden location
-        if (GARDEN_LOCATION_PATTERN.matcher(clean).matches()) {
+        if (GARDEN_LOCATION_PATTERN.matcher(clean).find()) {
             inGarden = true;
         }
 

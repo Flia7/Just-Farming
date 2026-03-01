@@ -13,6 +13,7 @@
   "gui.just-farming.freelook_on": "Freelook: ON  (L to toggle)",
   "gui.just-farming.freelook_off": "Freelook: OFF  (L to toggle)",
   "gui.just-farming.unlocked_mouse_label": "Unlock Mouse While Macro Runs:",
+  "gui.just-farming.garden_only_label": "Garden Only:",
   "gui.just-farming.squeaky_mousemat_label": "Squeaky Mousemat:",
   "gui.just-farming.set_rewarp": "Set Rewarp Here",
   "gui.just-farming.close": "Close",

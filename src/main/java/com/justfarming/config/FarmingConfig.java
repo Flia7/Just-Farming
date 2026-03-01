@@ -69,6 +69,12 @@ public class FarmingConfig {
     public boolean unlockedMouseEnabled = false;
 
     /**
+     * When {@code true}, the macro will only start (and will auto-stop) when
+     * the player is detected to be in the Hypixel Skyblock Garden.
+     */
+    public boolean gardenOnlyEnabled = true;
+
+    /**
      * When {@code true}, the macro will search the player's hotbar for a
      * Squeaky Mousemat at startup and left-click it (using a block-attack packet
      * so Hypixel Skyblock's item ability fires), instead of relying on the
