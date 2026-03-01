@@ -23,22 +23,22 @@ public class MouseMixin {
      *   <li>Scroll up  → zoom in  (camera closer to player)</li>
      *   <li>Scroll down → zoom out (camera farther from player)</li>
      * </ul>
-     * The event is cancelled so the hotbar slot does not change while freelook
-     * is in use.
+     * If a GUI screen is open (e.g. chat), the event is passed through so the
+     * screen can handle it normally (e.g. scrolling chat history).
+     * The event is cancelled only when no screen is open so the hotbar slot
+     * does not change while freelook is in use.
      */
     @Inject(method = "onMouseScroll", at = @At("HEAD"), cancellable = true)
     private void onMouseScroll(long window, double horizontal, double vertical, CallbackInfo ci) {
         MacroManager mm = JustFarming.getMacroManager();
         if (mm != null && mm.isFreelookActive()) {
-            // Do not adjust zoom while a GUI screen is open.
             MinecraftClient client = MinecraftClient.getInstance();
+            // Let any open screen (chat, inventory, etc.) handle the scroll normally.
             if (client != null && client.currentScreen != null) {
-                ci.cancel();
                 return;
             }
-            // Scroll up (vertical > 0) → closer; scroll down (vertical < 0) → farther.
-            // Negating vertical converts GLFW's upward-positive convention into a
-            // zoom-out (positive) / zoom-in (negative) delta for adjustFreelookZoom.
+            // No screen open: adjust freelook zoom and swallow the event so the
+            // hotbar slot does not change.
             mm.adjustFreelookZoom(-vertical);
             ci.cancel();
         }

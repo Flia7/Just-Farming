@@ -5,6 +5,7 @@ import com.justfarming.config.FarmingConfig;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.tooltip.Tooltip;
 import net.minecraft.client.gui.widget.SliderWidget;
 import net.minecraft.text.Text;
 
@@ -24,7 +25,7 @@ public class FarmingConfigScreen extends Screen {
 
     // ── Natural/maximum dimensions ────────────────────────────────────────────
     private static final int WINDOW_WIDTH   = 420;
-    private static final int WINDOW_HEIGHT  = 280;
+    private static final int WINDOW_HEIGHT  = 380;
     private static final int NAV_WIDTH      = 110;
     private static final int BUTTON_WIDTH   = 220;
     private static final int BUTTON_HEIGHT  = 20;
@@ -88,6 +89,10 @@ public class FarmingConfigScreen extends Screen {
     private LaneSwapRandomSlider          laneSwapRandomSlider;
     private RewarpDelaySlider             rewarpDelaySlider;
     private RewarpRandomSlider            rewarpRandomSlider;
+    private MousematSwapToSlider          mousematSwapToSlider;
+    private MousematPreDelaySlider        mousematPreDelaySlider;
+    private MousematPostDelaySlider       mousematPostDelaySlider;
+    private MousematResumeDelaySlider     mousematResumeDelaySlider;
 
 
     // ── Always-visible widget ─────────────────────────────────────────────────
@@ -96,7 +101,7 @@ public class FarmingConfigScreen extends Screen {
     // ── Section-label Y positions (set in init, used in render) ───────────────
     private int sectionCropY, actionSeparatorY;
     private int sectionPestsY, sectionMiscY, miscSeparatorY;
-    private int sectionLaneSwapY, sectionRewarpDelayY;
+    private int sectionLaneSwapY, sectionRewarpDelayY, sectionMousematDelayY;
 
     public FarmingConfigScreen(Screen parent, FarmingConfig config, MacroManager macroManager) {
         super(Text.translatable("gui.just-farming.title"));
@@ -155,6 +160,7 @@ public class FarmingConfigScreen extends Screen {
                                 this.client.setScreen(new CropSelectScreen(this, config));
                         });
         this.addDrawableChild(cropSelectButton);
+        cropSelectButton.setTooltip(Tooltip.of(Text.literal("Choose the crop type to farm")));
         y += bh + pad;
 
         cropSettingsButton = new FlatButtonWidget(widgetX, y, bw, bh,
@@ -165,6 +171,7 @@ public class FarmingConfigScreen extends Screen {
                                 this.client.setScreen(new CropSettingsScreen(this, config));
                         });
         this.addDrawableChild(cropSettingsButton);
+        cropSettingsButton.setTooltip(Tooltip.of(Text.literal("Customize camera angle and movement keys for this crop")));
         y += bh + pad + gap;
 
         actionSeparatorY = y;
@@ -183,6 +190,7 @@ public class FarmingConfigScreen extends Screen {
                             }
                         });
         this.addDrawableChild(setRewarpButton);
+        setRewarpButton.setTooltip(Tooltip.of(Text.literal("Save your current position as the rewarp waypoint.\nThe macro sends /warp garden when it reaches this point.")));
         y += bh + pad;
 
         toggleMacroButton = new FlatButtonWidget(widgetX, y, bw, bh,
@@ -193,6 +201,7 @@ public class FarmingConfigScreen extends Screen {
                             btn.setMessage(getMacroToggleText());
                         });
         this.addDrawableChild(toggleMacroButton);
+        toggleMacroButton.setTooltip(Tooltip.of(Text.literal("Start or stop the farming macro")));
 
         // ── Tab 1 – Pests ─────────────────────────────────────────────────────
         y = contentTop;
@@ -203,28 +212,33 @@ public class FarmingConfigScreen extends Screen {
                         Text.translatable("gui.just-farming.pest_highlight_label"),
                         config.pestHighlightEnabled);
         this.addDrawableChild(pestHighlightButton);
+        pestHighlightButton.setTooltip(Tooltip.of(Text.literal("Outline garden plots that contain pests")));
         y += bh + pad;
 
         pestLabelsButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
                         Text.translatable("gui.just-farming.pest_labels_label"),
                         config.pestLabelsEnabled);
         this.addDrawableChild(pestLabelsButton);
+        pestLabelsButton.setTooltip(Tooltip.of(Text.literal("Show plot name and pest count above infested plots")));
         y += bh + pad;
 
         titleScaleSlider = new TitleScaleSlider(widgetX, y, bw, bh, config.pestTitleScale);
         this.addDrawableChild(titleScaleSlider);
+        titleScaleSlider.setTooltip(Tooltip.of(Text.literal("Adjust the size of the floating plot labels")));
         y += bh + pad;
 
         pestEspButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
                         Text.translatable("gui.just-farming.pest_esp_label"),
                         config.pestEspEnabled);
         this.addDrawableChild(pestEspButton);
+        pestEspButton.setTooltip(Tooltip.of(Text.literal("Show wireframe boxes around pest mobs through walls")));
         y += bh + pad;
 
         pestTracerButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
                         Text.translatable("gui.just-farming.pest_tracer_label"),
                         config.pestTracerEnabled);
         this.addDrawableChild(pestTracerButton);
+        pestTracerButton.setTooltip(Tooltip.of(Text.literal("Draw lines from your camera to each pest mob")));
 
         // ── Tab 2 – Misc ──────────────────────────────────────────────────────
         y = contentTop;
@@ -238,6 +252,7 @@ public class FarmingConfigScreen extends Screen {
                             btn.setMessage(getFreelookButtonText());
                         });
         this.addDrawableChild(freelookButton);
+        freelookButton.setTooltip(Tooltip.of(Text.literal("Enable third-person camera behind the player.\nScroll wheel adjusts zoom distance.")));
         y += bh + pad + gap;
 
         miscSeparatorY = y;
@@ -247,12 +262,14 @@ public class FarmingConfigScreen extends Screen {
                         Text.translatable("gui.just-farming.unlocked_mouse_label"),
                         config.unlockedMouseEnabled);
         this.addDrawableChild(unlockedMouseButton);
+        unlockedMouseButton.setTooltip(Tooltip.of(Text.literal("Release the cursor while the macro runs so you can interact with other windows")));
         y += bh + pad;
 
         squeakyMousematButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
                         Text.translatable("gui.just-farming.squeaky_mousemat_label"),
                         config.squeakyMousematEnabled);
         this.addDrawableChild(squeakyMousematButton);
+        squeakyMousematButton.setTooltip(Tooltip.of(Text.literal("Activate Squeaky Mousemat at startup to set camera angle")));
 
         // ── Tab 3 – Delays ────────────────────────────────────────────────────
         y = contentTop;
@@ -260,20 +277,46 @@ public class FarmingConfigScreen extends Screen {
         y += sLH;
         laneSwapDelaySlider = new LaneSwapDelaySlider(widgetX, y, bw, bh, config.laneSwapDelayMin);
         this.addDrawableChild(laneSwapDelaySlider);
+        laneSwapDelaySlider.setTooltip(Tooltip.of(Text.literal("Minimum wait before flipping direction at end of row (ms)")));
         y += bh + pad;
 
         laneSwapRandomSlider = new LaneSwapRandomSlider(widgetX, y, bw, bh, config.laneSwapDelayRandom);
         this.addDrawableChild(laneSwapRandomSlider);
+        laneSwapRandomSlider.setTooltip(Tooltip.of(Text.literal("Extra random delay added on top of the lane swap delay (ms)")));
         y += bh + pad + gap;
 
         sectionRewarpDelayY = y;
         y += sLH;
         rewarpDelaySlider = new RewarpDelaySlider(widgetX, y, bw, bh, config.rewarpDelayMin);
         this.addDrawableChild(rewarpDelaySlider);
+        rewarpDelaySlider.setTooltip(Tooltip.of(Text.literal("Minimum wait before sending /warp garden (ms)")));
         y += bh + pad;
 
         rewarpRandomSlider = new RewarpRandomSlider(widgetX, y, bw, bh, config.rewarpDelayRandom);
         this.addDrawableChild(rewarpRandomSlider);
+        rewarpRandomSlider.setTooltip(Tooltip.of(Text.literal("Extra random delay added on top of the rewarp delay (ms)")));
+        y += bh + pad + gap;
+
+        sectionMousematDelayY = y;
+        y += sLH;
+        mousematSwapToSlider = new MousematSwapToSlider(widgetX, y, bw, bh, config.mousematSwapToDelay);
+        this.addDrawableChild(mousematSwapToSlider);
+        mousematSwapToSlider.setTooltip(Tooltip.of(Text.literal("Wait before switching to Squeaky Mousemat.\nOnly applies when not already holding it. (ms)")));
+        y += bh + pad;
+
+        mousematPreDelaySlider = new MousematPreDelaySlider(widgetX, y, bw, bh, config.mousematPreDelay);
+        this.addDrawableChild(mousematPreDelaySlider);
+        mousematPreDelaySlider.setTooltip(Tooltip.of(Text.literal("Wait after switching to Squeaky Mousemat\nbefore activating its ability. (ms)")));
+        y += bh + pad;
+
+        mousematPostDelaySlider = new MousematPostDelaySlider(widgetX, y, bw, bh, config.mousematPostDelay);
+        this.addDrawableChild(mousematPostDelaySlider);
+        mousematPostDelaySlider.setTooltip(Tooltip.of(Text.literal("Wait after using the Squeaky Mousemat ability\nbefore swapping back to the farming tool. (ms)")));
+        y += bh + pad;
+
+        mousematResumeDelaySlider = new MousematResumeDelaySlider(widgetX, y, bw, bh, config.mousematResumeDelay);
+        this.addDrawableChild(mousematResumeDelaySlider);
+        mousematResumeDelaySlider.setTooltip(Tooltip.of(Text.literal("Wait after swapping back to the farming tool\nbefore resuming farming. (ms)")));
 
         // ── Always-visible: Close button anchored to the bottom ───────────────
         int closeBtnY = winY + winH - bh - pad;
@@ -306,10 +349,14 @@ public class FarmingConfigScreen extends Screen {
         squeakyMousematButton.visible = t2;
 
         boolean t3 = activeTab == 3;
-        laneSwapDelaySlider.visible   = t3;
-        laneSwapRandomSlider.visible  = t3;
-        rewarpDelaySlider.visible     = t3;
-        rewarpRandomSlider.visible    = t3;
+        laneSwapDelaySlider.visible       = t3;
+        laneSwapRandomSlider.visible      = t3;
+        rewarpDelaySlider.visible         = t3;
+        rewarpRandomSlider.visible        = t3;
+        mousematSwapToSlider.visible      = t3;
+        mousematPreDelaySlider.visible    = t3;
+        mousematPostDelaySlider.visible   = t3;
+        mousematResumeDelaySlider.visible = t3;
     }
 
     @Override
@@ -379,6 +426,7 @@ public class FarmingConfigScreen extends Screen {
         } else {
             drawSectionLabel(context, "Lane Swap", sectionLaneSwapY);
             drawSectionLabel(context, "Rewarp",    sectionRewarpDelayY);
+            drawSectionLabel(context, "Mousemat",  sectionMousematDelayY);
         }
 
         // ── Widgets ───────────────────────────────────────────────────────────
@@ -418,6 +466,10 @@ public class FarmingConfigScreen extends Screen {
         config.laneSwapDelayRandom  = laneSwapRandomSlider.getRandomValue();
         config.rewarpDelayMin       = rewarpDelaySlider.getDelayValue();
         config.rewarpDelayRandom    = rewarpRandomSlider.getRandomValue();
+        config.mousematSwapToDelay  = mousematSwapToSlider.getDelayValue();
+        config.mousematPreDelay     = mousematPreDelaySlider.getDelayValue();
+        config.mousematPostDelay    = mousematPostDelaySlider.getDelayValue();
+        config.mousematResumeDelay  = mousematResumeDelaySlider.getDelayValue();
         config.pestHighlightEnabled = pestHighlightButton.getValue();
         config.pestLabelsEnabled    = pestLabelsButton.getValue();
         config.pestTitleScale       = titleScaleSlider.getTitleScaleValue();
@@ -580,124 +632,176 @@ public class FarmingConfigScreen extends Screen {
         }
     }
 
-    /** Slider for the minimum lane-swap delay (0–2000 ms). */
-    private static class LaneSwapDelaySlider extends SliderWidget {
+    /**
+     * Abstract base for integer-stepped sliders (1 unit per arrow-key press;
+     * mouse drag snaps to nearest integer).
+     *
+     * <p>GLFW_KEY_LEFT = 263, GLFW_KEY_RIGHT = 262.
+     */
+    private abstract static class IntStepSlider extends SliderWidget {
 
-        private static final int MIN =    0;
-        private static final int MAX = 2000;
+        private static final int GLFW_KEY_LEFT  = 263;
+        private static final int GLFW_KEY_RIGHT = 262;
 
-        LaneSwapDelaySlider(int x, int y, int width, int height, int initialValue) {
-            super(x, y, width, height, Text.empty(),
-                    (double)(initialValue - MIN) / (MAX - MIN));
+        private final int min;
+        private final int max;
+
+        IntStepSlider(int x, int y, int width, int height, int min, int max, int initialValue) {
+            super(x, y, width, height, Text.empty(), (double)(initialValue - min) / (max - min));
+            this.min = min;
+            this.max = max;
             updateMessage();
         }
 
-        int getDelayValue() {
-            return MIN + (int)Math.round(value * (MAX - MIN));
+        /** Returns the current value as a concrete integer in [min, max]. */
+        int getIntValue() {
+            return min + (int)Math.round(value * (max - min));
         }
 
         @Override
-        protected void updateMessage() {
-            setMessage(Text.literal(String.format("Lane Swap Delay: %d ms", getDelayValue())));
+        protected void applyValue() {
+            // Snap mouse-drag value to nearest integer step.
+            int steps = max - min;
+            this.value = Math.round(this.value * steps) / (double)steps;
+        }
+
+        @Override
+        public boolean keyPressed(net.minecraft.client.input.KeyInput input) {
+            if (input.key() == GLFW_KEY_LEFT || input.key() == GLFW_KEY_RIGHT) {
+                double step = 1.0 / (max - min);
+                this.value = (input.key() == GLFW_KEY_LEFT)
+                        ? Math.max(0.0, this.value - step)
+                        : Math.min(1.0, this.value + step);
+                updateMessage();
+                return true;
+            }
+            return super.keyPressed(input);
         }
 
         @Override
         public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
             renderFlatSlider(context, getX(), getY(), getWidth(), getHeight(), value, getMessage());
         }
+    }
+
+    /** Slider for the minimum lane-swap delay (0–2000 ms). */
+    private static class LaneSwapDelaySlider extends IntStepSlider {
+
+        LaneSwapDelaySlider(int x, int y, int width, int height, int initialValue) {
+            super(x, y, width, height, 0, 2000, initialValue);
+        }
+
+        int getDelayValue() { return getIntValue(); }
 
         @Override
-        protected void applyValue() {}
+        protected void updateMessage() {
+            setMessage(Text.literal(String.format("Lane Swap Delay: %d ms", getIntValue())));
+        }
     }
 
     /** Slider for the random extra lane-swap delay (0–1000 ms). */
-    private static class LaneSwapRandomSlider extends SliderWidget {
-
-        private static final int MIN =    0;
-        private static final int MAX = 1000;
+    private static class LaneSwapRandomSlider extends IntStepSlider {
 
         LaneSwapRandomSlider(int x, int y, int width, int height, int initialValue) {
-            super(x, y, width, height, Text.empty(),
-                    (double)(initialValue - MIN) / (MAX - MIN));
-            updateMessage();
+            super(x, y, width, height, 0, 1000, initialValue);
         }
 
-        int getRandomValue() {
-            return MIN + (int)Math.round(value * (MAX - MIN));
-        }
+        int getRandomValue() { return getIntValue(); }
 
         @Override
         protected void updateMessage() {
-            setMessage(Text.literal(String.format("Lane Swap Randomization: %d ms", getRandomValue())));
+            setMessage(Text.literal(String.format("Lane Swap Randomization: %d ms", getIntValue())));
         }
-
-        @Override
-        public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
-            renderFlatSlider(context, getX(), getY(), getWidth(), getHeight(), value, getMessage());
-        }
-
-        @Override
-        protected void applyValue() {}
     }
 
     /** Slider for the minimum rewarp delay (0–2000 ms). */
-    private static class RewarpDelaySlider extends SliderWidget {
-
-        private static final int MIN =    0;
-        private static final int MAX = 2000;
+    private static class RewarpDelaySlider extends IntStepSlider {
 
         RewarpDelaySlider(int x, int y, int width, int height, int initialValue) {
-            super(x, y, width, height, Text.empty(),
-                    (double)(initialValue - MIN) / (MAX - MIN));
-            updateMessage();
+            super(x, y, width, height, 0, 2000, initialValue);
         }
 
-        int getDelayValue() {
-            return MIN + (int)Math.round(value * (MAX - MIN));
-        }
+        int getDelayValue() { return getIntValue(); }
 
         @Override
         protected void updateMessage() {
-            setMessage(Text.literal(String.format("Rewarp Delay: %d ms", getDelayValue())));
+            setMessage(Text.literal(String.format("Rewarp Delay: %d ms", getIntValue())));
         }
-
-        @Override
-        public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
-            renderFlatSlider(context, getX(), getY(), getWidth(), getHeight(), value, getMessage());
-        }
-
-        @Override
-        protected void applyValue() {}
     }
 
     /** Slider for the random extra rewarp delay (0–1000 ms). */
-    private static class RewarpRandomSlider extends SliderWidget {
-
-        private static final int MIN =    0;
-        private static final int MAX = 1000;
+    private static class RewarpRandomSlider extends IntStepSlider {
 
         RewarpRandomSlider(int x, int y, int width, int height, int initialValue) {
-            super(x, y, width, height, Text.empty(),
-                    (double)(initialValue - MIN) / (MAX - MIN));
-            updateMessage();
+            super(x, y, width, height, 0, 1000, initialValue);
         }
 
-        int getRandomValue() {
-            return MIN + (int)Math.round(value * (MAX - MIN));
-        }
+        int getRandomValue() { return getIntValue(); }
 
         @Override
         protected void updateMessage() {
-            setMessage(Text.literal(String.format("Rewarp Randomization: %d ms", getRandomValue())));
+            setMessage(Text.literal(String.format("Rewarp Randomization: %d ms", getIntValue())));
+        }
+    }
+
+    /** Slider for the Squeaky Mousemat swap-to delay (0–2000 ms). */
+    private static class MousematSwapToSlider extends IntStepSlider {
+
+        MousematSwapToSlider(int x, int y, int width, int height, int initialValue) {
+            super(x, y, width, height, 0, 2000, initialValue);
         }
 
-        @Override
-        public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
-            renderFlatSlider(context, getX(), getY(), getWidth(), getHeight(), value, getMessage());
-        }
+        int getDelayValue() { return getIntValue(); }
 
         @Override
-        protected void applyValue() {}
+        protected void updateMessage() {
+            setMessage(Text.literal(String.format("Swap to Mousemat Delay: %d ms", getIntValue())));
+        }
+    }
+
+    /** Slider for the Squeaky Mousemat pre-click delay (0–2000 ms). */
+    private static class MousematPreDelaySlider extends IntStepSlider {
+
+        MousematPreDelaySlider(int x, int y, int width, int height, int initialValue) {
+            super(x, y, width, height, 0, 2000, initialValue);
+        }
+
+        int getDelayValue() { return getIntValue(); }
+
+        @Override
+        protected void updateMessage() {
+            setMessage(Text.literal(String.format("Mousemat Ability Delay: %d ms", getIntValue())));
+        }
+    }
+
+    /** Slider for the Squeaky Mousemat post-click (swap-back) delay (0–2000 ms). */
+    private static class MousematPostDelaySlider extends IntStepSlider {
+
+        MousematPostDelaySlider(int x, int y, int width, int height, int initialValue) {
+            super(x, y, width, height, 0, 2000, initialValue);
+        }
+
+        int getDelayValue() { return getIntValue(); }
+
+        @Override
+        protected void updateMessage() {
+            setMessage(Text.literal(String.format("Swap Back Delay: %d ms", getIntValue())));
+        }
+    }
+
+    /** Slider for the Squeaky Mousemat resume-farming delay (0–2000 ms). */
+    private static class MousematResumeDelaySlider extends IntStepSlider {
+
+        MousematResumeDelaySlider(int x, int y, int width, int height, int initialValue) {
+            super(x, y, width, height, 0, 2000, initialValue);
+        }
+
+        int getDelayValue() { return getIntValue(); }
+
+        @Override
+        protected void updateMessage() {
+            setMessage(Text.literal(String.format("Resume Farming Delay: %d ms", getIntValue())));
+        }
     }
 
     /** Slider for the floating pest plot title scale (0.5–6.0). */
