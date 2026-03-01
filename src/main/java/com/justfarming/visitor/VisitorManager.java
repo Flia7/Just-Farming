@@ -76,6 +76,13 @@ public class VisitorManager {
     /** Distance (blocks) at which the player is considered "close enough" to interact. */
     private static final double INTERACT_RADIUS = 3.5;
 
+    /**
+     * How far ahead (blocks) to probe the terrain when navigating.
+     * Slightly more than half a block so we reliably detect edges and walls
+     * before the player's centre reaches them.
+     */
+    private static final double PROBE_STEP = 0.6;
+
     // ── State machine ────────────────────────────────────────────────────────
 
     /** Internal states of the visitor routine. */
@@ -161,9 +168,17 @@ public class VisitorManager {
     }
 
     /**
-     * Start the visitor routine.
-     * Sends {@code /tptoplot barn} and begins the state machine.
+     * Stop the visitor routine immediately and return to IDLE state.
+     * Called when the player presses the toggle-macro key to cancel.
      */
+    public void stop() {
+        if (state == State.IDLE || state == State.DONE) return;
+        LOGGER.info("[JustFarming-Visitors] Visitor routine stopped by user.");
+        releaseMovementKeys();
+        enterState(State.DONE);
+    }
+
+
     public void start() {
         LOGGER.info("[JustFarming-Visitors] Starting visitor routine.");
         pendingVisitors.clear();
@@ -362,9 +377,41 @@ public class VisitorManager {
     }
 
     private void walkToward(ClientPlayerEntity player, Vec3d target) {
-        if (client.options == null) return;
+        if (client.options == null || client.world == null) return;
         lookAt(player, target);
-        client.options.forwardKey.setPressed(true);
+
+        // Compute the position one PROBE_STEP ahead (horizontal only) so we can
+        // inspect the terrain before committing to a forward movement.
+        double yawRad   = Math.toRadians(player.getYaw());
+        double stepX    = -Math.sin(yawRad) * PROBE_STEP;
+        double stepZ    =  Math.cos(yawRad) * PROBE_STEP;
+        double nextX    = player.getX() + stepX;
+        double nextZ    = player.getZ() + stepZ;
+        int    feetY    = (int) Math.floor(player.getY());
+
+        net.minecraft.util.math.BlockPos floorPos =
+                new net.minecraft.util.math.BlockPos(
+                        (int) Math.floor(nextX), feetY - 1, (int) Math.floor(nextZ));
+        net.minecraft.util.math.BlockPos wallPos  =
+                new net.minecraft.util.math.BlockPos(
+                        (int) Math.floor(nextX), feetY,     (int) Math.floor(nextZ));
+        net.minecraft.util.math.BlockPos headPos  =
+                new net.minecraft.util.math.BlockPos(
+                        (int) Math.floor(nextX), feetY + 1, (int) Math.floor(nextZ));
+
+        boolean floorAhead = !client.world.getBlockState(floorPos).isAir();
+        boolean wallAhead  = !client.world.getBlockState(wallPos).isAir()
+                          || !client.world.getBlockState(headPos).isAir();
+
+        if (floorAhead) {
+            // Path is walkable; jump over any wall / step
+            client.options.jumpKey.setPressed(wallAhead);
+            client.options.forwardKey.setPressed(true);
+        } else {
+            // No floor ahead – do not walk forward to avoid falling off an edge.
+            client.options.forwardKey.setPressed(false);
+            client.options.jumpKey.setPressed(false);
+        }
         client.options.backKey.setPressed(false);
         client.options.leftKey.setPressed(false);
         client.options.rightKey.setPressed(false);
@@ -389,6 +436,7 @@ public class VisitorManager {
         client.options.backKey.setPressed(false);
         client.options.leftKey.setPressed(false);
         client.options.rightKey.setPressed(false);
+        client.options.jumpKey.setPressed(false);
     }
 
     private void interactWithEntity(ClientPlayerEntity player, Entity entity) {

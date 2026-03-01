@@ -49,7 +49,7 @@ public class FarmingConfigScreen extends Screen {
     private static final int COL_SHADOW      = 0x60000000; // drop shadow
 
     // ── Tabs ──────────────────────────────────────────────────────────────────
-    private static final String[] TAB_NAMES = { "Farming", "Pests", "Misc", "Delays", "Visitors" };
+    private static final String[] TAB_NAMES = { "Farming", "Pests", "Misc", "Delays", "Visitor's macro" };
     private int activeTab = 0;
 
     // ── Dynamic layout (computed in init) ─────────────────────────────────────
@@ -230,7 +230,7 @@ public class FarmingConfigScreen extends Screen {
                         Text.translatable("gui.just-farming.pest_labels_label"),
                         config.pestLabelsEnabled);
         this.addDrawableChild(pestLabelsButton);
-        pestLabelsButton.setTooltip(Tooltip.of(Text.literal("Show plot name and pest count above infested plots")));
+        pestLabelsButton.setTooltip(Tooltip.of(Text.literal("Show plot name")));
         y += bh + pad;
 
         titleScaleSlider = new TitleScaleSlider(widgetX, y, bw, bh, config.pestTitleScale);
@@ -484,7 +484,7 @@ public class FarmingConfigScreen extends Screen {
             drawSectionLabel(context, "Rewarp",    sectionRewarpDelayY);
             drawSectionLabel(context, "Mousemat",  sectionMousematDelayY);
         } else if (activeTab == 4) {
-            drawSectionLabel(context, "Visitors", sectionVisitorsY);
+            drawSectionLabel(context, "Visitor's macro", sectionVisitorsY);
             // Show current visitor routine status below the sliders when active
             if (visitorManager != null && visitorManager.isActive()) {
                 String stateText = "State: " + visitorManager.getState().name();

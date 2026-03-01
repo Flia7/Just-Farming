@@ -251,6 +251,9 @@ public class MacroManager {
         running = false;
         state = MacroState.IDLE;
         releaseKeys();
+        if (visitorManager != null && visitorManager.isActive()) {
+            visitorManager.stop();
+        }
         if (config.unlockedMouseEnabled && client.currentScreen == null) {
             client.mouse.lockCursor();
         }
