@@ -100,6 +100,7 @@ public class FarmingConfigScreen extends Screen {
     // ── Tab 4 – Visitors widgets ──────────────────────────────────────────────
     private FlatBoolToggleWidget  visitorsEnabledButton;
     private FlatBoolToggleWidget  visitorsBuyFromBazaarButton;
+    private FlatButtonWidget              visitorsBlacklistButton;
     private VisitorInteractDelaySlider    visitorsInteractDelaySlider;
     private VisitorTeleportDelaySlider    visitorsTeleportDelaySlider;
 
@@ -356,6 +357,18 @@ public class FarmingConfigScreen extends Screen {
         this.addDrawableChild(visitorsBuyFromBazaarButton);
         visitorsBuyFromBazaarButton.setTooltip(Tooltip.of(Text.literal(
                 "Automatically run /bazaar <item> and buy required items\nbefore accepting each visitor's offer.")));
+        y += bh + pad;
+
+        visitorsBlacklistButton = new FlatButtonWidget(widgetX, y, bw, bh,
+                        Text.translatable("gui.just-farming.visitors_blacklist_label"),
+                        btn -> {
+                            applyConfig();
+                            if (this.client != null)
+                                this.client.setScreen(new VisitorBlacklistScreen(this, config));
+                        });
+        this.addDrawableChild(visitorsBlacklistButton);
+        visitorsBlacklistButton.setTooltip(Tooltip.of(Text.literal(
+                "Choose which visitors to automatically skip, regardless of their required items.")));
         y += bh + pad + gap;
 
         visitorsInteractDelaySlider = new VisitorInteractDelaySlider(widgetX, y, bw, bh, config.visitorsInteractDelay);
@@ -411,6 +424,7 @@ public class FarmingConfigScreen extends Screen {
         boolean t4 = activeTab == 4;
         visitorsEnabledButton.visible         = t4;
         visitorsBuyFromBazaarButton.visible   = t4;
+        visitorsBlacklistButton.visible       = t4;
         visitorsInteractDelaySlider.visible   = t4;
         visitorsTeleportDelaySlider.visible   = t4;
     }

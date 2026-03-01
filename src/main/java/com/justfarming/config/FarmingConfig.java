@@ -12,7 +12,9 @@ import java.io.Reader;
 import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -175,6 +177,13 @@ public class FarmingConfig {
      * to process the teleport.
      */
     public int visitorsTeleportDelay = 4000;
+
+    /**
+     * Visitor names to skip automatically.  Any visitor whose name appears in
+     * this list will be ignored by the visitor routine regardless of their
+     * required items or rewards.
+     */
+    public List<String> visitorBlacklist = new ArrayList<>();
 
     // --- Per-Crop Settings ---
 
