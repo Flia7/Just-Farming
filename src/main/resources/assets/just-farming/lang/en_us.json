@@ -21,6 +21,8 @@
   "gui.just-farming.status_stopped": "Status: STOPPED",
   "gui.just-farming.start_macro": "Start Macro",
   "gui.just-farming.stop_macro": "Stop Macro",
+  "gui.just-farming.visitors_enabled_label": "Visit Garden Visitors:",
+  "gui.just-farming.visitors_buy_bazaar_label": "Auto-Buy from Bazaar:",
   "crop.just-farming.wheat": "Wheat",
   "crop.just-farming.carrot": "Carrot",
   "crop.just-farming.potato": "Potato",

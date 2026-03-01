@@ -147,6 +147,35 @@ public class FarmingConfig {
      */
     public int laneSwapDelayRandom = 0;
 
+    // --- Visitor Settings ---
+
+    /**
+     * When {@code true}, the macro will teleport to the barn ({@code /tptoplot barn})
+     * at the rewarp trigger, interact with garden visitors, and optionally buy
+     * required items from the Bazaar before accepting each visitor's offer.
+     */
+    public boolean visitorsEnabled = false;
+
+    /**
+     * When {@code true} (and {@link #visitorsEnabled} is also {@code true}), the
+     * visitor routine will run {@code /bazaar <item>} for each item a visitor needs
+     * and attempt to purchase the required amount via "Buy Instantly".
+     */
+    public boolean visitorsBuyFromBazaar = true;
+
+    /**
+     * Delay in milliseconds between consecutive visitor entity-interact attempts
+     * (right-click on the NPC to open its menu).
+     */
+    public int visitorsInteractDelay = 600;
+
+    /**
+     * How long (in milliseconds) to wait after sending {@code /tptoplot barn}
+     * before scanning for visitor NPCs.  Increase this if the server is slow
+     * to process the teleport.
+     */
+    public int visitorsTeleportDelay = 4000;
+
     // --- Per-Crop Settings ---
 
     /**

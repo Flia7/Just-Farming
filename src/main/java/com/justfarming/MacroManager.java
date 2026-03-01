@@ -1,6 +1,7 @@
 package com.justfarming;
 
 import com.justfarming.config.FarmingConfig;
+import com.justfarming.visitor.VisitorManager;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.util.Hand;
@@ -66,6 +67,7 @@ public class MacroManager {
 
     private final MinecraftClient client;
     private FarmingConfig config;
+    private VisitorManager visitorManager;
 
     // -----------------------------------------------------------------------
     // State
@@ -73,7 +75,7 @@ public class MacroManager {
 
     private enum MacroState { IDLE, MOUSEMAT_CLICK, DETECTING, BACKWARD_LEFT, FORWARD_LEFT, FORWARD_RIGHT,
             STRAFE_LEFT_ONLY, STRAFE_RIGHT_ONLY, BACK_ONLY, FORWARD_ONLY, WARPING,
-            LANE_SWAP_WAITING }
+            LANE_SWAP_WAITING, VISITING }
 
     private MacroState state = MacroState.IDLE;
     private boolean running = false;
@@ -145,6 +147,11 @@ public class MacroManager {
     public MacroManager(MinecraftClient client, FarmingConfig config) {
         this.client = client;
         this.config = config;
+    }
+
+    /** Inject the {@link VisitorManager} so the macro can hand off to it at rewarp. */
+    public void setVisitorManager(VisitorManager visitorManager) {
+        this.visitorManager = visitorManager;
     }
 
     /** Update the config reference (called after GUI saves). */
@@ -333,13 +340,32 @@ public class MacroManager {
                     // Still waiting for the configured delay – keep keys released
                     break;
                 }
-                triggerRewarp();
-                // Begin a fresh detection cycle after warping back to garden
-                state = MacroState.DETECTING;
-                detectTicks = 0;
-                detectStartPos = new Vec3d(player.getX(), player.getY(), player.getZ());
-                lastPos = null;
-                stuckTicks = 0;
+                if (config.visitorsEnabled && visitorManager != null) {
+                    // Hand off to the visitor routine instead of warping to garden.
+                    visitorManager.start();
+                    state = MacroState.VISITING;
+                    LOGGER.info("[JustFarming] Visitor mode enabled – starting visitor routine.");
+                } else {
+                    triggerRewarp();
+                    // Begin a fresh detection cycle after warping back to garden
+                    state = MacroState.DETECTING;
+                    detectTicks = 0;
+                    detectStartPos = new Vec3d(player.getX(), player.getY(), player.getZ());
+                    lastPos = null;
+                    stuckTicks = 0;
+                }
+            }
+            case VISITING          -> {
+                // VisitorManager controls movement; we just wait for it to finish.
+                releaseKeys();
+                if (visitorManager != null && visitorManager.isDone()) {
+                    state = MacroState.DETECTING;
+                    detectTicks = 0;
+                    detectStartPos = new Vec3d(player.getX(), player.getY(), player.getZ());
+                    lastPos = null;
+                    stuckTicks = 0;
+                    LOGGER.info("[JustFarming] Visitor routine complete – resuming farming.");
+                }
             }
             case LANE_SWAP_WAITING -> {
                 releaseKeys();
