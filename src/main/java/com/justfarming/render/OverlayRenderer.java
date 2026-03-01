@@ -318,8 +318,8 @@ public class OverlayRenderer {
     /**
      * Returns an adjusted ESP box for a pest entity based on its entity type:
      * <ul>
-     *   <li>SILVERFISH – scale 1.25×, move 1 block higher, force cube shape.</li>
-     *   <li>BAT        – keep only the top half of the box, force cube shape.</li>
+     *   <li>SILVERFISH – 1.25-block cube centred on the entity (no vertical offset).</li>
+     *   <li>BAT        – 1.25-block cube centred on the entity (same size as SILVERFISH).</li>
      * </ul>
      */
     private static Box adjustedEspBox(Box box, EntityType<?> type) {
@@ -335,26 +335,38 @@ public class OverlayRenderer {
         return box.expand(ex, ey, ez).offset(0, -0.5, 0);
     }
 
+    /** Fixed ESP cube side length (blocks) for both silverfish and bat pests. */
+    private static final double PEST_ESP_CUBE_SIZE = 1.25;
+
     /**
-     * ESP box for silverfish-based pests: 1.25× size, 1 block higher, cube shape.
+     * ESP box for silverfish-based pests: 1.25-block cube centred on the
+     * entity bounding box, at its actual position (no vertical offset).
      */
     private static Box silverfishEspBox(Box box) {
-        // Scale 1.25× (expand 12.5% on each side)
-        double ex = box.getLengthX() * 0.125;
-        double ey = box.getLengthY() * 0.125;
-        double ez = box.getLengthZ() * 0.125;
-        // Move 1 block higher, then normalise to a cube
-        return makeCube(box.expand(ex, ey, ez).offset(0, 1.0, 0));
+        return fixedCubeEspBox(box);
     }
 
     /**
-     * ESP box for bat-based pests: retain only the top half of the original
-     * box, then normalise to a cube shape.
+     * ESP box for bat-based pests: 1.25-block cube centred on the entity
+     * bounding box (same size as the silverfish ESP box).
      */
     private static Box batEspBox(Box box) {
-        double midY = (box.minY + box.maxY) / 2.0;
-        Box topHalf = new Box(box.minX, midY, box.minZ, box.maxX, box.maxY, box.maxZ);
-        return makeCube(topHalf);
+        return fixedCubeEspBox(box);
+    }
+
+    /**
+     * Returns a cube of {@link #PEST_ESP_CUBE_SIZE} blocks, centred on
+     * {@code box}.  If the box's longest dimension already exceeds the
+     * target size the box is used as-is (normalised to a cube).
+     */
+    private static Box fixedCubeEspBox(Box box) {
+        double cx = (box.minX + box.maxX) / 2.0;
+        double cy = (box.minY + box.maxY) / 2.0;
+        double cz = (box.minZ + box.maxZ) / 2.0;
+        double maxDim = Math.max(box.getLengthX(), Math.max(box.getLengthY(), box.getLengthZ()));
+        double halfSide = Math.max(maxDim, PEST_ESP_CUBE_SIZE) / 2.0;
+        return new Box(cx - halfSide, cy - halfSide, cz - halfSide,
+                       cx + halfSide, cy + halfSide, cz + halfSide);
     }
 
     /**
