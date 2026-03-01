@@ -163,18 +163,14 @@ public class JustFarming implements ClientModInitializer {
 
             // Update pest detection every tick
             pestDetector.update(client);
-            if (pestDetector.isInGarden()) {
-                pestEntityDetector.update(client);
-            } else {
-                // Clear stale pest entities when outside the Garden and stop
-                // the macro so it does not run on other islands.
-                pestEntityDetector.clear();
-                if (config.gardenOnlyEnabled && macroManager.isRunning()) {
-                    macroManager.stop();
-                    if (client.player != null) {
-                        client.player.sendMessage(net.minecraft.text.Text.literal(
-                                "§c[JustFarming] Not in Garden – macro stopped."), false);
-                    }
+            pestEntityDetector.update(client);
+
+            // Stop macro if Garden-only mode is enabled and the player left the Garden
+            if (!pestDetector.isInGarden() && config.gardenOnlyEnabled && macroManager.isRunning()) {
+                macroManager.stop();
+                if (client.player != null) {
+                    client.player.sendMessage(net.minecraft.text.Text.literal(
+                            "§c[JustFarming] Not in Garden – macro stopped."), false);
                 }
             }
 
