@@ -8,6 +8,7 @@ import net.minecraft.component.DataComponentTypes;
 import net.minecraft.component.type.LoreComponent;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.attribute.EntityAttributes;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.screen.GenericContainerScreenHandler;
@@ -81,8 +82,16 @@ public class VisitorManager {
      * How far ahead (blocks) to probe the terrain when navigating.
      * Slightly more than half a block so we reliably detect edges and walls
      * before the player's centre reaches them.
+     * At high SkyBlock movement speeds this value is scaled up dynamically.
      */
     private static final double PROBE_STEP = 0.6;
+
+    /**
+     * Vanilla-default player walk-speed attribute value.
+     * Used as a baseline to measure how much faster the player is moving on
+     * Hypixel SkyBlock (due to Speed buffs from armour, pets, enchants, etc.).
+     */
+    private static final double BASE_WALK_SPEED = 0.1;
 
     // ── State machine ────────────────────────────────────────────────────────
 
@@ -420,11 +429,18 @@ public class VisitorManager {
         if (client.options == null || client.world == null) return;
         lookAt(player, target);
 
-        // Compute the position one PROBE_STEP ahead (horizontal only) so we can
-        // inspect the terrain before committing to a forward movement.
+        // Compute how many times faster the player is moving compared to vanilla.
+        // This covers Speed-effect buffs, armour bonuses, and other SkyBlock modifiers
+        // that all ultimately manifest as a higher MOVEMENT_SPEED attribute value.
+        double speedMult = getSpeedMultiplier(player);
+
+        // Scale the probe-step with speed so we look further ahead when moving fast,
+        // giving enough reaction distance to stop before hitting a wall.
+        double probeStep = Math.min(PROBE_STEP * speedMult, 5.0);
+
         double yawRad   = Math.toRadians(player.getYaw());
-        double stepX    = -Math.sin(yawRad) * PROBE_STEP;
-        double stepZ    =  Math.cos(yawRad) * PROBE_STEP;
+        double stepX    = -Math.sin(yawRad) * probeStep;
+        double stepZ    =  Math.cos(yawRad) * probeStep;
         double nextX    = player.getX() + stepX;
         double nextZ    = player.getZ() + stepZ;
         int    feetY    = (int) Math.floor(player.getY());
@@ -444,14 +460,40 @@ public class VisitorManager {
         boolean wallAhead  = !client.world.getBlockState(feetPos).isAir()
                           || !client.world.getBlockState(headPos).isAir();
 
+        boolean shouldWalk = floorAhead && !wallAhead;
+        if (shouldWalk) {
+            // Speed-aware pulsed walking near the target.
+            //
+            // At high SkyBlock movement speeds the player can overshoot the visitor
+            // in a single tick.  Once inside the "braking zone" we only press the
+            // forward key every pulseStride ticks (proportional to speed), reducing
+            // the average forward velocity enough to stop precisely at INTERACT_RADIUS.
+            double dist = new Vec3d(player.getX(), player.getY(), player.getZ()).distanceTo(target);
+            double brakingRadius = INTERACT_RADIUS + speedMult * 2.0;
+            if (dist < brakingRadius) {
+                int pulseStride = Math.max(1, (int) Math.ceil(speedMult));
+                long ticks = client.world.getTime(); // world game-tick counter
+                shouldWalk = (ticks % pulseStride == 0);
+            }
+        }
+
         // Only walk forward when there is solid ground ahead and no wall blocking the path.
         // Never trigger a jump – on Hypixel SkyBlock speed/jump buffs can reach level 10,
         // so autonomous jumping causes erratic movement near visitor NPCs.
-        client.options.forwardKey.setPressed(floorAhead && !wallAhead);
+        client.options.forwardKey.setPressed(shouldWalk);
         client.options.jumpKey.setPressed(false);
         client.options.backKey.setPressed(false);
         client.options.leftKey.setPressed(false);
         client.options.rightKey.setPressed(false);
+    }
+
+    /**
+     * Returns the player's movement speed as a multiple of the vanilla default.
+     * 1.0 = normal speed; values above 1.0 indicate SkyBlock speed buffs.
+     */
+    private double getSpeedMultiplier(ClientPlayerEntity player) {
+        double attrVal = player.getAttributeValue(EntityAttributes.MOVEMENT_SPEED);
+        return Math.max(1.0, attrVal / BASE_WALK_SPEED);
     }
 
     /** Rotate the player's camera to face {@code target}. */
