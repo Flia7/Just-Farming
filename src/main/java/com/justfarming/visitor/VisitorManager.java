@@ -21,6 +21,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -137,6 +138,41 @@ public class VisitorManager {
             Pattern.compile("(\\d[\\d,]*)\\s*[xX×]?\\s+(.+)");
     private static final Pattern PAT_AMOUNT_LAST  =
             Pattern.compile("(.+?)\\s*[xX×](\\d[\\d,]*)");
+
+    /**
+     * Canonical set of Hypixel SkyBlock Garden visitor NPC names.
+     * Only entities whose custom name exactly matches one of these (after stripping
+     * formatting codes) will be treated as visitors during pathfinding.
+     * Source: https://hypixel-skyblock.fandom.com/wiki/The_Garden/Visitors
+     */
+    private static final Set<String> KNOWN_VISITOR_NAMES = Set.of(
+            "Adventurer", "Alchemage", "Alchemist", "An", "Andrew", "Anita",
+            "Archaeologist", "Arthur", "Baker", "Banker Broadjaw", "Bartender",
+            "Bednom", "Beth", "Bruuh", "Carpenter", "Chantelle", "Chief Scorn",
+            "Chunk", "Clerk Seraphine", "Cold Enjoyer", "Dalbrek", "Dante Goon",
+            "Duke", "Dulin", "Duncan", "Dusk", "Elle", "Emissary Carlton",
+            "Emissary Ceanna", "Emissary Fraiser", "Emissary Sisko", "Emissary Wilson",
+            "Erihann", "Fann", "Farm Merchant", "Farmer Jon", "Farmhand",
+            "Fear Mongerer", "Felix", "Fisherman Gerald", "Fragilis", "Friendly Hiker",
+            "Frozen Alex", "Gary", "Gemma", "Geonathan Greatforge", "Gimley",
+            "Gold Forger", "Grandma Wolf", "Guy", "Gwendolyn", "Hendrik", "Hoppity",
+            "Hornum", "Hungry Hiker", "Iron Forger", "Jack", "Jacob", "Jacobus",
+            "Jamie", "Jerry", "Jotraeline Greatforge", "Lazy Miner", "Leo", "Liam",
+            "Librarian", "Lift Operator", "Ludleth", "Lumber Jack", "Lumina", "Lynn",
+            "Madame Eleanor Q. Goldsworth III", "Maeve", "Marco", "Marigold", "Mason",
+            "Master Tactician Funk", "Mayor Aatrox", "Mayor Cole", "Mayor Diana",
+            "Mayor Diaz", "Mayor Finnegan", "Mayor Foxy", "Mayor Marina", "Mayor Paul",
+            "Moby", "Odawa", "Old Man Garry", "Old Shaman Nyko", "Ophelia", "Oringo",
+            "Pearl Dealer", "Pest Wrangler", "Pest Wrangler?", "Pete", "Plumber Joe",
+            "Puzzler", "Queen Mismyla", "Queen Nyx", "Ravenous Rhino",
+            "Resident Neighbor", "Resident Snooty", "Rhys", "Romero", "Royal Resident",
+            "Rusty", "Ryan", "Ryu", "Sargwyn", "Scout Scardius", "Seymour", "Shaggy",
+            "Sherry", "Shifty", "Sirius", "Spaceman", "Spider Tamer", "St. Jerry",
+            "Stella", "Tammy", "Tarwen", "Terry", "The Trapper", "Tia the Fairy",
+            "Tom", "Tomioka", "Trevor", "Trinity", "Tyashoi Alchemist", "Tyzzo",
+            "Vargul", "Vex", "Vincent", "Vinyl Collector", "Weaponsmith", "Wizard",
+            "Xalx", "Zog"
+    );
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
@@ -372,7 +408,11 @@ public class VisitorManager {
                 player.getX() - SCAN_RADIUS, player.getY() - 8, player.getZ() - SCAN_RADIUS,
                 player.getX() + SCAN_RADIUS, player.getY() + 8, player.getZ() + SCAN_RADIUS);
         client.world.getEntitiesByClass(LivingEntity.class, searchBox,
-                        e -> e.getCustomName() != null && !(e instanceof PlayerEntity))
+                        e -> {
+                            if (e.getCustomName() == null || e instanceof PlayerEntity) return false;
+                            String name = stripFormatting(e.getCustomName().getString());
+                            return KNOWN_VISITOR_NAMES.contains(name);
+                        })
                 .forEach(pendingVisitors::add);
     }
 
@@ -392,13 +432,22 @@ public class VisitorManager {
         net.minecraft.util.math.BlockPos floorPos =
                 new net.minecraft.util.math.BlockPos(
                         (int) Math.floor(nextX), feetY - 1, (int) Math.floor(nextZ));
+        net.minecraft.util.math.BlockPos feetPos =
+                new net.minecraft.util.math.BlockPos(
+                        (int) Math.floor(nextX), feetY, (int) Math.floor(nextZ));
+        net.minecraft.util.math.BlockPos headPos =
+                new net.minecraft.util.math.BlockPos(
+                        (int) Math.floor(nextX), feetY + 1, (int) Math.floor(nextZ));
 
         boolean floorAhead = !client.world.getBlockState(floorPos).isAir();
+        // Stop walking if there is a solid block at feet or head level ahead (wall).
+        boolean wallAhead  = !client.world.getBlockState(feetPos).isAir()
+                          || !client.world.getBlockState(headPos).isAir();
 
-        // Only walk forward when there is solid ground ahead to avoid falling off edges.
+        // Only walk forward when there is solid ground ahead and no wall blocking the path.
         // Never trigger a jump – on Hypixel SkyBlock speed/jump buffs can reach level 10,
         // so autonomous jumping causes erratic movement near visitor NPCs.
-        client.options.forwardKey.setPressed(floorAhead);
+        client.options.forwardKey.setPressed(floorAhead && !wallAhead);
         client.options.jumpKey.setPressed(false);
         client.options.backKey.setPressed(false);
         client.options.leftKey.setPressed(false);
