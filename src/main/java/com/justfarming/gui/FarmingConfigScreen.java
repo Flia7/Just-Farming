@@ -2,6 +2,7 @@ package com.justfarming.gui;
 
 import com.justfarming.MacroManager;
 import com.justfarming.config.FarmingConfig;
+import com.justfarming.visitor.VisitorManager;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -48,7 +49,7 @@ public class FarmingConfigScreen extends Screen {
     private static final int COL_SHADOW      = 0x60000000; // drop shadow
 
     // ── Tabs ──────────────────────────────────────────────────────────────────
-    private static final String[] TAB_NAMES = { "Farming", "Pests", "Misc", "Delays" };
+    private static final String[] TAB_NAMES = { "Farming", "Pests", "Misc", "Delays", "Visitors" };
     private int activeTab = 0;
 
     // ── Dynamic layout (computed in init) ─────────────────────────────────────
@@ -62,6 +63,7 @@ public class FarmingConfigScreen extends Screen {
     private final Screen parent;
     private final FarmingConfig config;
     private final MacroManager macroManager;
+    private final VisitorManager visitorManager;
 
     // ── Tab selector buttons (in left nav panel) ──────────────────────────────
     private TabButton[] tabButtons;
@@ -95,6 +97,12 @@ public class FarmingConfigScreen extends Screen {
     private MousematPostDelaySlider       mousematPostDelaySlider;
     private MousematResumeDelaySlider     mousematResumeDelaySlider;
 
+    // ── Tab 4 – Visitors widgets ──────────────────────────────────────────────
+    private FlatBoolToggleWidget  visitorsEnabledButton;
+    private FlatBoolToggleWidget  visitorsBuyFromBazaarButton;
+    private VisitorInteractDelaySlider    visitorsInteractDelaySlider;
+    private VisitorTeleportDelaySlider    visitorsTeleportDelaySlider;
+
 
     // ── Always-visible widget ─────────────────────────────────────────────────
     private FlatButtonWidget saveCloseButton;
@@ -103,12 +111,14 @@ public class FarmingConfigScreen extends Screen {
     private int sectionCropY, actionSeparatorY;
     private int sectionPestsY, sectionMiscY, miscSeparatorY;
     private int sectionLaneSwapY, sectionRewarpDelayY, sectionMousematDelayY;
+    private int sectionVisitorsY;
 
     public FarmingConfigScreen(Screen parent, FarmingConfig config, MacroManager macroManager) {
         super(Text.translatable("gui.just-farming.title"));
-        this.parent       = parent;
-        this.config       = config;
-        this.macroManager = macroManager;
+        this.parent         = parent;
+        this.config         = config;
+        this.macroManager   = macroManager;
+        this.visitorManager = com.justfarming.JustFarming.getVisitorManager();
     }
 
     @Override
@@ -326,6 +336,37 @@ public class FarmingConfigScreen extends Screen {
         this.addDrawableChild(mousematResumeDelaySlider);
         mousematResumeDelaySlider.setTooltip(Tooltip.of(Text.literal("Wait after swapping back to the farming tool\nbefore resuming farming. (ms)")));
 
+        // ── Tab 4 – Visitors ──────────────────────────────────────────────────
+        y = contentTop;
+        sectionVisitorsY = y;
+        y += sLH;
+
+        visitorsEnabledButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
+                        Text.translatable("gui.just-farming.visitors_enabled_label"),
+                        config.visitorsEnabled);
+        this.addDrawableChild(visitorsEnabledButton);
+        visitorsEnabledButton.setTooltip(Tooltip.of(Text.literal(
+                "When enabled, the macro teleports to the barn at the rewarp point,\n" +
+                "interacts with each garden visitor, and returns to farming.")));
+        y += bh + pad;
+
+        visitorsBuyFromBazaarButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
+                        Text.translatable("gui.just-farming.visitors_buy_bazaar_label"),
+                        config.visitorsBuyFromBazaar);
+        this.addDrawableChild(visitorsBuyFromBazaarButton);
+        visitorsBuyFromBazaarButton.setTooltip(Tooltip.of(Text.literal(
+                "Automatically run /bazaar <item> and buy required items\nbefore accepting each visitor's offer.")));
+        y += bh + pad + gap;
+
+        visitorsInteractDelaySlider = new VisitorInteractDelaySlider(widgetX, y, bw, bh, config.visitorsInteractDelay);
+        this.addDrawableChild(visitorsInteractDelaySlider);
+        visitorsInteractDelaySlider.setTooltip(Tooltip.of(Text.literal("Delay between visitor NPC right-click attempts (ms)")));
+        y += bh + pad;
+
+        visitorsTeleportDelaySlider = new VisitorTeleportDelaySlider(widgetX, y, bw, bh, config.visitorsTeleportDelay);
+        this.addDrawableChild(visitorsTeleportDelaySlider);
+        visitorsTeleportDelaySlider.setTooltip(Tooltip.of(Text.literal("How long to wait after /tptoplot barn\nbefore scanning for visitor NPCs. (ms)")));
+
         // ── Always-visible: Close button anchored to the bottom ───────────────
         int closeBtnY = winY + winH - bh - pad;
         saveCloseButton = new FlatButtonWidget(widgetX, closeBtnY, bw, bh,
@@ -366,6 +407,12 @@ public class FarmingConfigScreen extends Screen {
         mousematPreDelaySlider.visible    = t3;
         mousematPostDelaySlider.visible   = t3;
         mousematResumeDelaySlider.visible = t3;
+
+        boolean t4 = activeTab == 4;
+        visitorsEnabledButton.visible         = t4;
+        visitorsBuyFromBazaarButton.visible   = t4;
+        visitorsInteractDelaySlider.visible   = t4;
+        visitorsTeleportDelaySlider.visible   = t4;
     }
 
     @Override
@@ -432,10 +479,22 @@ public class FarmingConfigScreen extends Screen {
             drawSectionLabel(context, "Misc", sectionMiscY);
             context.fill(contentX + 16, miscSeparatorY,
                     winR - 16, miscSeparatorY + 1, COL_SEP);
-        } else {
+        } else if (activeTab == 3) {
             drawSectionLabel(context, "Lane Swap", sectionLaneSwapY);
             drawSectionLabel(context, "Rewarp",    sectionRewarpDelayY);
             drawSectionLabel(context, "Mousemat",  sectionMousematDelayY);
+        } else if (activeTab == 4) {
+            drawSectionLabel(context, "Visitors", sectionVisitorsY);
+            // Show current visitor routine status below the sliders when active
+            if (visitorManager != null && visitorManager.isActive()) {
+                String stateText = "State: " + visitorManager.getState().name();
+                int visitorStatusX = contentX + Math.round(12 * scale);
+                // Position below the two toggle buttons + gap + two sliders
+                int visitorStatusY = visitorsTeleportDelaySlider.getY() + bh + pad * 2;
+                context.drawTextWithShadow(this.textRenderer,
+                        net.minecraft.text.Text.literal(stateText).withColor(COL_TEXT_MUTED),
+                        visitorStatusX, visitorStatusY, COL_TEXT_MUTED);
+            }
         }
 
         // ── Widgets ───────────────────────────────────────────────────────────
@@ -487,7 +546,12 @@ public class FarmingConfigScreen extends Screen {
         config.unlockedMouseEnabled = unlockedMouseButton.getValue();
         config.gardenOnlyEnabled    = gardenOnlyButton.getValue();
         config.squeakyMousematEnabled = squeakyMousematButton.getValue();
+        config.visitorsEnabled          = visitorsEnabledButton.getValue();
+        config.visitorsBuyFromBazaar    = visitorsBuyFromBazaarButton.getValue();
+        config.visitorsInteractDelay    = visitorsInteractDelaySlider.getDelayValue();
+        config.visitorsTeleportDelay    = visitorsTeleportDelaySlider.getDelayValue();
         macroManager.setConfig(config);
+        if (visitorManager != null) visitorManager.setConfig(config);
     }
 
     private Text getCropSelectText() {
@@ -842,5 +906,35 @@ public class FarmingConfigScreen extends Screen {
 
         @Override
         protected void applyValue() {}
+    }
+
+    /** Slider for the visitor NPC interact delay (200–3000 ms). */
+    private static class VisitorInteractDelaySlider extends IntStepSlider {
+
+        VisitorInteractDelaySlider(int x, int y, int width, int height, int initialValue) {
+            super(x, y, width, height, 200, 3000, initialValue);
+        }
+
+        int getDelayValue() { return getIntValue(); }
+
+        @Override
+        protected void updateMessage() {
+            setMessage(Text.literal(String.format("Visitor Interact Delay: %d ms", getIntValue())));
+        }
+    }
+
+    /** Slider for the visitor teleport-to-barn wait time (1000–8000 ms). */
+    private static class VisitorTeleportDelaySlider extends IntStepSlider {
+
+        VisitorTeleportDelaySlider(int x, int y, int width, int height, int initialValue) {
+            super(x, y, width, height, 1000, 8000, initialValue);
+        }
+
+        int getDelayValue() { return getIntValue(); }
+
+        @Override
+        protected void updateMessage() {
+            setMessage(Text.literal(String.format("Barn Teleport Wait: %d ms", getIntValue())));
+        }
     }
 }

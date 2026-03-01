@@ -5,6 +5,7 @@ import com.justfarming.gui.FarmingConfigScreen;
 import com.justfarming.pest.PestDetector;
 import com.justfarming.pest.PestEntityDetector;
 import com.justfarming.render.OverlayRenderer;
+import com.justfarming.visitor.VisitorManager;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -42,6 +43,7 @@ public class JustFarming implements ClientModInitializer {
     private static MacroManager macroManager;
     private static PestDetector pestDetector;
     private static PestEntityDetector pestEntityDetector;
+    private static VisitorManager visitorManager;
 
     // Keybindings
     private static KeyBinding toggleMacroKey;
@@ -60,6 +62,8 @@ public class JustFarming implements ClientModInitializer {
         macroManager = new MacroManager(net.minecraft.client.MinecraftClient.getInstance(), config);
         pestDetector = new PestDetector();
         pestEntityDetector = new PestEntityDetector();
+        visitorManager = new VisitorManager(net.minecraft.client.MinecraftClient.getInstance(), config);
+        macroManager.setVisitorManager(visitorManager);
 
         // Register keybindings
         toggleMacroKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
@@ -161,6 +165,9 @@ public class JustFarming implements ClientModInitializer {
             // Run macro tick
             macroManager.onTick();
 
+            // Run visitor manager tick (active only when visitor routine is running)
+            visitorManager.onTick();
+
             // Update pest detection every tick
             pestDetector.update(client);
             pestEntityDetector.update(client);
@@ -199,7 +206,7 @@ public class JustFarming implements ClientModInitializer {
             renderer.render(ctx);
         });
 
-        LOGGER.info("[JustFarming] Ready. Toggle macro: R | Open GUI: I | Freelook: L | Commands: /just rewarp, /just rewarp clear");
+        LOGGER.info("[JustFarming] Ready. Toggle macro: R | Open GUI: I | Freelook: L | Commands: /just rewarp, /just rewarp clear | Visitor mode: /just visitors");
     }
 
     /** Returns the shared config instance. */
@@ -215,5 +222,10 @@ public class JustFarming implements ClientModInitializer {
     /** Returns the shared pest detector instance. */
     public static PestDetector getPestDetector() {
         return pestDetector;
+    }
+
+    /** Returns the shared visitor manager instance. */
+    public static VisitorManager getVisitorManager() {
+        return visitorManager;
     }
 }
