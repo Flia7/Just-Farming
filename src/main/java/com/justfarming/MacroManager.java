@@ -211,7 +211,18 @@ public class MacroManager {
     public void start() {
         if (running) return;
         running = true;
-        state = config.squeakyMousematEnabled ? MacroState.MOUSEMAT_CLICK : MacroState.DETECTING;
+        boolean skipMousemat = false;
+        if (config.squeakyMousematEnabled && client.player != null) {
+            float desiredYaw   = config.getEffectiveYaw(config.selectedCrop);
+            float desiredPitch = config.getEffectivePitch(config.selectedCrop);
+            float yawDiff   = Math.abs(normalizeAngleDiff(client.player.getYaw()   - desiredYaw));
+            float pitchDiff = Math.abs(normalizeAngleDiff(client.player.getPitch() - desiredPitch));
+            if (yawDiff <= 1.0f && pitchDiff <= 1.0f) {
+                skipMousemat = true;
+                LOGGER.info("[JustFarming] Already aimed at target yaw/pitch – skipping Squeaky Mousemat.");
+            }
+        }
+        state = (config.squeakyMousematEnabled && !skipMousemat) ? MacroState.MOUSEMAT_CLICK : MacroState.DETECTING;
         detectTicks = 0;
         detectStartPos = null;
         lastPos = null;
