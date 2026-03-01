@@ -100,7 +100,8 @@ public class PestEntityDetector {
             found.add(new PestEntity(
                     new Vec3d(entity.getX(), entity.getY(), entity.getZ()),
                     box,
-                    displayName
+                    displayName,
+                    entity.getType()
             ));
         }
         detectedPests = Collections.unmodifiableList(found);
@@ -144,7 +145,7 @@ public class PestEntityDetector {
     }
 
     /**
-     * Snapshot of a detected pest entity's position, bounding box, and name.
+     * Snapshot of a detected pest entity's position, bounding box, name, and entity type.
      */
-    public record PestEntity(Vec3d position, Box boundingBox, String displayName) {}
+    public record PestEntity(Vec3d position, Box boundingBox, String displayName, EntityType<?> entityType) {}
 }

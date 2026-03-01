@@ -9,6 +9,7 @@ import com.mojang.blaze3d.platform.DepthTestFunction;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
 import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.render.Camera;
+import net.minecraft.entity.EntityType;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.RenderPhase;
 import net.minecraft.client.render.VertexConsumer;
@@ -20,7 +21,6 @@ import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalDouble;
@@ -135,14 +135,14 @@ public class OverlayRenderer {
         // ── Pest entity ESP & Tracer ──────────────────────────────────────────
         List<PestEntityDetector.PestEntity> entityPests = pestEntityDetector.getDetectedPests();
 
-        if (!entityPests.isEmpty()) {
+        if ((!config.gardenOnlyEnabled || pestDetector.isInGarden()) && !entityPests.isEmpty()) {
             MatrixStack.Entry entry = matrices.peek();
 
             // ESP boxes: see-through wireframe around each detected pest entity.
             if (config.pestEspEnabled) {
                 VertexConsumer espLines = consumers.getBuffer(PEST_ESP_SEE_THROUGH_LINES);
                 for (PestEntityDetector.PestEntity pest : entityPests) {
-                    renderEspBox(entry, espLines, adjustedEspBox(pest.boundingBox()), cx, cy, cz, COLOR_ESP);
+                    renderEspBox(entry, espLines, adjustedEspBox(pest.boundingBox(), pest.entityType()), cx, cy, cz, COLOR_ESP);
                 }
             }
 
@@ -166,7 +166,7 @@ public class OverlayRenderer {
                 double tracerStartZ =  Math.cos(yawRad) * cosP * 10.0;
 
                 for (PestEntityDetector.PestEntity pest : entityPests) {
-                    Box espBox = adjustedEspBox(pest.boundingBox());
+                    Box espBox = adjustedEspBox(pest.boundingBox(), pest.entityType());
                     double targetX = (espBox.minX + espBox.maxX) / 2.0 - cx;
                     double targetY = (espBox.minY + espBox.maxY) / 2.0 - cy;
                     double targetZ = (espBox.minZ + espBox.maxZ) / 2.0 - cz;
@@ -179,6 +179,7 @@ public class OverlayRenderer {
 
         // ── Plot borders & labels ─────────────────────────────────────────────
         if (!config.pestHighlightEnabled) return;
+        if (config.gardenOnlyEnabled && !pestDetector.isInGarden()) return;
 
         Set<String> pestPlots = pestDetector.getPestPlots();
         if (pestPlots.isEmpty()) return;
@@ -198,29 +199,15 @@ public class OverlayRenderer {
             renderPlotBorders(matrices, lineBuffer, b, cx, cy, cz, COLOR_WHITE);
         }
 
-        // Draw large floating title and smaller label for each infested plot
+        // Draw large floating title for each infested plot
         if (config.pestLabelsEnabled) {
             MinecraftClient mc = MinecraftClient.getInstance();
-            Map<String, Integer> pestCounts = pestDetector.getPestCounts();
-
-            // Count pests per plot from entity positions (more reliable than scoreboard)
-            Map<String, Integer> entityCounts = new HashMap<>();
-            for (PestEntityDetector.PestEntity pest : entityPests) {
-                String plotName = GardenPlot.getPlotNameAt(pest.position().x, pest.position().z);
-                if (plotName != null) {
-                    entityCounts.merge(plotName, 1, Integer::sum);
-                }
-            }
 
             float titleScale = config.pestTitleScale;
             for (Map.Entry<String, double[]> e : validPlots) {
                 double[] b = e.getValue();
                 double centreX = (b[0] + b[3]) / 2.0;
                 double centreZ = (b[2] + b[5]) / 2.0;
-                // Prefer entity-based count (most accurate); fall back to scoreboard count
-                Integer count = entityCounts.containsKey(e.getKey())
-                        ? entityCounts.get(e.getKey())
-                        : pestCounts.get(e.getKey());
 
                 // --- Large title: "Plot <N>" in the middle of the plot ---
                 String title = "Plot " + e.getKey();
@@ -233,24 +220,6 @@ public class OverlayRenderer {
                 float titleHalf = mc.textRenderer.getWidth(title) / 2.0f;
                 mc.textRenderer.draw(title, -titleHalf, 0, LABEL_COLOR, false,
                         titleMatrix, consumers, TextRenderer.TextLayerType.SEE_THROUGH,
-                        0, 0xF000F0);
-                matrices.pop();
-
-                // --- Pest count subtitle below the title ---
-                String subtitle = count != null
-                        ? PestDetector.formatPestCount(count)
-                        : "Pests: ?";
-                // Place subtitle below the title: title text extends down by (font_height * titleScale)
-                double subtitleY = titleY - 9.0 * titleScale - 2.0;
-                matrices.push();
-                matrices.translate(centreX - cx, subtitleY - cy, centreZ - cz);
-                matrices.multiply(camera.getRotation());
-                float subtitleScale = titleScale * 0.6f;
-                matrices.scale(subtitleScale, -subtitleScale, subtitleScale);
-                org.joml.Matrix4f subMatrix = matrices.peek().getPositionMatrix();
-                float subHalf = mc.textRenderer.getWidth(subtitle) / 2.0f;
-                mc.textRenderer.draw(subtitle, -subHalf, 0, LABEL_COLOR, false,
-                        subMatrix, consumers, TextRenderer.TextLayerType.SEE_THROUGH,
                         0, 0xF000F0);
                 matrices.pop();
             }
@@ -347,14 +316,57 @@ public class OverlayRenderer {
     }
 
     /**
-     * Returns a copy of {@code box} expanded to 1.5× its original dimensions
-     * and shifted down by half a block, so the overlay is larger and better
-     * centred on the pest entity.
+     * Returns an adjusted ESP box for a pest entity based on its entity type:
+     * <ul>
+     *   <li>SILVERFISH – scale 1.25×, move 1 block higher, force cube shape.</li>
+     *   <li>BAT        – keep only the top half of the box, force cube shape.</li>
+     * </ul>
      */
-    private static Box adjustedEspBox(Box box) {
+    private static Box adjustedEspBox(Box box, EntityType<?> type) {
+        if (type == EntityType.SILVERFISH) {
+            return silverfishEspBox(box);
+        } else if (type == EntityType.BAT) {
+            return batEspBox(box);
+        }
+        // Fallback: original 1.5× expand + shift down half a block
         double ex = box.getLengthX() * 0.25;
         double ey = box.getLengthY() * 0.25;
         double ez = box.getLengthZ() * 0.25;
         return box.expand(ex, ey, ez).offset(0, -0.5, 0);
+    }
+
+    /**
+     * ESP box for silverfish-based pests: 1.25× size, 1 block higher, cube shape.
+     */
+    private static Box silverfishEspBox(Box box) {
+        // Scale 1.25× (expand 12.5% on each side)
+        double ex = box.getLengthX() * 0.125;
+        double ey = box.getLengthY() * 0.125;
+        double ez = box.getLengthZ() * 0.125;
+        // Move 1 block higher, then normalise to a cube
+        return makeCube(box.expand(ex, ey, ez).offset(0, 1.0, 0));
+    }
+
+    /**
+     * ESP box for bat-based pests: retain only the top half of the original
+     * box, then normalise to a cube shape.
+     */
+    private static Box batEspBox(Box box) {
+        double midY = (box.minY + box.maxY) / 2.0;
+        Box topHalf = new Box(box.minX, midY, box.minZ, box.maxX, box.maxY, box.maxZ);
+        return makeCube(topHalf);
+    }
+
+    /**
+     * Returns a cubic bounding box centred on {@code box} whose side length
+     * equals the longest dimension of {@code box}.
+     */
+    private static Box makeCube(Box box) {
+        double cx = (box.minX + box.maxX) / 2.0;
+        double cy = (box.minY + box.maxY) / 2.0;
+        double cz = (box.minZ + box.maxZ) / 2.0;
+        double halfSide = Math.max(Math.max(box.getLengthX(), box.getLengthY()), box.getLengthZ()) / 2.0;
+        return new Box(cx - halfSide, cy - halfSide, cz - halfSide,
+                       cx + halfSide, cy + halfSide, cz + halfSide);
     }
 }
