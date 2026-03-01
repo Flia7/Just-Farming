@@ -29,7 +29,7 @@ import java.util.Set;
  * Renders highlighted plot borders for Hypixel Skyblock Garden plots that
  * contain pests.
  * <ul>
- *   <li>4 vertical corner lines at each plot corner in purple</li>
+ *   <li>4 vertical corner lines at each plot corner in white</li>
  *   <li>Horizontal rectangle at the bottom (MIN_Y) connecting all corners</li>
  *   <li>Horizontal rectangle at the top (MAX_Y) connecting all corners</li>
  * </ul>
@@ -43,12 +43,12 @@ import java.util.Set;
 public class OverlayRenderer {
 
     // Colours as packed ARGB ints
-    private static final int COLOR_PURPLE   = 0xFFAA44FF; // purple for ESP, tracer, rewarp, plot corners
-    private static final int COLOR_ESP      = COLOR_PURPLE;
-    private static final int COLOR_REWARP   = COLOR_PURPLE; // purple rewarp block outline
+    private static final int COLOR_WHITE    = 0xFFFFFFFF; // white for ESP, tracer, rewarp, plot corners
+    private static final int COLOR_ESP      = COLOR_WHITE;
+    private static final int COLOR_REWARP   = COLOR_WHITE; // white rewarp block outline
 
-    // Label colour (ARGB) – purple for "Plot N" text
-    private static final int LABEL_COLOR = COLOR_PURPLE;
+    // Label colour (ARGB) – white for "Plot N" text
+    private static final int LABEL_COLOR = COLOR_WHITE;
 
     // Semi-transparent black background behind floating text for readability
     private static final int TEXT_BG_COLOR = 0x40000000;
@@ -174,7 +174,7 @@ public class OverlayRenderer {
                     double targetZ = (espBox.minZ + espBox.maxZ) / 2.0 - cz;
                     drawLine(entry, tracerLines,
                             tracerStartX, tracerStartY, tracerStartZ,
-                            targetX, targetY, targetZ, COLOR_PURPLE);
+                            targetX, targetY, targetZ, COLOR_WHITE);
                 }
             }
         }
@@ -197,7 +197,7 @@ public class OverlayRenderer {
 
         for (Map.Entry<String, double[]> e : validPlots) {
             double[] b = e.getValue();
-            renderPlotBorders(matrices, lineBuffer, b, cx, cy, cz, COLOR_PURPLE);
+            renderPlotBorders(matrices, lineBuffer, b, cx, cy, cz, COLOR_WHITE);
         }
 
         // Draw large floating title and smaller label for each infested plot
@@ -226,28 +226,28 @@ public class OverlayRenderer {
                 matrices.pop();
 
                 // --- Pest count subtitle below the title ---
-                if (count != null) {
-                    String subtitle = PestDetector.formatPestCount(count);
-                    double subtitleY = titleY - 3.0;
-                    matrices.push();
-                    matrices.translate(centreX - cx, subtitleY - cy, centreZ - cz);
-                    matrices.multiply(camera.getRotation());
-                    float subtitleScale = titleScale * 0.6f;
-                    matrices.scale(subtitleScale, -subtitleScale, subtitleScale);
-                    org.joml.Matrix4f subMatrix = matrices.peek().getPositionMatrix();
-                    float subHalf = mc.textRenderer.getWidth(subtitle) / 2.0f;
-                    mc.textRenderer.draw(subtitle, -subHalf, 0, 0xFFFFAA00, false,
-                            subMatrix, consumers, TextRenderer.TextLayerType.SEE_THROUGH,
-                            TEXT_BG_COLOR, 0xF000F0);
-                    matrices.pop();
-                }
+                String subtitle = count != null
+                        ? PestDetector.formatPestCount(count)
+                        : "Pests: ?";
+                double subtitleY = titleY - 3.0;
+                matrices.push();
+                matrices.translate(centreX - cx, subtitleY - cy, centreZ - cz);
+                matrices.multiply(camera.getRotation());
+                float subtitleScale = titleScale * 0.6f;
+                matrices.scale(subtitleScale, -subtitleScale, subtitleScale);
+                org.joml.Matrix4f subMatrix = matrices.peek().getPositionMatrix();
+                float subHalf = mc.textRenderer.getWidth(subtitle) / 2.0f;
+                mc.textRenderer.draw(subtitle, -subHalf, 0, LABEL_COLOR, false,
+                        subMatrix, consumers, TextRenderer.TextLayerType.SEE_THROUGH,
+                        TEXT_BG_COLOR, 0xF000F0);
+                matrices.pop();
             }
         }
     }
 
     /**
      * Renders a cube-style plot outline: four vertical corner lines plus
-     * horizontal rectangles at the top and bottom, all in purple.
+     * horizontal rectangles at the top and bottom, all in white.
      */
     private void renderPlotBorders(MatrixStack matrices, VertexConsumer lines,
                                    double[] b, double cx, double cy, double cz,

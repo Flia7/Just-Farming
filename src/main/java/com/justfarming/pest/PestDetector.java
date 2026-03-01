@@ -124,10 +124,10 @@ public class PestDetector {
     }
 
     /**
-     * Formats a pest count as e.g. {@code "(1 pest)"} or {@code "(3 pests)"}.
+     * Formats a pest count as e.g. {@code "Pests: 1"} or {@code "Pests: 3"}.
      */
     public static String formatPestCount(int count) {
-        return "(" + count + (count == 1 ? " pest)" : " pests)");
+        return "Pests: " + count;
     }
 
     // -----------------------------------------------------------------------
