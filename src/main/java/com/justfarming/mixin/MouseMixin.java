@@ -30,6 +30,12 @@ public class MouseMixin {
     private void onMouseScroll(long window, double horizontal, double vertical, CallbackInfo ci) {
         MacroManager mm = JustFarming.getMacroManager();
         if (mm != null && mm.isFreelookActive()) {
+            // Do not adjust zoom while a GUI screen is open.
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (client != null && client.currentScreen != null) {
+                ci.cancel();
+                return;
+            }
             // Scroll up (vertical > 0) → closer; scroll down (vertical < 0) → farther.
             // Negating vertical converts GLFW's upward-positive convention into a
             // zoom-out (positive) / zoom-in (negative) delta for adjustFreelookZoom.

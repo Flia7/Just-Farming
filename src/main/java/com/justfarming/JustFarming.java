@@ -29,7 +29,7 @@ import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.lit
  *   <li>Keybind to open the config GUI (default: I)</li>
  *   <li>Auto tool switching to the best hoe in the hotbar</li>
  *   <li>Back-and-forth row pattern with automatic end-of-row detection</li>
- *   <li>{@code /jf rewarp} command to send {@code /warp garden} to the server</li>
+ *   <li>{@code /just rewarp} command to send {@code /warp garden} to the server</li>
  * </ul>
  */
 public class JustFarming implements ClientModInitializer {
@@ -83,10 +83,10 @@ public class JustFarming implements ClientModInitializer {
                 KEY_CATEGORY
         ));
 
-        // Register /jf rewarp client command
+        // Register /just rewarp client commands
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) ->
                 dispatcher.register(
-                        literal("jf")
+                        literal("just")
                                 .then(literal("rewarp")
                                         .executes(ctx -> {
                                             macroManager.setRewarpHere();
@@ -95,7 +95,16 @@ public class JustFarming implements ClientModInitializer {
                                                         net.minecraft.text.Text.literal("§a[JustFarming] Rewarp position set here."), true);
                                             }
                                             return 1;
-                                        }))));
+                                        })
+                                        .then(literal("clear")
+                                                .executes(ctx -> {
+                                                    macroManager.clearRewarps();
+                                                    if (ctx.getSource().getPlayer() != null) {
+                                                        ctx.getSource().getPlayer().sendMessage(
+                                                                net.minecraft.text.Text.literal("§a[JustFarming] All rewarp positions cleared."), true);
+                                                    }
+                                                    return 1;
+                                                })))));
 
         // Block the F5 perspective toggle while freelook is active.
         // START_CLIENT_TICK fires before handleKeyBindings(), so consuming
@@ -173,7 +182,7 @@ public class JustFarming implements ClientModInitializer {
             renderer.render(ctx);
         });
 
-        LOGGER.info("[JustFarming] Ready. Toggle macro: R | Open GUI: I | Freelook: L | Command: /jf rewarp");
+        LOGGER.info("[JustFarming] Ready. Toggle macro: R | Open GUI: I | Freelook: L | Commands: /just rewarp, /just rewarp clear");
     }
 
     /** Returns the shared config instance. */

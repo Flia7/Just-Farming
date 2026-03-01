@@ -128,6 +128,9 @@ public class MacroManager {
     /** System-time (ms) when the last Squeaky Mousemat action (slot switch or click) occurred. */
     private long mousematActionTime = 0;
 
+    /** Number of consecutive times the Squeaky Mousemat camera snap has failed. */
+    private int mousematFailCount = 0;
+
     // -----------------------------------------------------------------------
     // Constructor / config
     // -----------------------------------------------------------------------
@@ -298,6 +301,7 @@ public class MacroManager {
         mousematSnapPhase = 0;
         preMousematSlot = -1;
         mousematActionTime = 0;
+        mousematFailCount = 0;
         if (config.unlockedMouseEnabled) {
             client.mouse.unlockCursor();
         }
@@ -325,7 +329,7 @@ public class MacroManager {
     /**
      * Save the player's current position as the rewarp waypoint.
      * Every time the macro reaches this position it will automatically
-     * send {@code /warp garden}.  This is called by the {@code /jf rewarp}
+     * send {@code /warp garden}.  This is called by the {@code /just rewarp}
      * command.
      */
     public void setRewarpHere() {
@@ -338,6 +342,16 @@ public class MacroManager {
             LOGGER.info("[JustFarming] Rewarp position set to {}, {}, {}.",
                     config.rewarpX, config.rewarpY, config.rewarpZ);
         }
+    }
+
+    /**
+     * Clear all rewarp positions.
+     * Called by the {@code /just rewarp clear} command.
+     */
+    public void clearRewarps() {
+        config.rewarpSet = false;
+        config.save();
+        LOGGER.info("[JustFarming] Rewarp positions cleared.");
     }
 
     /**
@@ -528,9 +542,23 @@ public class MacroManager {
                 mousematActionTime = System.currentTimeMillis();
                 mousematSnapPhase = 3;
             } else {
-                // Snap not confirmed yet – retry the left-click
-                LOGGER.info("[JustFarming] Camera not snapped yet (yaw={}, pitch={}), retrying click.",
-                        player.getYaw(), player.getPitch());
+                // Snap not confirmed yet – retry the left-click or give up after 4 failures
+                mousematFailCount++;
+                LOGGER.info("[JustFarming] Camera not snapped yet (yaw={}, pitch={}), attempt {}.",
+                        player.getYaw(), player.getPitch(), mousematFailCount);
+                if (mousematFailCount >= 4) {
+                    // Give up and proceed to farming without the mousemat snap
+                    LOGGER.info("[JustFarming] Squeaky Mousemat failed {} times – snapping to crops directly.", mousematFailCount);
+                    if (preMousematSlot >= 0) {
+                        player.getInventory().setSelectedSlot(preMousematSlot);
+                    }
+                    mousematSnapPhase = 0;
+                    mousematFailCount = 0;
+                    state = MacroState.DETECTING;
+                    detectTicks = 0;
+                    detectStartPos = null;
+                    return;
+                }
                 performMousematClick(player);
                 mousematActionTime = System.currentTimeMillis();
             }
@@ -573,6 +601,11 @@ public class MacroManager {
         if (diff > 180.0f)  diff -= 360.0f;
         if (diff < -180.0f) diff += 360.0f;
         return diff;
+    }
+
+    /** Returns the block coordinate (floor) of the given world coordinate. */
+    private static int blockCoord(double coord) {
+        return (int) Math.floor(coord);
     }
 
     /**
@@ -760,9 +793,8 @@ public class MacroManager {
 
         // ---- Rewarp trigger ----
         if (config.rewarpSet) {
-            double distSq = Math.pow(currentPos.x - config.rewarpX, 2)
-                          + Math.pow(currentPos.z - config.rewarpZ, 2);
-            if (distSq <= config.rewarpRange * config.rewarpRange) {
+            if (blockCoord(currentPos.x) == blockCoord(config.rewarpX)
+                    && blockCoord(currentPos.z) == blockCoord(config.rewarpZ)) {
                 LOGGER.info("[JustFarming] Reached rewarp position – warping.");
                 warpStartTime   = System.currentTimeMillis();
                 warpTargetDelay = config.rewarpDelayMin
