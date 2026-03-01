@@ -87,8 +87,11 @@ public class PestDetector {
             ScoreboardObjective sidebar = sb.getObjectiveForSlot(ScoreboardDisplaySlot.SIDEBAR);
             if (sidebar != null) {
                 for (ScoreboardEntry e : sb.getScoreboardEntries(sidebar)) {
-                    // Try the entry's own display text first
-                    parseEntry(e.name().getString());
+                    // Try the entry's own display text first.
+                    // ScoreboardEntry.name() is @Nullable – skip rather than NPE.
+                    if (e.name() != null) {
+                        parseEntry(e.name().getString());
+                    }
                     // Also try the team-decorated text (prefix + owner + suffix)
                     Team team = sb.getScoreHolderTeam(e.owner());
                     if (team != null) {
