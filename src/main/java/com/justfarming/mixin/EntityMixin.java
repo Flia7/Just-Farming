@@ -39,6 +39,14 @@ public class EntityMixin implements CameraOverriddenEntity {
             return;
         }
 
+        // When a GUI screen is open (esc, inventory, chat, etc.) suppress camera
+        // movement so the player cannot accidentally move the view.
+        net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
+        if (client != null && client.currentScreen != null) {
+            ci.cancel();
+            return;
+        }
+
         if (!mm.isFreelookActive()) return;
 
         double pitchDelta = yDelta * 0.15;
