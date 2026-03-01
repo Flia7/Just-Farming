@@ -94,7 +94,7 @@ public class FarmingConfigScreen extends Screen {
 
     // ── Section-label Y positions (set in init, used in render) ───────────────
     private int sectionCropY, actionSeparatorY;
-    private int sectionPestsY, sectionMiscY;
+    private int sectionPestsY, sectionMiscY, miscSeparatorY;
     private int sectionLaneSwapY, sectionRewarpDelayY;
 
     public FarmingConfigScreen(Screen parent, FarmingConfig config, MacroManager macroManager) {
@@ -192,12 +192,6 @@ public class FarmingConfigScreen extends Screen {
                             btn.setMessage(getMacroToggleText());
                         });
         this.addDrawableChild(toggleMacroButton);
-        y += bh + pad;
-
-        squeakyMousematButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
-                        Text.translatable("gui.just-farming.squeaky_mousemat_label"),
-                        config.squeakyMousematEnabled);
-        this.addDrawableChild(squeakyMousematButton);
 
         // ── Tab 1 – Pests ─────────────────────────────────────────────────────
         y = contentTop;
@@ -243,12 +237,21 @@ public class FarmingConfigScreen extends Screen {
                             btn.setMessage(getFreelookButtonText());
                         });
         this.addDrawableChild(freelookButton);
-        y += bh + pad;
+        y += bh + pad + gap;
+
+        miscSeparatorY = y;
+        y += Math.max(2, Math.round(4 * scale));
 
         unlockedMouseButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
                         Text.translatable("gui.just-farming.unlocked_mouse_label"),
                         config.unlockedMouseEnabled);
         this.addDrawableChild(unlockedMouseButton);
+        y += bh + pad;
+
+        squeakyMousematButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
+                        Text.translatable("gui.just-farming.squeaky_mousemat_label"),
+                        config.squeakyMousematEnabled);
+        this.addDrawableChild(squeakyMousematButton);
 
         // ── Tab 3 – Delays ────────────────────────────────────────────────────
         y = contentTop;
@@ -288,7 +291,6 @@ public class FarmingConfigScreen extends Screen {
         cropSettingsButton.visible    = t0;
         setRewarpButton.visible       = t0;
         toggleMacroButton.visible     = t0;
-        squeakyMousematButton.visible = t0;
 
         boolean t1 = activeTab == 1;
         pestHighlightButton.visible = t1;
@@ -298,8 +300,9 @@ public class FarmingConfigScreen extends Screen {
         pestTracerButton.visible    = t1;
 
         boolean t2 = activeTab == 2;
-        freelookButton.visible      = t2;
-        unlockedMouseButton.visible = t2;
+        freelookButton.visible        = t2;
+        unlockedMouseButton.visible   = t2;
+        squeakyMousematButton.visible = t2;
 
         boolean t3 = activeTab == 3;
         laneSwapDelaySlider.visible  = t3;
@@ -370,6 +373,8 @@ public class FarmingConfigScreen extends Screen {
             drawSectionLabel(context, "Pests", sectionPestsY);
         } else if (activeTab == 2) {
             drawSectionLabel(context, "Misc", sectionMiscY);
+            context.fill(contentX + 16, miscSeparatorY,
+                    winR - 16, miscSeparatorY + 1, COL_SEP);
         } else {
             drawSectionLabel(context, "Lane Swap", sectionLaneSwapY);
             drawSectionLabel(context, "Rewarp",    sectionRewarpDelayY);
