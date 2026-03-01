@@ -9,6 +9,7 @@ import com.mojang.blaze3d.platform.DepthTestFunction;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
 import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.render.Camera;
+import net.minecraft.entity.EntityType;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.RenderPhase;
 import net.minecraft.client.render.VertexConsumer;
@@ -142,7 +143,7 @@ public class OverlayRenderer {
             if (config.pestEspEnabled) {
                 VertexConsumer espLines = consumers.getBuffer(PEST_ESP_SEE_THROUGH_LINES);
                 for (PestEntityDetector.PestEntity pest : entityPests) {
-                    renderEspBox(entry, espLines, adjustedEspBox(pest.boundingBox()), cx, cy, cz, COLOR_ESP);
+                    renderEspBox(entry, espLines, adjustedEspBox(pest.boundingBox(), pest.entityType()), cx, cy, cz, COLOR_ESP);
                 }
             }
 
@@ -166,7 +167,7 @@ public class OverlayRenderer {
                 double tracerStartZ =  Math.cos(yawRad) * cosP * 10.0;
 
                 for (PestEntityDetector.PestEntity pest : entityPests) {
-                    Box espBox = adjustedEspBox(pest.boundingBox());
+                    Box espBox = adjustedEspBox(pest.boundingBox(), pest.entityType());
                     double targetX = (espBox.minX + espBox.maxX) / 2.0 - cx;
                     double targetY = (espBox.minY + espBox.maxY) / 2.0 - cy;
                     double targetZ = (espBox.minZ + espBox.maxZ) / 2.0 - cz;
@@ -347,14 +348,57 @@ public class OverlayRenderer {
     }
 
     /**
-     * Returns a copy of {@code box} expanded to 1.5× its original dimensions
-     * and shifted down by half a block, so the overlay is larger and better
-     * centred on the pest entity.
+     * Returns an adjusted ESP box for a pest entity based on its entity type:
+     * <ul>
+     *   <li>SILVERFISH – scale 1.25×, move 1 block higher, force cube shape.</li>
+     *   <li>BAT        – keep only the top half of the box, force cube shape.</li>
+     * </ul>
      */
-    private static Box adjustedEspBox(Box box) {
+    private static Box adjustedEspBox(Box box, EntityType<?> type) {
+        if (type == EntityType.SILVERFISH) {
+            return silverfishEspBox(box);
+        } else if (type == EntityType.BAT) {
+            return batEspBox(box);
+        }
+        // Fallback: original 1.5× expand + shift down half a block
         double ex = box.getLengthX() * 0.25;
         double ey = box.getLengthY() * 0.25;
         double ez = box.getLengthZ() * 0.25;
         return box.expand(ex, ey, ez).offset(0, -0.5, 0);
+    }
+
+    /**
+     * ESP box for silverfish-based pests: 1.25× size, 1 block higher, cube shape.
+     */
+    private static Box silverfishEspBox(Box box) {
+        // Scale 1.25× (expand 12.5% on each side)
+        double ex = box.getLengthX() * 0.125;
+        double ey = box.getLengthY() * 0.125;
+        double ez = box.getLengthZ() * 0.125;
+        // Move 1 block higher, then normalise to a cube
+        return makeCube(box.expand(ex, ey, ez).offset(0, 1.0, 0));
+    }
+
+    /**
+     * ESP box for bat-based pests: retain only the top half of the original
+     * box, then normalise to a cube shape.
+     */
+    private static Box batEspBox(Box box) {
+        double midY = (box.minY + box.maxY) / 2.0;
+        Box topHalf = new Box(box.minX, midY, box.minZ, box.maxX, box.maxY, box.maxZ);
+        return makeCube(topHalf);
+    }
+
+    /**
+     * Returns a cubic bounding box centred on {@code box} whose side length
+     * equals the longest dimension of {@code box}.
+     */
+    private static Box makeCube(Box box) {
+        double cx = (box.minX + box.maxX) / 2.0;
+        double cy = (box.minY + box.maxY) / 2.0;
+        double cz = (box.minZ + box.maxZ) / 2.0;
+        double halfSide = Math.max(Math.max(box.getLengthX(), box.getLengthY()), box.getLengthZ()) / 2.0;
+        return new Box(cx - halfSide, cy - halfSide, cz - halfSide,
+                       cx + halfSide, cy + halfSide, cz + halfSide);
     }
 }
