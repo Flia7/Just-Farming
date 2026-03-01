@@ -120,7 +120,7 @@ public class JustFarming implements ClientModInitializer {
         // Register client tick callback
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (toggleMacroKey.wasPressed()) {
-                if (!macroManager.isRunning() && !pestDetector.isInGarden()) {
+                if (!macroManager.isRunning() && config.gardenOnlyEnabled && !pestDetector.isInGarden()) {
                     // Prevent starting the macro outside the Garden.
                     if (client.player != null) {
                         client.player.sendMessage(net.minecraft.text.Text.literal(
@@ -169,7 +169,7 @@ public class JustFarming implements ClientModInitializer {
                 // Clear stale pest entities when outside the Garden and stop
                 // the macro so it does not run on other islands.
                 pestEntityDetector.clear();
-                if (macroManager.isRunning()) {
+                if (config.gardenOnlyEnabled && macroManager.isRunning()) {
                     macroManager.stop();
                     if (client.player != null) {
                         client.player.sendMessage(net.minecraft.text.Text.literal(
