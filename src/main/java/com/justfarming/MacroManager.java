@@ -461,25 +461,17 @@ public class MacroManager {
      * <p>When the crosshair is on a block, sends {@code attackBlock}
      * (PlayerActionC2SPacket + HandSwingC2SPacket) so Hypixel Skyblock's
      * server-side handler recognises the click as a genuine left-click on a
-     * block and fires the item ability.  When the crosshair is not on a block,
-     * falls back to attacking the block below the player's feet (the floor) so
-     * the ability still fires reliably when the player is aiming at open air.
+     * block and fires the item ability.  When the crosshair is on air, sends
+     * a hand-swing packet (left click with no target), which is sufficient to
+     * trigger the Squeaky Mousemat ability server-side.
      */
     private void performMousematClick(ClientPlayerEntity player) {
         if (client.crosshairTarget instanceof BlockHitResult blockHit
                 && client.interactionManager != null
                 && client.world != null) {
             client.interactionManager.attackBlock(blockHit.getBlockPos(), blockHit.getSide());
-        } else if (client.interactionManager != null && client.world != null) {
-            // No block in crosshair – attack the floor block below the player so
-            // Hypixel receives the START_DESTROY_BLOCK packet needed to fire the ability.
-            BlockPos floorPos = player.getBlockPos().down();
-            if (!client.world.getBlockState(floorPos).isAir()) {
-                client.interactionManager.attackBlock(floorPos, Direction.UP);
-            } else {
-                player.swingHand(Hand.MAIN_HAND);
-            }
         } else {
+            // No block in crosshair – send a plain left-click (hand swing).
             player.swingHand(Hand.MAIN_HAND);
         }
     }
