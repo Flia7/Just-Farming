@@ -21,7 +21,6 @@ import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalDouble;
@@ -136,7 +135,7 @@ public class OverlayRenderer {
         // ── Pest entity ESP & Tracer ──────────────────────────────────────────
         List<PestEntityDetector.PestEntity> entityPests = pestEntityDetector.getDetectedPests();
 
-        if (!entityPests.isEmpty()) {
+        if ((!config.gardenOnlyEnabled || pestDetector.isInGarden()) && !entityPests.isEmpty()) {
             MatrixStack.Entry entry = matrices.peek();
 
             // ESP boxes: see-through wireframe around each detected pest entity.
@@ -180,6 +179,7 @@ public class OverlayRenderer {
 
         // ── Plot borders & labels ─────────────────────────────────────────────
         if (!config.pestHighlightEnabled) return;
+        if (config.gardenOnlyEnabled && !pestDetector.isInGarden()) return;
 
         Set<String> pestPlots = pestDetector.getPestPlots();
         if (pestPlots.isEmpty()) return;
@@ -199,29 +199,15 @@ public class OverlayRenderer {
             renderPlotBorders(matrices, lineBuffer, b, cx, cy, cz, COLOR_WHITE);
         }
 
-        // Draw large floating title and smaller label for each infested plot
+        // Draw large floating title for each infested plot
         if (config.pestLabelsEnabled) {
             MinecraftClient mc = MinecraftClient.getInstance();
-            Map<String, Integer> pestCounts = pestDetector.getPestCounts();
-
-            // Count pests per plot from entity positions (more reliable than scoreboard)
-            Map<String, Integer> entityCounts = new HashMap<>();
-            for (PestEntityDetector.PestEntity pest : entityPests) {
-                String plotName = GardenPlot.getPlotNameAt(pest.position().x, pest.position().z);
-                if (plotName != null) {
-                    entityCounts.merge(plotName, 1, Integer::sum);
-                }
-            }
 
             float titleScale = config.pestTitleScale;
             for (Map.Entry<String, double[]> e : validPlots) {
                 double[] b = e.getValue();
                 double centreX = (b[0] + b[3]) / 2.0;
                 double centreZ = (b[2] + b[5]) / 2.0;
-                // Prefer entity-based count (most accurate); fall back to scoreboard count
-                Integer count = entityCounts.containsKey(e.getKey())
-                        ? entityCounts.get(e.getKey())
-                        : pestCounts.get(e.getKey());
 
                 // --- Large title: "Plot <N>" in the middle of the plot ---
                 String title = "Plot " + e.getKey();
@@ -234,24 +220,6 @@ public class OverlayRenderer {
                 float titleHalf = mc.textRenderer.getWidth(title) / 2.0f;
                 mc.textRenderer.draw(title, -titleHalf, 0, LABEL_COLOR, false,
                         titleMatrix, consumers, TextRenderer.TextLayerType.SEE_THROUGH,
-                        0, 0xF000F0);
-                matrices.pop();
-
-                // --- Pest count subtitle below the title ---
-                String subtitle = count != null
-                        ? PestDetector.formatPestCount(count)
-                        : "Pests: ?";
-                // Place subtitle below the title: title text extends down by (font_height * titleScale)
-                double subtitleY = titleY - 9.0 * titleScale - 2.0;
-                matrices.push();
-                matrices.translate(centreX - cx, subtitleY - cy, centreZ - cz);
-                matrices.multiply(camera.getRotation());
-                float subtitleScale = titleScale * 0.6f;
-                matrices.scale(subtitleScale, -subtitleScale, subtitleScale);
-                org.joml.Matrix4f subMatrix = matrices.peek().getPositionMatrix();
-                float subHalf = mc.textRenderer.getWidth(subtitle) / 2.0f;
-                mc.textRenderer.draw(subtitle, -subHalf, 0, LABEL_COLOR, false,
-                        subMatrix, consumers, TextRenderer.TextLayerType.SEE_THROUGH,
                         0, 0xF000F0);
                 matrices.pop();
             }

@@ -65,9 +65,8 @@ public class MinecraftClientMixin {
     }
 
     /**
-     * When the macro is actively in a movement+breaking phase, skip the
-     * {@link KeyBinding#unpressAll()} call that {@code setScreen()} makes every
-     * time a GUI is opened.
+     * When the macro is running, skip the {@link KeyBinding#unpressAll()} call
+     * that {@code setScreen()} makes every time a GUI is opened.
      *
      * <p>Normally {@code setScreen()} calls {@code unpressAll()} to release every
      * held key before showing a new screen.  For the macro this creates a brief
@@ -75,11 +74,10 @@ public class MinecraftClientMixin {
      * unpressed, causing a visible micro-stutter.  Because the macro presses keys
      * programmatically (not via physical hardware), GLFW never sends a matching
      * "key released" hardware event, so skipping the call is safe: no physical
-     * key state is lost and the macro continues moving and breaking without
-     * interruption.
+     * key state is lost and the macro continues without interruption.
      *
-     * <p>When the macro is idle or not in a movement+breaking phase, the call is
-     * made explicitly so vanilla behaviour is preserved.
+     * <p>When the macro is idle the call is made explicitly so vanilla behaviour
+     * is preserved.
      */
     @Redirect(
             method = "setScreen",
@@ -87,7 +85,7 @@ public class MinecraftClientMixin {
     )
     private void redirectUnpressAll() {
         MacroManager mm = JustFarming.getMacroManager();
-        if (mm != null && mm.shouldBreak()) {
+        if (mm != null && mm.isRunning()) {
             return;
         }
         KeyBinding.unpressAll();
