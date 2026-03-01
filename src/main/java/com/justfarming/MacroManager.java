@@ -3,6 +3,7 @@ package com.justfarming;
 import com.justfarming.config.FarmingConfig;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.Vec3d;
 import org.slf4j.Logger;
@@ -14,6 +15,10 @@ import org.slf4j.LoggerFactory;
  * <p>State machine:
  * <ol>
  *   <li>IDLE – macro is not running.</li>
+ *   <li>MOUSEMAT_CLICK – switches to the Squeaky Mousemat slot, sends a
+ *       left-click ability (via {@code attackBlock} when aimed at a block) to
+ *       trigger the item ability on the server, then restores the original slot
+ *       before transitioning to DETECTING.</li>
  *   <li>DETECTING – observes the player for a few ticks to decide the initial
  *       direction (backward or forward).</li>
  *   <li>BACKWARD_LEFT – holds back + strafe-left + attack (Cocoa Beans).</li>
@@ -64,7 +69,7 @@ public class MacroManager {
     // State
     // -----------------------------------------------------------------------
 
-    private enum MacroState { IDLE, DETECTING, BACKWARD_LEFT, FORWARD_LEFT, FORWARD_RIGHT,
+    private enum MacroState { IDLE, MOUSEMAT_CLICK, DETECTING, BACKWARD_LEFT, FORWARD_LEFT, FORWARD_RIGHT,
             STRAFE_LEFT_ONLY, STRAFE_RIGHT_ONLY, BACK_ONLY, FORWARD_ONLY, WARPING,
             LANE_SWAP_WAITING }
 
@@ -111,6 +116,20 @@ public class MacroManager {
      * of switching to {@link #laneSwapNextState}.
      */
     private boolean laneSwapPendingCustomFlip = false;
+
+    /**
+     * Tracks which phase of the MOUSEMAT_CLICK state we are in.
+     * {@code 0} = slot not yet switched;
+     * {@code 1} = slot switched, waiting {@code mousematPreDelay} ms before clicking;
+     * {@code 2} = click sent, waiting {@code mousematPostDelay} ms before restoring slot.
+     */
+    private int mousematPhase = 0;
+
+    /** Hotbar slot that was active before the Squeaky Mousemat switch; -1 if unknown. */
+    private int preMousematSlot = -1;
+
+    /** System-time (ms) when the last mousemat phase transition occurred. */
+    private long mousematActionTime = 0;
 
 
     // -----------------------------------------------------------------------
@@ -274,12 +293,15 @@ public class MacroManager {
     public void start() {
         if (running) return;
         running = true;
-        state = MacroState.DETECTING;
+        state = config.squeakyMousematEnabled ? MacroState.MOUSEMAT_CLICK : MacroState.DETECTING;
         detectTicks = 0;
         detectStartPos = null;
         lastPos = null;
         stuckTicks = 0;
         customFlipped = false;
+        mousematPhase = 0;
+        preMousematSlot = -1;
+        mousematActionTime = 0;
         if (config.unlockedMouseEnabled) {
             client.mouse.unlockCursor();
         }
@@ -358,10 +380,15 @@ public class MacroManager {
         }
 
         // Lock pitch and yaw to crop-specific defaults every active tick.
-        player.setPitch(config.getEffectivePitch(config.selectedCrop));
-        player.setYaw(config.getEffectiveYaw(config.selectedCrop));
+        // Skipped during MOUSEMAT_CLICK so the ability's server-side camera
+        // adjustment (if any) is not immediately overridden.
+        if (state != MacroState.MOUSEMAT_CLICK) {
+            player.setPitch(config.getEffectivePitch(config.selectedCrop));
+            player.setYaw(config.getEffectiveYaw(config.selectedCrop));
+        }
 
         switch (state) {
+            case MOUSEMAT_CLICK     -> tickMousematClick(player);
             case DETECTING         -> tickDetecting(player);
             case BACKWARD_LEFT     -> tickMoving(player, false, true,  true,  false);
             case FORWARD_LEFT      -> tickMoving(player, true,  false, true,  false);
@@ -411,6 +438,97 @@ public class MacroManager {
     // -----------------------------------------------------------------------
     // State handlers
     // -----------------------------------------------------------------------
+
+    /**
+     * Mousemat click phase: switches to the Squeaky Mousemat slot, waits
+     * {@code mousematPreDelay} ms, sends a left-click (using
+     * {@code attackBlock} when the crosshair is on a block so Hypixel
+     * Skyblock's item ability fires server-side), then waits
+     * {@code mousematPostDelay} ms before restoring the original hotbar slot
+     * and transitioning to {@link MacroState#DETECTING}.
+     *
+     * <p>No camera-snap verification is performed – the macro proceeds
+     * unconditionally after the click.  If the Squeaky Mousemat is not found
+     * in the hotbar, the phase is skipped and DETECTING begins immediately.
+     */
+    private void tickMousematClick(ClientPlayerEntity player) {
+        releaseKeys();
+
+        if (mousematPhase == 0) {
+            // Phase 0: find the Squeaky Mousemat and switch to it.
+            int mousematSlot = -1;
+            for (int i = 0; i < 9; i++) {
+                net.minecraft.item.ItemStack stack = player.getInventory().getStack(i);
+                if (!stack.isEmpty() && stack.getName().getString().equals("Squeaky Mousemat")) {
+                    mousematSlot = i;
+                    break;
+                }
+            }
+            if (mousematSlot >= 0) {
+                preMousematSlot = player.getInventory().getSelectedSlot();
+                if (preMousematSlot == mousematSlot) {
+                    // Player was already holding the mousemat – find the farming tool.
+                    for (int i = 0; i < 9; i++) {
+                        if (i == mousematSlot) continue;
+                        if (!player.getInventory().getStack(i).isEmpty()) {
+                            preMousematSlot = i;
+                            break;
+                        }
+                    }
+                }
+                player.getInventory().setSelectedSlot(mousematSlot);
+                LOGGER.info("[JustFarming] Switched to Squeaky Mousemat slot {} (was slot {}).",
+                        mousematSlot, preMousematSlot);
+                mousematActionTime = System.currentTimeMillis();
+                mousematPhase = 1;
+            } else {
+                LOGGER.info("[JustFarming] Squeaky Mousemat not found in hotbar – skipping.");
+                mousematPhase = 0;
+                state = MacroState.DETECTING;
+                detectTicks = 0;
+                detectStartPos = null;
+            }
+
+        } else if (mousematPhase == 1) {
+            // Phase 1: wait pre-click delay, then send the left-click.
+            if (System.currentTimeMillis() - mousematActionTime < config.mousematPreDelay) return;
+            performMousematClick(player);
+            LOGGER.info("[JustFarming] Squeaky Mousemat left-click sent.");
+            mousematActionTime = System.currentTimeMillis();
+            mousematPhase = 2;
+
+        } else {
+            // Phase 2: wait post-click delay, then restore slot and start detecting.
+            if (System.currentTimeMillis() - mousematActionTime < config.mousematPostDelay) return;
+            if (preMousematSlot >= 0) {
+                player.getInventory().setSelectedSlot(preMousematSlot);
+                LOGGER.info("[JustFarming] Restored hotbar slot {}.", preMousematSlot);
+            }
+            mousematPhase = 0;
+            state = MacroState.DETECTING;
+            detectTicks = 0;
+            detectStartPos = null;
+        }
+    }
+
+    /**
+     * Performs the Squeaky Mousemat left-click.
+     *
+     * <p>When the crosshair is on a block, sends {@code attackBlock}
+     * (PlayerActionC2SPacket + HandSwingC2SPacket) so Hypixel Skyblock's
+     * server-side handler recognises the click as a genuine left-click on a
+     * block and fires the item ability.  Falls back to a plain hand swing
+     * when the crosshair is not on a block.
+     */
+    private void performMousematClick(ClientPlayerEntity player) {
+        if (client.crosshairTarget instanceof BlockHitResult blockHit
+                && client.interactionManager != null
+                && client.world != null) {
+            client.interactionManager.attackBlock(blockHit.getBlockPos(), blockHit.getSide());
+        } else {
+            player.swingHand(Hand.MAIN_HAND);
+        }
+    }
 
     /** Normalizes an angle difference to the range [-180, 180]. */
     private static float normalizeAngleDiff(float diff) {

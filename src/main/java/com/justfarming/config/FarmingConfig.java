@@ -68,6 +68,26 @@ public class FarmingConfig {
      */
     public boolean unlockedMouseEnabled = false;
 
+    /**
+     * When {@code true}, the macro will search the player's hotbar for a
+     * Squeaky Mousemat at startup and left-click it (using a block-attack packet
+     * so Hypixel Skyblock's item ability fires), instead of relying on the
+     * player's rotation being snapped by the server.
+     */
+    public boolean squeakyMousematEnabled = false;
+
+    /**
+     * Delay in milliseconds between switching to the Squeaky Mousemat
+     * hotbar slot and sending the left-click ability.
+     */
+    public int mousematPreDelay = 200;
+
+    /**
+     * Delay in milliseconds between sending the Squeaky Mousemat
+     * left-click and restoring the player's original hotbar slot.
+     */
+    public int mousematPostDelay = 200;
+
     // --- Rewarp trigger position ---
 
     /** Whether a rewarp position has been set. */
