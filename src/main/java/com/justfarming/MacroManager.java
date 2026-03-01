@@ -17,9 +17,10 @@ import org.slf4j.LoggerFactory;
  * <p>State machine:
  * <ol>
  *   <li>IDLE – macro is not running.</li>
- *   <li>MOUSEMAT_CLICK – switches to the Squeaky Mousemat slot, sends a
- *       left-click (hand swing) to trigger the item ability on the server,
- *       then restores the original slot before transitioning to DETECTING.</li>
+ *   <li>MOUSEMAT_CLICK – switches to the Squeaky Mousemat slot, sends an
+ *       attackBlock packet (when aimed at a block) plus a hand-swing to trigger
+ *       the item ability on the server, then restores the original slot before
+ *       transitioning to DETECTING.</li>
  *   <li>DETECTING – observes the player for a few ticks to decide the initial
  *       direction (backward or forward).</li>
  *   <li>BACKWARD_LEFT – holds back + strafe-left + attack (Cocoa Beans).</li>
@@ -457,10 +458,20 @@ public class MacroManager {
     /**
      * Performs the Squeaky Mousemat left-click.
      *
-     * <p>Sends a single hand-swing packet (left click) to trigger the
-     * Squeaky Mousemat item ability server-side.
+     * <p>Two branches:
+     * <ul>
+     *   <li>If the crosshair is aimed at a block, calls
+     *       {@code client.interactionManager.attackBlock(blockPos, side)}, which
+     *       sends a {@code PlayerActionC2SPacket} (START_DESTROY_BLOCK) to trigger
+     *       the item ability server-side, then swings the hand.</li>
+     *   <li>Otherwise, sends only the hand-swing packet.</li>
+     * </ul>
      */
     private void performMousematClick(ClientPlayerEntity player) {
+        if (client.interactionManager != null
+                && client.crosshairTarget instanceof BlockHitResult blockHit) {
+            client.interactionManager.attackBlock(blockHit.getBlockPos(), blockHit.getSide());
+        }
         player.swingHand(Hand.MAIN_HAND);
     }
 
