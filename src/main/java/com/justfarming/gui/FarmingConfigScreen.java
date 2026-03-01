@@ -88,8 +88,7 @@ public class FarmingConfigScreen extends Screen {
     private LaneSwapRandomSlider          laneSwapRandomSlider;
     private RewarpDelaySlider             rewarpDelaySlider;
     private RewarpRandomSlider            rewarpRandomSlider;
-    private MousematPreDelaySlider        mousematPreDelaySlider;
-    private MousematPostDelaySlider       mousematPostDelaySlider;
+
 
     // ── Always-visible widget ─────────────────────────────────────────────────
     private FlatButtonWidget saveCloseButton;
@@ -97,7 +96,7 @@ public class FarmingConfigScreen extends Screen {
     // ── Section-label Y positions (set in init, used in render) ───────────────
     private int sectionCropY, actionSeparatorY;
     private int sectionPestsY, sectionMiscY, miscSeparatorY;
-    private int sectionLaneSwapY, sectionRewarpDelayY, sectionMousematDelayY;
+    private int sectionLaneSwapY, sectionRewarpDelayY;
 
     public FarmingConfigScreen(Screen parent, FarmingConfig config, MacroManager macroManager) {
         super(Text.translatable("gui.just-farming.title"));
@@ -275,16 +274,6 @@ public class FarmingConfigScreen extends Screen {
 
         rewarpRandomSlider = new RewarpRandomSlider(widgetX, y, bw, bh, config.rewarpDelayRandom);
         this.addDrawableChild(rewarpRandomSlider);
-        y += bh + pad + gap;
-
-        sectionMousematDelayY = y;
-        y += sLH;
-        mousematPreDelaySlider = new MousematPreDelaySlider(widgetX, y, bw, bh, config.mousematPreDelay);
-        this.addDrawableChild(mousematPreDelaySlider);
-        y += bh + pad;
-
-        mousematPostDelaySlider = new MousematPostDelaySlider(widgetX, y, bw, bh, config.mousematPostDelay);
-        this.addDrawableChild(mousematPostDelaySlider);
 
         // ── Always-visible: Close button anchored to the bottom ───────────────
         int closeBtnY = winY + winH - bh - pad;
@@ -321,8 +310,6 @@ public class FarmingConfigScreen extends Screen {
         laneSwapRandomSlider.visible  = t3;
         rewarpDelaySlider.visible     = t3;
         rewarpRandomSlider.visible    = t3;
-        mousematPreDelaySlider.visible  = t3;
-        mousematPostDelaySlider.visible = t3;
     }
 
     @Override
@@ -392,7 +379,6 @@ public class FarmingConfigScreen extends Screen {
         } else {
             drawSectionLabel(context, "Lane Swap", sectionLaneSwapY);
             drawSectionLabel(context, "Rewarp",    sectionRewarpDelayY);
-            drawSectionLabel(context, "Mousemat",  sectionMousematDelayY);
         }
 
         // ── Widgets ───────────────────────────────────────────────────────────
@@ -432,8 +418,6 @@ public class FarmingConfigScreen extends Screen {
         config.laneSwapDelayRandom  = laneSwapRandomSlider.getRandomValue();
         config.rewarpDelayMin       = rewarpDelaySlider.getDelayValue();
         config.rewarpDelayRandom    = rewarpRandomSlider.getRandomValue();
-        config.mousematPreDelay     = mousematPreDelaySlider.getDelayValue();
-        config.mousematPostDelay    = mousematPostDelaySlider.getDelayValue();
         config.pestHighlightEnabled = pestHighlightButton.getValue();
         config.pestLabelsEnabled    = pestLabelsButton.getValue();
         config.pestTitleScale       = titleScaleSlider.getTitleScaleValue();
@@ -735,66 +719,6 @@ public class FarmingConfigScreen extends Screen {
         @Override
         protected void updateMessage() {
             setMessage(Text.literal(String.format("Pest Plot Label Scale: %.2f", getTitleScaleValue())));
-        }
-
-        @Override
-        public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
-            renderFlatSlider(context, getX(), getY(), getWidth(), getHeight(), value, getMessage());
-        }
-
-        @Override
-        protected void applyValue() {}
-    }
-
-    /** Slider for the Squeaky Mousemat pre-click delay (0–2000 ms). */
-    private static class MousematPreDelaySlider extends SliderWidget {
-
-        private static final int MIN =    0;
-        private static final int MAX = 2000;
-
-        MousematPreDelaySlider(int x, int y, int width, int height, int initialValue) {
-            super(x, y, width, height, Text.empty(),
-                    (double)(initialValue - MIN) / (MAX - MIN));
-            updateMessage();
-        }
-
-        int getDelayValue() {
-            return MIN + (int)Math.round(value * (MAX - MIN));
-        }
-
-        @Override
-        protected void updateMessage() {
-            setMessage(Text.literal(String.format("Mousemat Pre-Click Delay: %d ms", getDelayValue())));
-        }
-
-        @Override
-        public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
-            renderFlatSlider(context, getX(), getY(), getWidth(), getHeight(), value, getMessage());
-        }
-
-        @Override
-        protected void applyValue() {}
-    }
-
-    /** Slider for the Squeaky Mousemat post-click delay (0–2000 ms). */
-    private static class MousematPostDelaySlider extends SliderWidget {
-
-        private static final int MIN =    0;
-        private static final int MAX = 2000;
-
-        MousematPostDelaySlider(int x, int y, int width, int height, int initialValue) {
-            super(x, y, width, height, Text.empty(),
-                    (double)(initialValue - MIN) / (MAX - MIN));
-            updateMessage();
-        }
-
-        int getDelayValue() {
-            return MIN + (int)Math.round(value * (MAX - MIN));
-        }
-
-        @Override
-        protected void updateMessage() {
-            setMessage(Text.literal(String.format("Mousemat Post-Click Delay: %d ms", getDelayValue())));
         }
 
         @Override
