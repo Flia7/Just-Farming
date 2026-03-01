@@ -60,14 +60,11 @@ public class MacroManager {
     private static final double MAX_ZOOM = 20.0;
 
     /**
-     * Degrees to tilt the camera upward per tick while waiting for the
-     * Squeaky Mousemat crosshair to clear a block in MOUSEMAT_SNAP phase 1.
-     */
-    private static final float MOUSEMAT_PITCH_STEP = 5.0f;
-
-    /**
-     * Minimum pitch (most-upward angle) the macro will tilt to while clearing
-     * a block aim during MOUSEMAT_SNAP phase 1 (-90 = straight up).
+     * Pitch snapped to (degrees) when the crosshair is on a block at the moment
+     * the Squeaky Mousemat is clicked in MOUSEMAT_SNAP phase 1.  The server's
+     * own raycast uses the player's look direction; pointing upward guarantees
+     * the raycast finds air so the ability fires.  The change lasts a single
+     * tick and is immediately overwritten by the mousemat's own camera snap.
      */
     private static final float MOUSEMAT_PITCH_MIN = -85.0f;
 
@@ -449,9 +446,12 @@ public class MacroManager {
      *       already holding the mousemat, find the farming tool in the hotbar and
      *       save that slot as {@code preMousematSlot} so it can be restored later.
      *       Switch to the mousemat slot and record the action time.</li>
-     *   <li>Phase 1 – wait 200 ms after the slot switch.  If the player is still
-     *       aiming at a block, tilt the camera upward (5° per tick) until the
-     *       crosshair moves into air; then send the left-click (arm swing).</li>
+     *   <li>Phase 1 – wait 200 ms after the slot switch.  If the crosshair is on
+     *       a block (the ability only fires when looking at air), snap the pitch
+     *       to {@link #MOUSEMAT_PITCH_MIN} in the same tick as the click so the
+     *       server's raycast finds air.  The snap lasts one tick and is
+     *       immediately overwritten by the mousemat's own camera correction.
+     *       Send the left-click (arm swing).</li>
      *   <li>Phase 2 – wait 200 ms after the click, then check whether the player's
      *       yaw/pitch match the desired crop angles (within 2°).  If the snap
      *       succeeded, restore the farming tool slot and advance to phase 3.
@@ -507,13 +507,16 @@ public class MacroManager {
                 detectStartPos = null;
             }
         } else if (mousematSnapPhase == 1) {
-            // Phase 1: wait 200 ms after slot switch, then look into air and left-click
+            // Phase 1: wait 200 ms after slot switch, then left-click.
+            // The Squeaky Mousemat ability only fires when the server's own raycast
+            // finds air (not a block).  If the crosshair is on a block, snap the
+            // pitch upward to MOUSEMAT_PITCH_MIN in this same tick so the position
+            // packet sent with the swing reflects an upward look direction.  The
+            // snap lasts exactly one tick and is immediately overwritten by the
+            // mousemat's own camera correction in phase 2.
             if (System.currentTimeMillis() - mousematActionTime >= 200) {
-                // If the crosshair is hitting a block the mousemat ability won't fire –
-                // tilt the camera upward by 5° per tick until looking into air.
                 if (client.crosshairTarget instanceof BlockHitResult) {
-                    player.setPitch(Math.max(MOUSEMAT_PITCH_MIN, player.getPitch() - MOUSEMAT_PITCH_STEP));
-                    return;
+                    player.setPitch(MOUSEMAT_PITCH_MIN);
                 }
                 player.swingHand(Hand.MAIN_HAND);
                 LOGGER.info("[JustFarming] Left-clicking Squeaky Mousemat.");
