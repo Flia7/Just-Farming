@@ -499,11 +499,11 @@ public class MacroManager {
             }
         } else if (mousematSnapPhase == 1) {
             // Phase 1: wait 200 ms after slot switch, then left-click.
-            // swingHand sends only HandSwingC2SPacket — no block interaction,
-            // no breaking animation — which is all Hypixel Skyblock needs to
-            // trigger the Squeaky Mousemat ability regardless of crosshair target.
+            // When the crosshair is on a block, send a full attackBlock interaction
+            // (PlayerActionC2SPacket + HandSwingC2SPacket) so Hypixel Skyblock
+            // recognises the click regardless of crosshair target.
             if (System.currentTimeMillis() - mousematActionTime >= 200) {
-                player.swingHand(Hand.MAIN_HAND);
+                performMousematClick(player);
                 LOGGER.info("[JustFarming] Left-clicking Squeaky Mousemat.");
                 mousematActionTime = System.currentTimeMillis();
                 mousematSnapPhase = 2;
@@ -531,7 +531,7 @@ public class MacroManager {
                 // Snap not confirmed yet – retry the left-click
                 LOGGER.info("[JustFarming] Camera not snapped yet (yaw={}, pitch={}), retrying click.",
                         player.getYaw(), player.getPitch());
-                player.swingHand(Hand.MAIN_HAND);
+                performMousematClick(player);
                 mousematActionTime = System.currentTimeMillis();
             }
         } else {
@@ -544,6 +544,26 @@ public class MacroManager {
                 detectStartPos = null;
                 LOGGER.info("[JustFarming] Farming tool equipped. Starting DETECTING phase.");
             }
+        }
+    }
+
+    /**
+     * Performs a left-click interaction for the Squeaky Mousemat.
+     *
+     * <p>When the crosshair is aimed at a block, sends a full
+     * {@code attackBlock} interaction (which internally issues both
+     * {@code PlayerActionC2SPacket} and {@code HandSwingC2SPacket}) so
+     * that Hypixel Skyblock's server-side handler recognises the click
+     * as a genuine left-click when aimed at a block.
+     * Falls back to a plain arm swing when looking at air or an entity.
+     */
+    private void performMousematClick(ClientPlayerEntity player) {
+        if (client.crosshairTarget instanceof BlockHitResult blockHit
+                && client.interactionManager != null
+                && client.world != null) {
+            client.interactionManager.attackBlock(blockHit.getBlockPos(), blockHit.getSide());
+        } else {
+            player.swingHand(Hand.MAIN_HAND);
         }
     }
 
