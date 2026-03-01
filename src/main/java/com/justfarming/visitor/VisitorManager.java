@@ -420,7 +420,12 @@ public class VisitorManager {
                         e -> {
                             if (e.getCustomName() == null || e instanceof PlayerEntity) return false;
                             String name = stripFormatting(e.getCustomName().getString());
-                            return KNOWN_VISITOR_NAMES.contains(name);
+                            if (!KNOWN_VISITOR_NAMES.contains(name)) return false;
+                            if (config.visitorBlacklist != null && config.visitorBlacklist.contains(name)) {
+                                LOGGER.info("[JustFarming-Visitors] Skipping blacklisted visitor: {}", name);
+                                return false;
+                            }
+                            return true;
                         })
                 .forEach(pendingVisitors::add);
     }
@@ -528,11 +533,21 @@ public class VisitorManager {
     /**
      * Parse the open visitor-menu screen and populate {@link #pendingRequirements}.
      *
-     * <p>Hypixel Skyblock renders the visitor's required items as item stacks
-     * inside a chest-type GUI.  The amount and name are encoded either in the
-     * item's own display name or in its lore lines, using patterns such as
-     * {@code "64x Wheat"}, {@code "Wheat ×64"} or {@code "64 Wheat"}.
-     * We scan every visible slot and try every lore line and the item name itself.
+     * <p>Hypixel Skyblock renders visitor offers as chest-type GUIs.  One item
+     * in the GUI (the "offer" info-item, e.g. a paper/book) contains the full
+     * offer in its lore with distinct section headers:
+     * <pre>
+     *   Items Required:
+     *    • 64x Wheat
+     *   Rewards:
+     *    • +500 Farming XP
+     *    • 16x Emerald
+     * </pre>
+     * We perform <em>section-aware</em> parsing: only lines that appear after an
+     * "Items Required" header and before the "Rewards" header are considered as
+     * requirements.  For slots whose lore has no section markers, we fall back
+     * to scanning just the item's display name (never lore lines), which avoids
+     * accidentally treating reward items as requirements.
      */
     private void parseVisitorMenu(HandledScreen<?> screen) {
         pendingRequirements.clear();
@@ -544,14 +559,39 @@ public class VisitorManager {
             ItemStack stack = handler.getSlot(i).getStack();
             if (stack.isEmpty()) continue;
 
-            // Scan lore lines first
             LoreComponent lore = stack.getOrDefault(
                     DataComponentTypes.LORE, LoreComponent.DEFAULT);
-            for (Text line : lore.lines()) {
-                tryAddRequirement(stripFormatting(line.getString()));
+            List<Text> lines = lore.lines();
+
+            // Check whether this item's lore contains an "Items Required" section.
+            boolean hasRequiredSection = lines.stream().anyMatch(l -> {
+                String s = stripFormatting(l.getString()).toLowerCase();
+                return s.contains("items required") || s.startsWith("required:");
+            });
+
+            if (hasRequiredSection) {
+                // Section-aware parse: only extract lines from the required section.
+                boolean inRequired = false;
+                for (Text line : lines) {
+                    String stripped = stripFormatting(line.getString());
+                    String lower    = stripped.toLowerCase();
+                    if (lower.contains("items required") || lower.startsWith("required:")) {
+                        inRequired = true;
+                        continue;
+                    }
+                    if (lower.contains("reward") || lower.contains("you will receive")
+                            || lower.contains("you'll receive")) {
+                        inRequired = false;
+                    }
+                    if (inRequired) {
+                        tryAddRequirement(stripped);
+                    }
+                }
+            } else {
+                // Fallback: only look at the item's display name, never lore lines.
+                // This avoids treating reward-item lore as requirements.
+                tryAddRequirement(stripFormatting(stack.getName().getString()));
             }
-            // Also try the item's display name itself
-            tryAddRequirement(stripFormatting(stack.getName().getString()));
         }
         if (!pendingRequirements.isEmpty()) {
             LOGGER.info("[JustFarming-Visitors] Visitor requires: {}", pendingRequirements);

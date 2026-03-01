@@ -23,6 +23,7 @@
   "gui.just-farming.stop_macro": "Stop Macro",
   "gui.just-farming.visitors_enabled_label": "Visitor's macro:",
   "gui.just-farming.visitors_buy_bazaar_label": "Auto-Buy from Bazaar:",
+  "gui.just-farming.visitors_blacklist_label": "Blacklist Visitors...",
   "crop.just-farming.wheat": "Wheat",
   "crop.just-farming.carrot": "Carrot",
   "crop.just-farming.potato": "Potato",
