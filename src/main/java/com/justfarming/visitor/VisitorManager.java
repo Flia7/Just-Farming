@@ -69,6 +69,14 @@ public class VisitorManager {
     /** Time to wait after clicking "Buy Instantly" before looking for a confirm button (ms). */
     private static final long BUY_WAIT_MS = 600;
 
+    /**
+     * Minimum time (ms) to wait in ENTERING_AMOUNT before falling back to the
+     * HandledScreen branch.  This gives the server enough time to close the
+     * bazaar screen and open the sign editor before we decide that the sign
+     * is not coming.
+     */
+    private static final long ENTERING_AMOUNT_HANDLED_SCREEN_FALLBACK_MS = 1500;
+
     /** Minimum ms between consecutive entity-interact attempts. */
     private static final long INTERACT_COOLDOWN_MS = 1200;
 
@@ -76,7 +84,7 @@ public class VisitorManager {
     private static final long SCAN_TIMEOUT_MS = 3000;
 
     /** Pause after {@code /warp garden} to allow the command to register (ms). */
-    private static final long WARP_COMMAND_WAIT_MS = 1500;
+    private static final long WARP_COMMAND_WAIT_MS = 3000;
 
     // ── Sign-editor key constants ────────────────────────────────────────────
 
@@ -171,6 +179,14 @@ public class VisitorManager {
     private String amountToType  = null;
     private int    signTypingStep = 0;
 
+    /**
+     * When {@code true}, the next {@link State#CLOSING_MENU} transition came
+     * from accepting a visitor offer and should proceed to {@link #nextVisitor()}
+     * rather than {@link #startAcceptingOffer()}.
+     * Starts as {@code false} and is reset by {@link #start()} and {@link #stop()}.
+     */
+    private boolean postAccept = false;
+
     // Regex patterns for requirement lines like "64x Wheat", "Wheat ×32", "64 Wheat"
     private static final Pattern PAT_AMOUNT_FIRST =
             Pattern.compile("(\\d[\\d,]*)\\s*[xX×]?\\s+(.+)");
@@ -249,6 +265,7 @@ public class VisitorManager {
         if (state == State.IDLE || state == State.DONE) return;
         LOGGER.info("[JustFarming-Visitors] Visitor routine stopped by user.");
         releaseMovementKeys();
+        postAccept = false;
         enterState(State.DONE);
     }
 
@@ -260,6 +277,7 @@ public class VisitorManager {
         requirementIndex  = 0;
         currentVisitor    = null;
         interactCooldownUntil = 0;
+        postAccept        = false;
         enterState(State.TELEPORTING);
         sendCommand("tptoplot barn");
     }
@@ -342,7 +360,11 @@ public class VisitorManager {
 
             case CLOSING_MENU -> {
                 if (client.currentScreen == null) {
-                    if (!pendingRequirements.isEmpty() && config.visitorsBuyFromBazaar) {
+                    if (postAccept) {
+                        // Offer was accepted – move on to the next visitor.
+                        postAccept = false;
+                        nextVisitor();
+                    } else if (!pendingRequirements.isEmpty() && config.visitorsBuyFromBazaar) {
                         requirementIndex = 0;
                         openBazaarForCurrentRequirement();
                     } else {
@@ -422,8 +444,10 @@ public class VisitorManager {
                         signScreen.keyPressed(new net.minecraft.client.input.KeyInput(GLFW_KEY_ENTER, 0, 0));
                         enterState(State.CONFIRMING_PURCHASE);
                     }
-                } else if (currentScreen instanceof HandledScreen<?> screen) {
-                    // Sign screen didn't appear – try to confirm directly from a handled screen
+                } else if (currentScreen instanceof HandledScreen<?> screen
+                        && now - stateEnteredAt >= ENTERING_AMOUNT_HANDLED_SCREEN_FALLBACK_MS) {
+                    // Sign screen did not appear within the fallback window – try to
+                    // confirm directly from whatever handled screen is currently open.
                     tryClickConfirm(screen);
                     enterState(State.CLOSING_MENU);
                 } else if (currentScreen == null && now - stateEnteredAt >= 500) {
@@ -474,7 +498,9 @@ public class VisitorManager {
                 if (now - stateEnteredAt >= INTERACT_WAIT_MS) {
                     if (client.currentScreen instanceof HandledScreen<?> screen) {
                         tryClickAcceptOffer(screen);
-                        // Close after accepting
+                        // Close after accepting; mark that the next CLOSING_MENU
+                        // should move to the next visitor, not re-enter accepting.
+                        postAccept = true;
                         player.closeHandledScreen();
                         enterState(State.CLOSING_MENU);
                     } else {
