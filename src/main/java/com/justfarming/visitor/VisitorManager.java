@@ -61,7 +61,7 @@ public class VisitorManager {
     private static final long BAZAAR_WAIT_MS = 1500;
 
     /** Default time to wait between consecutive Bazaar click actions (ms). */
-    private static final long BAZAAR_CLICK_DEFAULT_MS = 800;
+    private static final long BAZAAR_CLICK_DEFAULT_MS = 300;
 
     /** Timeout for the sign-editor screen to appear after clicking "Buy Instantly" (ms). */
     private static final long ENTERING_AMOUNT_TIMEOUT_MS = 3000;
@@ -184,6 +184,15 @@ public class VisitorManager {
      */
     private boolean postAccept = false;
 
+    /**
+     * When {@code true}, the next {@link State#CLOSING_MENU} transition came
+     * from confirming a bazaar purchase and should call
+     * {@link #nextRequirementOrAccept()} rather than restarting from
+     * requirement index 0.
+     * Starts as {@code false} and is reset by {@link #start()} and {@link #stop()}.
+     */
+    private boolean postPurchase = false;
+
     // Regex patterns for requirement lines like "64x Wheat", "Wheat ×32", "64 Wheat"
     private static final Pattern PAT_AMOUNT_FIRST =
             Pattern.compile("(\\d[\\d,]*)\\s*[xX×]?\\s+(.+)");
@@ -263,6 +272,7 @@ public class VisitorManager {
         LOGGER.info("[JustFarming-Visitors] Visitor routine stopped by user.");
         releaseMovementKeys();
         postAccept = false;
+        postPurchase = false;
         enterState(State.DONE);
     }
 
@@ -275,6 +285,7 @@ public class VisitorManager {
         currentVisitor    = null;
         interactCooldownUntil = 0;
         postAccept        = false;
+        postPurchase      = false;
         enterState(State.TELEPORTING);
         sendCommand("tptoplot barn");
     }
@@ -361,6 +372,11 @@ public class VisitorManager {
                         // Offer was accepted – move on to the next visitor.
                         postAccept = false;
                         nextVisitor();
+                    } else if (postPurchase) {
+                        // A bazaar purchase was just confirmed – advance to the
+                        // next requirement or (if all done) accept the offer.
+                        postPurchase = false;
+                        nextRequirementOrAccept();
                     } else if (!pendingRequirements.isEmpty() && config.visitorsBuyFromBazaar) {
                         requirementIndex = 0;
                         openBazaarForCurrentRequirement();
@@ -453,6 +469,7 @@ public class VisitorManager {
                         // No Custom Amount button found – fall back to confirming
                         // whatever screen is currently open.
                         tryClickConfirm(screen);
+                        postPurchase = true;
                         enterState(State.CLOSING_MENU);
                     }
                 } else if (currentScreen == null && now - stateEnteredAt >= 500) {
@@ -468,10 +485,14 @@ public class VisitorManager {
             }
 
             case CONFIRMING_PURCHASE -> {
-                if (now - stateEnteredAt >= BUY_WAIT_MS) {
+                long clickDelay = config.bazaarClickDelay > 0
+                        ? config.bazaarClickDelay : BAZAAR_CLICK_DEFAULT_MS;
+                if (now - stateEnteredAt >= clickDelay) {
                     if (client.currentScreen instanceof HandledScreen<?> screen) {
                         tryClickConfirm(screen);
-                        // Let the CLOSING_MENU state handle the screen close
+                        // Press ESC to close the bazaar screen after confirming
+                        player.closeHandledScreen();
+                        postPurchase = true;
                         enterState(State.CLOSING_MENU);
                     } else {
                         nextRequirementOrAccept();

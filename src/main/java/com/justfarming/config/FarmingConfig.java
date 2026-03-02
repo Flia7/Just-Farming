@@ -187,10 +187,11 @@ public class FarmingConfig {
 
     /**
      * Delay in milliseconds between consecutive click actions inside the
-     * Bazaar GUI (e.g. clicking the search-result item, then "Buy Instantly").
+     * Bazaar GUI (e.g. clicking the search-result item, then "Buy Instantly",
+     * then confirming the purchase).
      * Increase this if Hypixel's server is slow to update the screen.
      */
-    public int bazaarClickDelay = 800;
+    public int bazaarClickDelay = 300;
 
     /**
      * Visitor names to skip automatically.  Any visitor whose name appears in
