@@ -103,6 +103,8 @@ public class FarmingConfigScreen extends Screen {
     private FlatButtonWidget              visitorsBlacklistButton;
     private VisitorInteractDelaySlider    visitorsInteractDelaySlider;
     private VisitorTeleportDelaySlider    visitorsTeleportDelaySlider;
+    private BazaarSearchDelaySlider       bazaarSearchDelaySlider;
+    private BazaarClickDelaySlider        bazaarClickDelaySlider;
 
 
     // ── Always-visible widget ─────────────────────────────────────────────────
@@ -379,6 +381,16 @@ public class FarmingConfigScreen extends Screen {
         visitorsTeleportDelaySlider = new VisitorTeleportDelaySlider(widgetX, y, bw, bh, config.visitorsTeleportDelay);
         this.addDrawableChild(visitorsTeleportDelaySlider);
         visitorsTeleportDelaySlider.setTooltip(Tooltip.of(Text.literal("How long to wait after /tptoplot barn\nbefore scanning for visitor NPCs. (ms)")));
+        y += bh + pad;
+
+        bazaarSearchDelaySlider = new BazaarSearchDelaySlider(widgetX, y, bw, bh, config.bazaarSearchDelay);
+        this.addDrawableChild(bazaarSearchDelaySlider);
+        bazaarSearchDelaySlider.setTooltip(Tooltip.of(Text.literal("How long to wait after /bazaar <item>\nbefore interacting with the search results. (ms)")));
+        y += bh + pad;
+
+        bazaarClickDelaySlider = new BazaarClickDelaySlider(widgetX, y, bw, bh, config.bazaarClickDelay);
+        this.addDrawableChild(bazaarClickDelaySlider);
+        bazaarClickDelaySlider.setTooltip(Tooltip.of(Text.literal("Delay between consecutive click actions inside\nthe Bazaar GUI (item click, Buy Instantly click). (ms)")));
 
         // ── Always-visible: Close button anchored to the bottom ───────────────
         int closeBtnY = winY + winH - bh - pad;
@@ -427,6 +439,8 @@ public class FarmingConfigScreen extends Screen {
         visitorsBlacklistButton.visible       = t4;
         visitorsInteractDelaySlider.visible   = t4;
         visitorsTeleportDelaySlider.visible   = t4;
+        bazaarSearchDelaySlider.visible       = t4;
+        bazaarClickDelaySlider.visible        = t4;
     }
 
     @Override
@@ -564,6 +578,8 @@ public class FarmingConfigScreen extends Screen {
         config.visitorsBuyFromBazaar    = visitorsBuyFromBazaarButton.getValue();
         config.visitorsInteractDelay    = visitorsInteractDelaySlider.getDelayValue();
         config.visitorsTeleportDelay    = visitorsTeleportDelaySlider.getDelayValue();
+        config.bazaarSearchDelay        = bazaarSearchDelaySlider.getDelayValue();
+        config.bazaarClickDelay         = bazaarClickDelaySlider.getDelayValue();
         macroManager.setConfig(config);
         if (visitorManager != null) visitorManager.setConfig(config);
     }
@@ -949,6 +965,36 @@ public class FarmingConfigScreen extends Screen {
         @Override
         protected void updateMessage() {
             setMessage(Text.literal(String.format("Barn Teleport Wait: %d ms", getIntValue())));
+        }
+    }
+
+    /** Slider for the bazaar search delay (500–5000 ms). */
+    private static class BazaarSearchDelaySlider extends IntStepSlider {
+
+        BazaarSearchDelaySlider(int x, int y, int width, int height, int initialValue) {
+            super(x, y, width, height, 500, 5000, initialValue);
+        }
+
+        int getDelayValue() { return getIntValue(); }
+
+        @Override
+        protected void updateMessage() {
+            setMessage(Text.literal(String.format("Bazaar Search Delay: %d ms", getIntValue())));
+        }
+    }
+
+    /** Slider for the delay between consecutive bazaar click actions (200–3000 ms). */
+    private static class BazaarClickDelaySlider extends IntStepSlider {
+
+        BazaarClickDelaySlider(int x, int y, int width, int height, int initialValue) {
+            super(x, y, width, height, 200, 3000, initialValue);
+        }
+
+        int getDelayValue() { return getIntValue(); }
+
+        @Override
+        protected void updateMessage() {
+            setMessage(Text.literal(String.format("Bazaar Click Delay: %d ms", getIntValue())));
         }
     }
 }

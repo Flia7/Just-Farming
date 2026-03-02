@@ -60,6 +60,12 @@ public class VisitorManager {
     /** Time to wait after {@code /bazaar <item>} before checking for the screen (ms). */
     private static final long BAZAAR_WAIT_MS = 1500;
 
+    /** Default time to wait between consecutive Bazaar click actions (ms). */
+    private static final long BAZAAR_CLICK_DEFAULT_MS = 800;
+
+    /** Timeout for the sign-editor screen to appear after clicking "Buy Instantly" (ms). */
+    private static final long ENTERING_AMOUNT_TIMEOUT_MS = 3000;
+
     /** Time to wait after clicking "Buy Instantly" before looking for a confirm button (ms). */
     private static final long BUY_WAIT_MS = 600;
 
@@ -71,6 +77,21 @@ public class VisitorManager {
 
     /** Pause after {@code /warp garden} to allow the command to register (ms). */
     private static final long WARP_COMMAND_WAIT_MS = 1500;
+
+    // ── Sign-editor key constants ────────────────────────────────────────────
+
+    /** GLFW key code for Backspace. */
+    private static final int GLFW_KEY_BACKSPACE = 259;
+
+    /** GLFW key code for Enter/Return. */
+    private static final int GLFW_KEY_ENTER = 257;
+
+    /**
+     * Number of backspace presses sent to clear the sign editor's default text.
+     * Hypixel Skyblock sign prompts are always short, so 50 presses is more
+     * than enough to clear any pre-filled text.
+     */
+    private static final int MAX_SIGN_TEXT_CLEAR_ITERATIONS = 50;
 
     /** Horizontal search radius (blocks) around the player when scanning for visitors. */
     private static final double SCAN_RADIUS = 32.0;
@@ -111,11 +132,15 @@ public class VisitorManager {
         READING_VISITOR_MENU,
         /** Waiting for the visitor menu to close before the next action. */
         CLOSING_MENU,
-        /** {@code /bazaar <item>} sent; waiting for the bazaar screen. */
+        /** {@code /bazaar <item>} sent; waiting for the bazaar search-results screen. */
         OPENING_BAZAAR,
-        /** The bazaar screen is open; navigating to "Buy Instantly". */
+        /** Bazaar search-results screen is open; clicking the matching item. */
+        CLICKING_BAZAAR_ITEM,
+        /** The bazaar item page is open; navigating to "Buy Instantly". */
         READING_BAZAAR,
-        /** "Buy Instantly" clicked; waiting for a confirmation screen. */
+        /** "Buy Instantly" clicked; waiting for the sign screen to enter the quantity. */
+        ENTERING_AMOUNT,
+        /** Quantity entered in sign; waiting for a confirmation screen. */
         CONFIRMING_PURCHASE,
         /** All items bought; walking back to the visitor to accept their offer. */
         ACCEPTING_OFFER,
@@ -141,6 +166,10 @@ public class VisitorManager {
     // Item requirements extracted from the current visitor's menu
     private final List<VisitorRequirement> pendingRequirements = new ArrayList<>();
     private int requirementIndex = 0;
+
+    // Sign-editor state for entering the purchase quantity
+    private String amountToType  = null;
+    private int    signTypingStep = 0;
 
     // Regex patterns for requirement lines like "64x Wheat", "Wheat ×32", "64 Wheat"
     private static final Pattern PAT_AMOUNT_FIRST =
@@ -323,9 +352,11 @@ public class VisitorManager {
             }
 
             case OPENING_BAZAAR -> {
-                if (now - stateEnteredAt >= BAZAAR_WAIT_MS) {
+                long searchDelay = config.bazaarSearchDelay > 0
+                        ? config.bazaarSearchDelay : BAZAAR_WAIT_MS;
+                if (now - stateEnteredAt >= searchDelay) {
                     if (client.currentScreen instanceof HandledScreen<?>) {
-                        enterState(State.READING_BAZAAR);
+                        enterState(State.CLICKING_BAZAAR_ITEM);
                     } else {
                         LOGGER.warn("[JustFarming-Visitors] Bazaar screen did not open; skipping.");
                         nextRequirementOrAccept();
@@ -333,15 +364,76 @@ public class VisitorManager {
                 }
             }
 
-            case READING_BAZAAR -> {
-                if (client.currentScreen instanceof HandledScreen<?> screen) {
-                    if (tryClickBuyInstantly(screen)) {
-                        enterState(State.CONFIRMING_PURCHASE);
+            case CLICKING_BAZAAR_ITEM -> {
+                long clickDelay = config.bazaarClickDelay > 0
+                        ? config.bazaarClickDelay : BAZAAR_CLICK_DEFAULT_MS;
+                if (now - stateEnteredAt >= clickDelay) {
+                    if (client.currentScreen instanceof HandledScreen<?> screen) {
+                        String itemName = pendingRequirements.get(requirementIndex).itemName;
+                        if (tryClickItemByName(screen, itemName)) {
+                            enterState(State.READING_BAZAAR);
+                        } else {
+                            LOGGER.warn("[JustFarming-Visitors] Could not find '{}' in bazaar; skipping.", itemName);
+                            player.closeHandledScreen();
+                            nextRequirementOrAccept();
+                        }
                     } else {
-                        player.closeHandledScreen();
                         nextRequirementOrAccept();
                     }
-                } else {
+                }
+            }
+
+            case READING_BAZAAR -> {
+                long clickDelay = config.bazaarClickDelay > 0
+                        ? config.bazaarClickDelay : BAZAAR_CLICK_DEFAULT_MS;
+                if (now - stateEnteredAt >= clickDelay) {
+                    if (client.currentScreen instanceof HandledScreen<?> screen) {
+                        if (tryClickBuyInstantly(screen)) {
+                            int amount = pendingRequirements.get(requirementIndex).amount;
+                            amountToType  = String.valueOf(amount);
+                            signTypingStep = 0;
+                            enterState(State.ENTERING_AMOUNT);
+                        } else {
+                            player.closeHandledScreen();
+                            nextRequirementOrAccept();
+                        }
+                    } else {
+                        nextRequirementOrAccept();
+                    }
+                }
+            }
+
+            case ENTERING_AMOUNT -> {
+                net.minecraft.client.gui.screen.Screen currentScreen = client.currentScreen;
+                if (currentScreen instanceof net.minecraft.client.gui.screen.ingame.AbstractSignEditScreen signScreen) {
+                    // Step 0: clear any default text already in the sign with backspaces
+                    if (signTypingStep == 0) {
+                        for (int i = 0; i < MAX_SIGN_TEXT_CLEAR_ITERATIONS; i++) {
+                            signScreen.keyPressed(new net.minecraft.client.input.KeyInput(GLFW_KEY_BACKSPACE, 0, 0));
+                        }
+                        signTypingStep = 1;
+                    } else if (amountToType != null && signTypingStep <= amountToType.length()) {
+                        // Type one digit per tick
+                        signScreen.charTyped(new net.minecraft.client.input.CharInput(
+                                (int) amountToType.charAt(signTypingStep - 1), 0));
+                        signTypingStep++;
+                    } else {
+                        // All digits typed – press Enter to confirm
+                        signScreen.keyPressed(new net.minecraft.client.input.KeyInput(GLFW_KEY_ENTER, 0, 0));
+                        enterState(State.CONFIRMING_PURCHASE);
+                    }
+                } else if (currentScreen instanceof HandledScreen<?> screen) {
+                    // Sign screen didn't appear – try to confirm directly from a handled screen
+                    tryClickConfirm(screen);
+                    enterState(State.CLOSING_MENU);
+                } else if (currentScreen == null && now - stateEnteredAt >= 500) {
+                    // Screen closed on its own (purchase may have completed)
+                    nextRequirementOrAccept();
+                } else if (now - stateEnteredAt >= ENTERING_AMOUNT_TIMEOUT_MS) {
+                    LOGGER.warn("[JustFarming-Visitors] Timed out waiting for sign screen; skipping requirement.");
+                    if (currentScreen != null) {
+                        player.closeHandledScreen();
+                    }
                     nextRequirementOrAccept();
                 }
             }
@@ -659,6 +751,8 @@ public class VisitorManager {
             return;
         }
         String itemName = pendingRequirements.get(requirementIndex).itemName;
+        amountToType  = null;
+        signTypingStep = 0;
         sendCommand("bazaar " + itemName);
         enterState(State.OPENING_BAZAAR);
         LOGGER.info("[JustFarming-Visitors] Opening bazaar for: {}", itemName);
@@ -704,6 +798,33 @@ public class VisitorManager {
      */
     private boolean tryClickBuyInstantly(HandledScreen<?> screen) {
         return tryClickSlotWithName(screen, "Buy Instantly");
+    }
+
+    /**
+     * Scan the open screen for a slot whose plain-text name contains
+     * {@code targetName} (case-insensitive) and click it.  Used to click the
+     * matching item in the Bazaar search-results screen.
+     *
+     * @return {@code true} if a matching slot was found and clicked.
+     */
+    private boolean tryClickItemByName(HandledScreen<?> screen, String targetName) {
+        if (client.player == null) return false;
+        if (!(client.player.currentScreenHandler instanceof GenericContainerScreenHandler handler)) {
+            return false;
+        }
+        String lowerTarget = targetName.toLowerCase();
+        for (int i = 0; i < handler.slots.size(); i++) {
+            ItemStack stack = handler.getSlot(i).getStack();
+            if (stack.isEmpty()) continue;
+            String name = stripFormatting(stack.getName().getString()).toLowerCase();
+            if (!name.isEmpty() && (name.contains(lowerTarget) || lowerTarget.contains(name))) {
+                client.interactionManager.clickSlot(
+                        handler.syncId, i, 0, SlotActionType.PICKUP, client.player);
+                LOGGER.info("[JustFarming-Visitors] Clicked bazaar item '{}' at slot {}.", name, i);
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
