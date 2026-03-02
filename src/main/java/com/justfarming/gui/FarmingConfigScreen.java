@@ -547,11 +547,13 @@ public class FarmingConfigScreen extends Screen {
         // ── Nav / content vertical separator ─────────────────────────────────
         context.fill(winX + navW, winY + 6, winX + navW + 1, winB - 6, COL_BORDER);
 
-        // ── Nav: mod title ────────────────────────────────────────────────────
+        // ── Nav: mod title (two-tone: "Just " dim, "Farming" accented) ──────────
         int navCenterX = winX + navW / 2;
         int navTitleY  = winY + Math.max(4, Math.round(8 * scale));
         context.drawCenteredTextWithShadow(this.textRenderer,
-                Text.literal("Just Farming").withColor(COL_TEXT),
+                net.minecraft.text.Text.empty()
+                        .append(net.minecraft.text.Text.literal("Just ").withColor(COL_TEXT_MUTED))
+                        .append(net.minecraft.text.Text.literal("Farming").withColor(COL_ACCENT)),
                 navCenterX, navTitleY, COL_TEXT);
 
         // ── Nav: separator line below title ─────────────────────────────────
@@ -625,11 +627,13 @@ public class FarmingConfigScreen extends Screen {
     /** Draws a labelled section header spanning the content area. */
     private void drawSectionLabel(DrawContext context, String label, int y) {
         int winR = winX + winW;
+        // Accent bar: starts at contentX+6, width 3 px
+        int accentBarEnd = contentX + 9;
         context.fill(contentX + 4, y, winR - 4, y + sLH, COL_SECTION_BG);
-        context.fill(contentX + 6, y + 1, contentX + 8, y + sLH - 1, COL_ACCENT);
+        context.fill(contentX + 6, y + 1, accentBarEnd, y + sLH - 1, COL_ACCENT);
         context.drawTextWithShadow(this.textRenderer,
-                Text.literal(label).withColor(COL_TEXT_MUTED),
-                contentX + 12, y + 1, COL_TEXT_MUTED);
+                Text.literal(label).withColor(COL_TEXT),
+                accentBarEnd + 5, y + 1, COL_TEXT);
     }
 
     @Override
@@ -762,6 +766,8 @@ public class FarmingConfigScreen extends Screen {
             int x = getX(), y = getY(), w = getWidth(), h = getHeight();
             int bg = isHovered() ? COL_BG_HOVER : COL_BG_NORMAL;
             context.fill(x, y, x + w, y + h, bg);
+            // Subtle inner bottom shadow for depth
+            context.fill(x + 1, y + h - 2, x + w - 1, y + h - 1, 0x18000000);
             // 1-px border
             context.fill(x,         y,         x + w, y + 1,     COL_BORDER);
             context.fill(x,         y + h - 1, x + w, y + h,     COL_BORDER);
@@ -772,13 +778,23 @@ public class FarmingConfigScreen extends Screen {
             // Label (left-aligned)
             var tr = MinecraftClient.getInstance().textRenderer;
             context.drawTextWithShadow(tr, label, x + 8, y + (h - 8) / 2, COL_TEXT);
-            // ON / OFF indicator (right-aligned, coloured)
-            String indicator     = value ? "\u25CF ON" : "\u25CF OFF";
-            int    indicatorColor = value ? COL_ON : COL_OFF;
-            int    indicatorX    = x + w - tr.getWidth(indicator) - 8;
-            context.drawTextWithShadow(tr,
-                    net.minecraft.text.Text.literal(indicator).withColor(indicatorColor),
-                    indicatorX, y + (h - 8) / 2, indicatorColor);
+            // Pill-style toggle switch (right-aligned)
+            int pillW = 28, pillH = Math.max(8, h - 10);
+            int pillX = x + w - pillW - 8;
+            int pillY = y + (h - pillH) / 2;
+            // Track
+            context.fill(pillX,          pillY,          pillX + pillW, pillY + pillH,
+                    value ? 0x9050E890 : 0x40FFFFFF);
+            // Track border
+            context.fill(pillX,              pillY,              pillX + pillW, pillY + 1,          0x70FFFFFF);
+            context.fill(pillX,              pillY + pillH - 1,  pillX + pillW, pillY + pillH,      0x70FFFFFF);
+            context.fill(pillX,              pillY + 1,          pillX + 1,     pillY + pillH - 1,  0x70FFFFFF);
+            context.fill(pillX + pillW - 1,  pillY + 1,          pillX + pillW, pillY + pillH - 1,  0x70FFFFFF);
+            // Knob (slides right when ON, left when OFF)
+            int knobSize = pillH - 2;
+            int knobX = value ? (pillX + pillW - knobSize - 1) : (pillX + 1);
+            context.fill(knobX, pillY + 1, knobX + knobSize, pillY + 1 + knobSize,
+                    value ? COL_ON : 0xB0FFFFFF);
         }
 
         @Override
