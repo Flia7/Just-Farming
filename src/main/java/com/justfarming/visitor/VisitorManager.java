@@ -198,8 +198,10 @@ public class VisitorManager {
     private int requirementIndex = 0;
 
     // Sign-editor state for entering the purchase quantity
-    private String amountToType  = null;
+    private String amountToType   = null;
     private int    signTypingStep = 0;
+    /** Timestamp of the last character typed into the sign editor (ms). */
+    private long   signLastTypedAt = 0;
 
     /**
      * When {@code true}, the next {@link State#CLOSING_MENU} transition came
@@ -478,11 +480,16 @@ public class VisitorManager {
                             signScreen.keyPressed(new net.minecraft.client.input.KeyInput(GLFW_KEY_BACKSPACE, 0, 0));
                         }
                         signTypingStep = 1;
+                        signLastTypedAt = now; // start 300 ms typing-spread timer
                     } else if (amountToType != null && signTypingStep <= amountToType.length()) {
-                        // Type one digit per tick
-                        signScreen.charTyped(new net.minecraft.client.input.CharInput(
-                                (int) amountToType.charAt(signTypingStep - 1), 0));
-                        signTypingStep++;
+                        // Space digits so total typing takes at least 300 ms.
+                        long perCharMs = Math.max(75L, 300L / amountToType.length());
+                        if (now - signLastTypedAt >= perCharMs) {
+                            signScreen.charTyped(new net.minecraft.client.input.CharInput(
+                                    (int) amountToType.charAt(signTypingStep - 1), 0));
+                            signTypingStep++;
+                            signLastTypedAt = now;
+                        }
                     } else {
                         // All digits typed – close the sign editor via its close() method,
                         // which calls finishEditing() to send the sign text to the server.
@@ -944,16 +951,30 @@ public class VisitorManager {
             return false;
         }
         String lowerTarget = targetName.toLowerCase();
+        // Two-pass: prefer an exact name match over a partial containment match
+        // to avoid clicking "Wild Rose" when we need "Compacted Wild Rose".
+        int exactSlot   = -1;
+        int partialSlot = -1;
         for (int i = 0; i < handler.slots.size(); i++) {
             ItemStack stack = handler.getSlot(i).getStack();
             if (stack.isEmpty()) continue;
             String name = stripFormatting(stack.getName().getString()).toLowerCase();
-            if (!name.isEmpty() && (name.contains(lowerTarget) || lowerTarget.contains(name))) {
-                client.interactionManager.clickSlot(
-                        handler.syncId, i, 0, SlotActionType.PICKUP, client.player);
-                LOGGER.info("[JustFarming-Visitors] Clicked bazaar item '{}' at slot {}.", name, i);
-                return true;
+            if (name.isEmpty()) continue;
+            if (name.equals(lowerTarget)) {
+                exactSlot = i;
+                break;
             }
+            if (partialSlot < 0 && name.contains(lowerTarget)) {
+                partialSlot = i;
+            }
+        }
+        int slot = exactSlot >= 0 ? exactSlot : partialSlot;
+        if (slot >= 0) {
+            String matched = stripFormatting(handler.getSlot(slot).getStack().getName().getString());
+            client.interactionManager.clickSlot(
+                    handler.syncId, slot, 0, SlotActionType.PICKUP, client.player);
+            LOGGER.info("[JustFarming-Visitors] Clicked bazaar item '{}' at slot {}.", matched, slot);
+            return true;
         }
         return false;
     }
