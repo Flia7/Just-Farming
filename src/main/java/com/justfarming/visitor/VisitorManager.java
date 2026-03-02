@@ -64,7 +64,10 @@ public class VisitorManager {
     /** Default base delay for every visitor action (ms). */
     private static final long ACTION_DELAY_DEFAULT_MS = 600;
 
-    /** Time to wait after {@code /bazaar <item>} before checking for the screen (ms). */
+    /**
+     * Maximum time (ms) to keep polling for a bazaar screen / item to appear before
+     * giving up.  Allows the routine to survive server lag without skipping purchases.
+     */
     private static final long BAZAAR_WAIT_MS = 1500;
 
     /** Timeout for the sign-editor screen to appear after clicking "Buy Instantly" (ms). */
@@ -99,6 +102,21 @@ public class VisitorManager {
      * This replicates the natural feel of a player moving their mouse.
      */
     private static final float SMOOTH_LOOK_DEGREES_PER_TICK = 8.0f;
+
+    /**
+     * Maximum random yaw offset (degrees) applied to the walking direction so the
+     * visitor approach path varies slightly between runs (humanlike behaviour).
+     */
+    private static final float WALK_JITTER_MAX_DEGREES = 10.0f;
+
+    /**
+     * How often (ms) the random walk-direction jitter is re-randomised.
+     * Keeping this fairly short (< 1 s) produces natural-looking path variation.
+     */
+    private static final long WALK_JITTER_INTERVAL_MS = 800;
+
+    /** Steer-angle offsets (degrees) tried in order when the direct path is blocked by a wall. */
+    private static final float[] WALL_STEER_ANGLES = { 15f, -15f, 30f, -30f };
 
     // ── Sign-editor key constants ────────────────────────────────────────────
 
@@ -188,6 +206,12 @@ public class VisitorManager {
     // Smooth camera rotation targets
     private float targetYaw   = 0f;
     private float targetPitch = 0f;
+
+    // Walk-direction jitter for humanlike path variation
+    /** Current random yaw offset (degrees) added to the walking direction. */
+    private float walkJitter = 0f;
+    /** Timestamp (ms) when the walk jitter should next be re-randomised. */
+    private long  walkJitterNextUpdate = 0;
 
     // Visitor tracking
     private Entity       currentVisitor  = null;
@@ -313,6 +337,8 @@ public class VisitorManager {
         interactCooldownUntil = 0;
         postAccept        = false;
         postPurchase      = false;
+        walkJitter        = 0f;
+        walkJitterNextUpdate = 0;
         long base = config.visitorsTeleportDelay > 0
                 ? config.visitorsTeleportDelay : TELEPORT_WAIT_DEFAULT_MS;
         teleportWaitMs = base + random.nextInt((int) TELEPORT_EXTRA_RANDOM_MS + 1);
@@ -426,34 +452,40 @@ public class VisitorManager {
             }
 
             case OPENING_BAZAAR -> {
-                if (now - stateEnteredAt >= currentActionDelay) {
-                    if (client.currentScreen instanceof HandledScreen<?>) {
+                // Poll every tick until the bazaar search-results screen opens.
+                // Only give up after BAZAAR_WAIT_MS so server lag doesn't cause skips.
+                if (client.currentScreen instanceof HandledScreen<?>) {
+                    if (now - stateEnteredAt >= currentActionDelay) {
                         enterState(State.CLICKING_BAZAAR_ITEM);
-                    } else {
-                        LOGGER.warn("[JustFarming-Visitors] Bazaar screen did not open; skipping.");
-                        nextRequirementOrAccept();
                     }
+                } else if (now - stateEnteredAt >= BAZAAR_WAIT_MS) {
+                    LOGGER.warn("[JustFarming-Visitors] Bazaar screen did not open; skipping.");
+                    nextRequirementOrAccept();
                 }
             }
 
             case CLICKING_BAZAAR_ITEM -> {
+                // Wait the minimum action delay, then keep polling until the item appears
+                // in the bazaar results (server lag can delay item rendering).
                 if (now - stateEnteredAt >= currentActionDelay) {
                     if (client.currentScreen instanceof HandledScreen<?> screen) {
                         String itemName = pendingRequirements.get(requirementIndex).itemName;
                         if (tryClickItemByName(screen, itemName)) {
                             enterState(State.READING_BAZAAR);
-                        } else {
+                        } else if (now - stateEnteredAt >= BAZAAR_WAIT_MS) {
                             LOGGER.warn("[JustFarming-Visitors] Could not find '{}' in bazaar; skipping.", itemName);
                             player.closeHandledScreen();
                             nextRequirementOrAccept();
                         }
-                    } else {
+                        // else: results may still be loading due to lag – keep polling
+                    } else if (now - stateEnteredAt >= BAZAAR_WAIT_MS) {
                         nextRequirementOrAccept();
                     }
                 }
             }
 
             case READING_BAZAAR -> {
+                // Wait the minimum action delay, then poll until "Buy Instantly" is visible.
                 if (now - stateEnteredAt >= currentActionDelay) {
                     if (client.currentScreen instanceof HandledScreen<?> screen) {
                         if (tryClickBuyInstantly(screen)) {
@@ -461,11 +493,12 @@ public class VisitorManager {
                             amountToType  = String.valueOf(amount);
                             signTypingStep = 0;
                             enterState(State.ENTERING_AMOUNT);
-                        } else {
+                        } else if (now - stateEnteredAt >= BAZAAR_WAIT_MS) {
                             player.closeHandledScreen();
                             nextRequirementOrAccept();
                         }
-                    } else {
+                        // else: item page may still be loading due to lag – keep polling
+                    } else if (now - stateEnteredAt >= BAZAAR_WAIT_MS) {
                         nextRequirementOrAccept();
                     }
                 }
@@ -525,6 +558,7 @@ public class VisitorManager {
             }
 
             case CONFIRMING_PURCHASE -> {
+                // Poll until the confirmation screen appears (lag can delay it).
                 if (now - stateEnteredAt >= currentActionDelay) {
                     if (client.currentScreen instanceof HandledScreen<?> screen) {
                         tryClickConfirm(screen);
@@ -532,9 +566,10 @@ public class VisitorManager {
                         player.closeHandledScreen();
                         postPurchase = true;
                         enterState(State.CLOSING_MENU);
-                    } else {
+                    } else if (now - stateEnteredAt >= BAZAAR_WAIT_MS) {
                         nextRequirementOrAccept();
                     }
+                    // else: confirmation screen may still be loading – keep polling
                 }
             }
 
@@ -627,7 +662,23 @@ public class VisitorManager {
 
     private void walkToward(ClientPlayerEntity player, Vec3d target) {
         if (client.options == null || client.world == null) return;
-        lookAt(player, target);
+
+        long now = System.currentTimeMillis();
+        // Periodically re-randomise the walk-direction jitter for humanlike path variation.
+        // (random.nextFloat() * 2f - 1f) produces a uniform value in [-1, 1].
+        if (now >= walkJitterNextUpdate) {
+            walkJitter = (random.nextFloat() * 2f - 1f) * WALK_JITTER_MAX_DEGREES;
+            walkJitterNextUpdate = now + WALK_JITTER_INTERVAL_MS;
+        }
+
+        // Compute the direct yaw toward the target (pitch is unchanged by jitter).
+        Vec3d eye = player.getEyePos();
+        double dx = target.x - eye.x;
+        double dy = (target.y + 1.0) - eye.y; // aim at roughly head height
+        double dz = target.z - eye.z;
+        double distXZ = Math.sqrt(dx * dx + dz * dz);
+        float baseTargetYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
+        targetPitch = (float) -Math.toDegrees(Math.atan2(dy, distXZ));
 
         // Compute how many times faster the player is moving compared to vanilla.
         // This covers Speed-effect buffs, armour bonuses, and other SkyBlock modifiers
@@ -638,29 +689,27 @@ public class VisitorManager {
         // giving enough reaction distance to stop before hitting a wall.
         double probeStep = Math.min(PROBE_STEP * speedMult, 5.0);
 
-        double yawRad   = Math.toRadians(player.getYaw());
-        double stepX    = -Math.sin(yawRad) * probeStep;
-        double stepZ    =  Math.cos(yawRad) * probeStep;
-        double nextX    = player.getX() + stepX;
-        double nextZ    = player.getZ() + stepZ;
-        int    feetY    = (int) Math.floor(player.getY());
+        // Try the direct path first; if clear, apply jitter for humanlike variation.
+        // If blocked, try steering angles to navigate around the wall.
+        boolean shouldWalk = false;
+        float chosenYaw = baseTargetYaw;
+        if (isPassable(player, baseTargetYaw, probeStep)) {
+            shouldWalk = true;
+            chosenYaw  = baseTargetYaw + walkJitter; // jitter for varied paths when clear
+        } else {
+            for (float steer : WALL_STEER_ANGLES) {
+                if (isPassable(player, baseTargetYaw + steer, probeStep)) {
+                    shouldWalk = true;
+                    chosenYaw  = baseTargetYaw + steer; // steer around the wall (no jitter)
+                    break;
+                }
+            }
+        }
 
-        net.minecraft.util.math.BlockPos floorPos =
-                new net.minecraft.util.math.BlockPos(
-                        (int) Math.floor(nextX), feetY - 1, (int) Math.floor(nextZ));
-        net.minecraft.util.math.BlockPos feetPos =
-                new net.minecraft.util.math.BlockPos(
-                        (int) Math.floor(nextX), feetY, (int) Math.floor(nextZ));
-        net.minecraft.util.math.BlockPos headPos =
-                new net.minecraft.util.math.BlockPos(
-                        (int) Math.floor(nextX), feetY + 1, (int) Math.floor(nextZ));
+        // Aim camera toward the chosen direction with a single smooth step.
+        targetYaw = chosenYaw;
+        smoothRotateCamera(player);
 
-        boolean floorAhead = !client.world.getBlockState(floorPos).isAir();
-        // Stop walking if there is a solid block at feet or head level ahead (wall).
-        boolean wallAhead  = !client.world.getBlockState(feetPos).isAir()
-                          || !client.world.getBlockState(headPos).isAir();
-
-        boolean shouldWalk = floorAhead && !wallAhead;
         if (shouldWalk) {
             // Speed-aware pulsed walking near the target.
             //
@@ -685,6 +734,28 @@ public class VisitorManager {
         client.options.backKey.setPressed(false);
         client.options.leftKey.setPressed(false);
         client.options.rightKey.setPressed(false);
+    }
+
+    /**
+     * Returns {@code true} if the path one {@code probeStep} ahead in the given
+     * {@code yawDeg} direction is passable: there must be a solid floor below and
+     * no wall block at feet or head level.
+     */
+    private boolean isPassable(ClientPlayerEntity player, double yawDeg, double probeStep) {
+        double yawRad = Math.toRadians(yawDeg);
+        double nextX  = player.getX() + -Math.sin(yawRad) * probeStep;
+        double nextZ  = player.getZ() +  Math.cos(yawRad) * probeStep;
+        int    feetY  = (int) Math.floor(player.getY());
+        net.minecraft.util.math.BlockPos floorPos =
+                new net.minecraft.util.math.BlockPos((int) Math.floor(nextX), feetY - 1, (int) Math.floor(nextZ));
+        net.minecraft.util.math.BlockPos feetPos =
+                new net.minecraft.util.math.BlockPos((int) Math.floor(nextX), feetY,     (int) Math.floor(nextZ));
+        net.minecraft.util.math.BlockPos headPos =
+                new net.minecraft.util.math.BlockPos((int) Math.floor(nextX), feetY + 1, (int) Math.floor(nextZ));
+        boolean floorAhead = !client.world.getBlockState(floorPos).isAir();
+        boolean wallAhead  = !client.world.getBlockState(feetPos).isAir()
+                          || !client.world.getBlockState(headPos).isAir();
+        return floorAhead && !wallAhead;
     }
 
     /**
