@@ -65,6 +65,22 @@ public class MacroManager {
     /** Maximum freelook camera distance (blocks). */
     private static final double MAX_ZOOM = 20.0;
 
+    /**
+     * Convergence speed for smooth camera rotation (per second).
+     * With exponential decay the formula is {@code t = 1 - e^(-speed * dt)}.
+     * A value of 10 means ~99 % of the remaining angle is covered within 0.5 s
+     * at normal 20 TPS; larger lag spikes catch up automatically because the
+     * interpolation is time-based.
+     */
+    private static final float ROTATION_SPEED = 10.0f;
+
+    /**
+     * Maximum delta-time (ms) used for the rotation interpolation.
+     * Caps the "catch-up" during a severe lag spike so the camera does not
+     * teleport to the target after a multi-second freeze.
+     */
+    private static final float ROTATION_MAX_DELTA_MS = 250.0f;
+
     private final MinecraftClient client;
     private FarmingConfig config;
     private VisitorManager visitorManager;
@@ -81,6 +97,13 @@ public class MacroManager {
     private boolean running = false;
     private boolean freelookEnabled = false;
     private double freelookZoom = DEFAULT_ZOOM;
+
+    /**
+     * Wall-clock time (ms) of the previous tick used for lag-safe rotation
+     * interpolation.  Reset to 0 whenever the macro starts or stops so the
+     * first interpolation step uses the default tick duration (50 ms).
+     */
+    private long lastRotationTime = 0;
 
     /**
      * When a crop has a custom key configuration this flag tracks which
@@ -249,6 +272,7 @@ public class MacroManager {
         preMousematSlot = -1;
         mousematTargetSlot = -1;
         mousematActionTime = 0;
+        lastRotationTime = 0;
         if (config.unlockedMouseEnabled) {
             client.mouse.unlockCursor();
         }
@@ -260,6 +284,7 @@ public class MacroManager {
         if (!running) return;
         running = false;
         state = MacroState.IDLE;
+        lastRotationTime = 0;
         releaseKeys();
         if (visitorManager != null && visitorManager.isActive()) {
             visitorManager.stop();
@@ -329,12 +354,36 @@ public class MacroManager {
             return;
         }
 
-        // Lock pitch and yaw to crop-specific defaults every active tick.
+        // Smoothly interpolate pitch and yaw toward the crop-specific target
+        // every active tick.  Uses time-based exponential decay so the camera
+        // glides to the correct angle at a consistent real-time rate even when
+        // the server or client is lagging (lag-safe).
         // Skipped during MOUSEMAT_CLICK so the ability's server-side camera
         // adjustment (if any) is not immediately overridden.
         if (state != MacroState.MOUSEMAT_CLICK) {
-            player.setPitch(config.getEffectivePitch(config.selectedCrop));
-            player.setYaw(config.getEffectiveYaw(config.selectedCrop));
+            long now = System.currentTimeMillis();
+            float deltaMs = (lastRotationTime == 0)
+                    ? 50.0f
+                    : Math.min(ROTATION_MAX_DELTA_MS, (float)(now - lastRotationTime));
+            lastRotationTime = now;
+
+            // Exponential-decay blend factor – scales with actual elapsed time
+            // so lag spikes do not cause the camera to stutter or jump.
+            float t = 1.0f - (float) Math.exp(-ROTATION_SPEED * deltaMs / 1000.0f);
+
+            float targetPitch = config.getEffectivePitch(config.selectedCrop);
+            float targetYaw   = config.getEffectiveYaw(config.selectedCrop);
+            // normalizeAngleDiff wraps the raw difference into [-180, 180] so the
+            // camera always takes the shortest arc (e.g. -170° instead of +190°).
+            float pitchDiff   = normalizeAngleDiff(targetPitch - player.getPitch());
+            float yawDiff     = normalizeAngleDiff(targetYaw   - player.getYaw());
+
+            // Snap to the exact target when within half a degree to prevent
+            // infinite floating-point drift near the destination.
+            player.setPitch(Math.abs(pitchDiff) < 0.5f ? targetPitch
+                    : player.getPitch() + pitchDiff * t);
+            player.setYaw(Math.abs(yawDiff) < 0.5f ? targetYaw
+                    : player.getYaw() + yawDiff * t);
         }
 
         switch (state) {

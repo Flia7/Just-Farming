@@ -34,16 +34,20 @@ public class FlatButtonWidget extends ClickableWidget {
     @Override
     public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
         int x = getX(), y = getY(), w = getWidth(), h = getHeight();
-        int bg = isHovered() ? COL_BG_HOVER : COL_BG_NORMAL;
+        boolean hov = isHovered();
+        int bg = hov ? COL_BG_HOVER : COL_BG_NORMAL;
         // Background
         context.fill(x, y, x + w, y + h, bg);
+        // Subtle inner bottom shadow for depth
+        context.fill(x + 1, y + h - 2, x + w - 1, y + h - 1, 0x18000000);
         // 1-px border
         context.fill(x,         y,         x + w,     y + 1,     COL_BORDER);
         context.fill(x,         y + h - 1, x + w,     y + h,     COL_BORDER);
         context.fill(x,         y + 1,     x + 1,     y + h - 1, COL_BORDER);
         context.fill(x + w - 1, y + 1,     x + w,     y + h - 1, COL_BORDER);
-        // 2-px left accent bar
-        context.fill(x, y, x + 2, y + h, COL_ACCENT);
+        // Left accent bar: 3 px wide when hovered, 2 px otherwise
+        int accentW = hov ? 3 : 2;
+        context.fill(x, y, x + accentW, y + h, COL_ACCENT);
         // Centred message
         context.drawCenteredTextWithShadow(
                 MinecraftClient.getInstance().textRenderer,
