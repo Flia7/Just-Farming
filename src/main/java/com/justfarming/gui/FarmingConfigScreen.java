@@ -8,6 +8,7 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.tooltip.Tooltip;
 import net.minecraft.client.gui.widget.SliderWidget;
+import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
 
 /**
@@ -29,9 +30,10 @@ public class FarmingConfigScreen extends Screen {
     private static final int WINDOW_HEIGHT  = 490;
     private static final int NAV_WIDTH      = 110;
     private static final int BUTTON_WIDTH   = 220;
-    private static final int BUTTON_HEIGHT  = 20;
+    private static final int BUTTON_HEIGHT  = 24;
     private static final int PADDING        = 10;
     private static final int TAB_HEIGHT     = 26;
+    private static final int SEARCH_H       = 14;
 
     // ── Colour palette (inspired by sw DEFAULT / MONOCHROME theme) ────────────
     private static final int COL_SCREEN_DIM  = 0x60000000; // full-screen dim
@@ -115,12 +117,21 @@ public class FarmingConfigScreen extends Screen {
     private int sectionVisitorsY;
     private int visitorStatusY;
 
+    // ── Scroll / search state (persists across clearAndInit) ──────────────────
+    private final int[]    tabScrollOffsets  = new int[TAB_NAMES.length];
+    private final String[] tabSearchQueries  = new String[TAB_NAMES.length];
+    private final int[]    tabContentHeights = new int[TAB_NAMES.length];
+    private TextFieldWidget[] tabSearchFields;
+    private int contentAreaTopY;
+    private int contentAreaBotY;
+
     public FarmingConfigScreen(Screen parent, FarmingConfig config, MacroManager macroManager) {
         super(Text.translatable("gui.just-farming.title"));
         this.parent         = parent;
         this.config         = config;
         this.macroManager   = macroManager;
         this.visitorManager = com.justfarming.JustFarming.getVisitorManager();
+        java.util.Arrays.fill(tabSearchQueries, "");
     }
 
     @Override
@@ -162,10 +173,31 @@ public class FarmingConfigScreen extends Screen {
 
         // Content area starts below a small title/header area
         int contentTop = winY + Math.round(24 * scale);
+        int searchBarH = Math.max(10, Math.round(SEARCH_H * scale));
+        contentAreaTopY = contentTop + searchBarH + pad;
+        contentAreaBotY = winY + winH - bh - pad;
+
+        // ── Search fields (one per tab; only the active one is visible) ────────
+        tabSearchFields = new TextFieldWidget[TAB_NAMES.length];
+        for (int t = 0; t < TAB_NAMES.length; t++) {
+            final int ft = t;
+            TextFieldWidget sf = new TextFieldWidget(
+                    this.textRenderer, widgetX, contentTop, bw, searchBarH, Text.empty());
+            sf.setMaxLength(64);
+            sf.setText(tabSearchQueries[t] != null ? tabSearchQueries[t] : "");
+            sf.setPlaceholder(Text.literal("Search...").withColor(COL_TEXT_MUTED));
+            sf.setChangedListener(text -> {
+                tabSearchQueries[ft] = text;
+                refreshWidgetVisibility();
+            });
+            tabSearchFields[t] = sf;
+            this.addDrawableChild(sf);
+        }
+
         int y;
 
         // ── Tab 0 – Farming ───────────────────────────────────────────────────
-        y = contentTop;
+        y = contentAreaTopY - tabScrollOffsets[0];
         sectionCropY = y;
         y += sLH;
         cropSelectButton = new FlatButtonWidget(widgetX, y, bw, bh,
@@ -224,9 +256,10 @@ public class FarmingConfigScreen extends Screen {
                         });
         this.addDrawableChild(toggleMacroButton);
         toggleMacroButton.setTooltip(Tooltip.of(Text.literal("Start or stop the farming macro")));
+        tabContentHeights[0] = y + bh - contentAreaTopY + tabScrollOffsets[0];
 
         // ── Tab 1 – Pests ─────────────────────────────────────────────────────
-        y = contentTop;
+        y = contentAreaTopY - tabScrollOffsets[1];
         sectionPestsY = y;
         y += sLH;
 
@@ -261,9 +294,10 @@ public class FarmingConfigScreen extends Screen {
                         config.pestTracerEnabled);
         this.addDrawableChild(pestTracerButton);
         pestTracerButton.setTooltip(Tooltip.of(Text.literal("Draw lines from your camera to each pest mob")));
+        tabContentHeights[1] = y + bh - contentAreaTopY + tabScrollOffsets[1];
 
         // ── Tab 2 – Misc ──────────────────────────────────────────────────────
-        y = contentTop;
+        y = contentAreaTopY - tabScrollOffsets[2];
         sectionMiscY = y;
         y += sLH;
 
@@ -299,9 +333,10 @@ public class FarmingConfigScreen extends Screen {
                         config.squeakyMousematEnabled);
         this.addDrawableChild(squeakyMousematButton);
         squeakyMousematButton.setTooltip(Tooltip.of(Text.literal("Activate Squeaky Mousemat at startup to set camera angle")));
+        tabContentHeights[2] = y + bh - contentAreaTopY + tabScrollOffsets[2];
 
         // ── Tab 3 – Delays ────────────────────────────────────────────────────
-        y = contentTop;
+        y = contentAreaTopY - tabScrollOffsets[3];
         sectionLaneSwapY = y;
         y += sLH;
         laneSwapDelaySlider = new LaneSwapDelaySlider(widgetX, y, bw, bh, config.laneSwapDelayMin);
@@ -375,9 +410,10 @@ public class FarmingConfigScreen extends Screen {
         bazaarSearchDelaySlider = new BazaarSearchDelaySlider(widgetX, y, bw, bh, config.bazaarSearchDelay);
         this.addDrawableChild(bazaarSearchDelaySlider);
         bazaarSearchDelaySlider.setTooltip(Tooltip.of(Text.literal("How long to wait before typing /bazaar <item>\nin chat (simulates the player typing the command). (ms)")));
+        tabContentHeights[3] = y + bh - contentAreaTopY + tabScrollOffsets[3];
 
         // ── Tab 4 – Visitors ──────────────────────────────────────────────────
-        y = contentTop;
+        y = contentAreaTopY - tabScrollOffsets[4];
         sectionVisitorsY = y;
         y += sLH;
 
@@ -410,6 +446,7 @@ public class FarmingConfigScreen extends Screen {
                 "Choose which visitors to automatically skip, regardless of their required items.")));
         y += bh + pad + gap;
         visitorStatusY = y;
+        tabContentHeights[4] = y - contentAreaTopY + tabScrollOffsets[4];
 
         // ── Always-visible: Close button anchored to the bottom ───────────────
         int closeBtnY = winY + winH - bh - pad;
@@ -418,48 +455,73 @@ public class FarmingConfigScreen extends Screen {
                         btn -> close());
         this.addDrawableChild(saveCloseButton);
 
-        updateTabVisibility();
+        refreshWidgetVisibility();
     }
 
-    /** Shows/hides content widgets according to {@link #activeTab}. */
-    private void updateTabVisibility() {
+    /** Returns {@code true} if the widget falls within the scrollable content area. */
+    private boolean inContentBounds(net.minecraft.client.gui.widget.ClickableWidget w) {
+        return w.getY() + w.getHeight() > contentAreaTopY && w.getY() < contentAreaBotY;
+    }
+
+    /** Returns {@code true} if {@code w}'s label contains {@code query} (case-insensitive). */
+    private boolean matchesSearch(String query, net.minecraft.client.gui.widget.ClickableWidget w) {
+        if (query == null || query.isEmpty()) return true;
+        return w.getMessage().getString().toLowerCase().contains(query.toLowerCase());
+    }
+
+    /** Returns {@code true} if the given Y coordinate is within the scrollable content area. */
+    private boolean yInContentBounds(int y) {
+        return y >= contentAreaTopY && y < contentAreaBotY;
+    }
+
+    /** Shows/hides content widgets according to activeTab, scroll position, and search query. */
+    private void refreshWidgetVisibility() {
+        String q = tabSearchQueries[activeTab];
+
         boolean t0 = activeTab == 0;
-        cropSelectButton.visible      = t0;
-        cropSettingsButton.visible    = t0;
-        setRewarpButton.visible       = t0;
-        toggleMacroButton.visible     = t0;
+        cropSelectButton.visible   = t0 && inContentBounds(cropSelectButton)   && matchesSearch(q, cropSelectButton);
+        cropSettingsButton.visible = t0 && inContentBounds(cropSettingsButton) && matchesSearch(q, cropSettingsButton);
+        setRewarpButton.visible    = t0 && inContentBounds(setRewarpButton)    && matchesSearch(q, setRewarpButton);
+        toggleMacroButton.visible  = t0 && inContentBounds(toggleMacroButton)  && matchesSearch(q, toggleMacroButton);
 
         boolean t1 = activeTab == 1;
-        pestHighlightButton.visible = t1;
-        pestLabelsButton.visible    = t1;
-        titleScaleSlider.visible    = t1;
-        pestEspButton.visible       = t1;
-        pestTracerButton.visible    = t1;
+        pestHighlightButton.visible = t1 && inContentBounds(pestHighlightButton) && matchesSearch(q, pestHighlightButton);
+        pestLabelsButton.visible    = t1 && inContentBounds(pestLabelsButton)    && matchesSearch(q, pestLabelsButton);
+        titleScaleSlider.visible    = t1 && inContentBounds(titleScaleSlider)    && matchesSearch(q, titleScaleSlider);
+        pestEspButton.visible       = t1 && inContentBounds(pestEspButton)       && matchesSearch(q, pestEspButton);
+        pestTracerButton.visible    = t1 && inContentBounds(pestTracerButton)    && matchesSearch(q, pestTracerButton);
 
         boolean t2 = activeTab == 2;
-        freelookButton.visible        = t2;
-        unlockedMouseButton.visible   = t2;
-        gardenOnlyButton.visible      = t2;
-        squeakyMousematButton.visible = t2;
+        freelookButton.visible        = t2 && inContentBounds(freelookButton)        && matchesSearch(q, freelookButton);
+        unlockedMouseButton.visible   = t2 && inContentBounds(unlockedMouseButton)   && matchesSearch(q, unlockedMouseButton);
+        gardenOnlyButton.visible      = t2 && inContentBounds(gardenOnlyButton)      && matchesSearch(q, gardenOnlyButton);
+        squeakyMousematButton.visible = t2 && inContentBounds(squeakyMousematButton) && matchesSearch(q, squeakyMousematButton);
 
         boolean t3 = activeTab == 3;
-        laneSwapDelaySlider.visible       = t3;
-        laneSwapRandomSlider.visible      = t3;
-        rewarpDelaySlider.visible         = t3;
-        rewarpRandomSlider.visible        = t3;
-        mousematSwapToSlider.visible      = t3;
-        mousematPreDelaySlider.visible    = t3;
-        mousematPostDelaySlider.visible   = t3;
-        mousematResumeDelaySlider.visible = t3;
-        visitorsDelaySlider.visible           = t3;
-        visitorsRandomSlider.visible          = t3;
-        visitorsTeleportDelaySlider.visible   = t3;
-        bazaarSearchDelaySlider.visible       = t3;
+        laneSwapDelaySlider.visible       = t3 && inContentBounds(laneSwapDelaySlider)       && matchesSearch(q, laneSwapDelaySlider);
+        laneSwapRandomSlider.visible      = t3 && inContentBounds(laneSwapRandomSlider)      && matchesSearch(q, laneSwapRandomSlider);
+        rewarpDelaySlider.visible         = t3 && inContentBounds(rewarpDelaySlider)         && matchesSearch(q, rewarpDelaySlider);
+        rewarpRandomSlider.visible        = t3 && inContentBounds(rewarpRandomSlider)        && matchesSearch(q, rewarpRandomSlider);
+        mousematSwapToSlider.visible      = t3 && inContentBounds(mousematSwapToSlider)      && matchesSearch(q, mousematSwapToSlider);
+        mousematPreDelaySlider.visible    = t3 && inContentBounds(mousematPreDelaySlider)    && matchesSearch(q, mousematPreDelaySlider);
+        mousematPostDelaySlider.visible   = t3 && inContentBounds(mousematPostDelaySlider)   && matchesSearch(q, mousematPostDelaySlider);
+        mousematResumeDelaySlider.visible = t3 && inContentBounds(mousematResumeDelaySlider) && matchesSearch(q, mousematResumeDelaySlider);
+        visitorsDelaySlider.visible           = t3 && inContentBounds(visitorsDelaySlider)           && matchesSearch(q, visitorsDelaySlider);
+        visitorsRandomSlider.visible          = t3 && inContentBounds(visitorsRandomSlider)          && matchesSearch(q, visitorsRandomSlider);
+        visitorsTeleportDelaySlider.visible   = t3 && inContentBounds(visitorsTeleportDelaySlider)   && matchesSearch(q, visitorsTeleportDelaySlider);
+        bazaarSearchDelaySlider.visible       = t3 && inContentBounds(bazaarSearchDelaySlider)       && matchesSearch(q, bazaarSearchDelaySlider);
 
         boolean t4 = activeTab == 4;
-        visitorsEnabledButton.visible         = t4;
-        visitorsBuyFromBazaarButton.visible   = t4;
-        visitorsBlacklistButton.visible       = t4;
+        visitorsEnabledButton.visible         = t4 && inContentBounds(visitorsEnabledButton)         && matchesSearch(q, visitorsEnabledButton);
+        visitorsBuyFromBazaarButton.visible   = t4 && inContentBounds(visitorsBuyFromBazaarButton)   && matchesSearch(q, visitorsBuyFromBazaarButton);
+        visitorsBlacklistButton.visible       = t4 && inContentBounds(visitorsBlacklistButton)       && matchesSearch(q, visitorsBlacklistButton);
+
+        // Only the active tab's search field is visible
+        for (int t = 0; t < TAB_NAMES.length; t++) {
+            if (tabSearchFields != null && tabSearchFields[t] != null) {
+                tabSearchFields[t].visible = (activeTab == t);
+            }
+        }
     }
 
     @Override
@@ -508,30 +570,52 @@ public class FarmingConfigScreen extends Screen {
 
         // ── Section labels for the active tab ─────────────────────────────────
         if (activeTab == 0) {
-            drawSectionLabel(context, "Crop",   sectionCropY);
-            context.fill(contentX + 16, actionSeparatorY,
-                    winR - 16, actionSeparatorY + 1, COL_SEP);
+            if (yInContentBounds(sectionCropY))
+                drawSectionLabel(context, "Crop", sectionCropY);
+            if (yInContentBounds(actionSeparatorY))
+                context.fill(contentX + 16, actionSeparatorY, winR - 16, actionSeparatorY + 1, COL_SEP);
         } else if (activeTab == 1) {
-            drawSectionLabel(context, "Pests", sectionPestsY);
+            if (yInContentBounds(sectionPestsY))
+                drawSectionLabel(context, "Pests", sectionPestsY);
         } else if (activeTab == 2) {
-            drawSectionLabel(context, "Misc", sectionMiscY);
-            context.fill(contentX + 16, miscSeparatorY,
-                    winR - 16, miscSeparatorY + 1, COL_SEP);
+            if (yInContentBounds(sectionMiscY))
+                drawSectionLabel(context, "Misc", sectionMiscY);
+            if (yInContentBounds(miscSeparatorY))
+                context.fill(contentX + 16, miscSeparatorY, winR - 16, miscSeparatorY + 1, COL_SEP);
         } else if (activeTab == 3) {
-            drawSectionLabel(context, "Lane Swap", sectionLaneSwapY);
-            drawSectionLabel(context, "Rewarp",    sectionRewarpDelayY);
-            drawSectionLabel(context, "Mousemat",  sectionMousematDelayY);
-            drawSectionLabel(context, "Visitor Delays", sectionVisitorDelaysY);
+            if (yInContentBounds(sectionLaneSwapY))
+                drawSectionLabel(context, "Lane Swap", sectionLaneSwapY);
+            if (yInContentBounds(sectionRewarpDelayY))
+                drawSectionLabel(context, "Rewarp", sectionRewarpDelayY);
+            if (yInContentBounds(sectionMousematDelayY))
+                drawSectionLabel(context, "Mousemat", sectionMousematDelayY);
+            if (yInContentBounds(sectionVisitorDelaysY))
+                drawSectionLabel(context, "Visitor Delays", sectionVisitorDelaysY);
         } else if (activeTab == 4) {
-            drawSectionLabel(context, "Visitor's macro", sectionVisitorsY);
+            if (yInContentBounds(sectionVisitorsY))
+                drawSectionLabel(context, "Visitor's macro", sectionVisitorsY);
             // Show current visitor routine status below the buttons when active
-            if (visitorManager != null && visitorManager.isActive()) {
+            if (visitorManager != null && visitorManager.isActive() && yInContentBounds(visitorStatusY)) {
                 String stateText = "State: " + visitorManager.getState().name();
                 int visitorStatusX = contentX + Math.round(12 * scale);
                 context.drawTextWithShadow(this.textRenderer,
                         net.minecraft.text.Text.literal(stateText).withColor(COL_TEXT_MUTED),
                         visitorStatusX, visitorStatusY, COL_TEXT_MUTED);
             }
+        }
+
+        // ── Scroll indicators ─────────────────────────────────────────────────
+        int maxScroll = Math.max(0, tabContentHeights[activeTab] - (contentAreaBotY - contentAreaTopY));
+        int indicatorX = winX + navW + contentW - Math.max(6, Math.round(10 * scale));
+        if (tabScrollOffsets[activeTab] > 0) {
+            context.drawTextWithShadow(this.textRenderer,
+                    Text.literal("▲").withColor(COL_TEXT_MUTED),
+                    indicatorX, contentAreaTopY, COL_TEXT_MUTED);
+        }
+        if (tabScrollOffsets[activeTab] < maxScroll) {
+            context.drawTextWithShadow(this.textRenderer,
+                    Text.literal("▼").withColor(COL_TEXT_MUTED),
+                    indicatorX, contentAreaBotY - 8, COL_TEXT_MUTED);
         }
 
         // ── Widgets ───────────────────────────────────────────────────────────
@@ -561,7 +645,20 @@ public class FarmingConfigScreen extends Screen {
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY,
                                   double horizontalAmount, double verticalAmount) {
-        // Consume scroll so sliders/cycling buttons aren't accidentally changed.
+        // Only scroll when the cursor is over the content panel
+        if (mouseX >= contentX) {
+            int maxScroll = Math.max(0, tabContentHeights[activeTab] - (contentAreaBotY - contentAreaTopY));
+            if (maxScroll > 0) {
+                int delta = verticalAmount > 0 ? -12 : 12;
+                int newOffset = Math.max(0, Math.min(maxScroll, tabScrollOffsets[activeTab] + delta));
+                if (newOffset != tabScrollOffsets[activeTab]) {
+                    tabScrollOffsets[activeTab] = newOffset;
+                    applyConfig();
+                    clearAndInit();
+                }
+            }
+        }
+        // Always consume so sliders/cycling buttons aren't accidentally changed.
         return true;
     }
 
@@ -738,7 +835,9 @@ public class FarmingConfigScreen extends Screen {
         public void onClick(net.minecraft.client.gui.Click click, boolean toggle) {
             applyConfig();
             activeTab = tabIndex;
-            updateTabVisibility();
+            // Lightweight visibility update: no clearAndInit() so the scroll
+            // position and search field focus are both preserved per-tab.
+            refreshWidgetVisibility();
         }
 
         @Override
