@@ -482,8 +482,10 @@ public class VisitorManager {
                         signTypingStep = 1;
                         signLastTypedAt = now; // start 300 ms typing-spread timer
                     } else if (amountToType != null && signTypingStep <= amountToType.length()) {
-                        // Space digits so total typing takes at least 300 ms.
-                        long perCharMs = Math.max(75L, 300L / amountToType.length());
+                        // Space digits so the full sequence takes at least 300 ms.
+                        // For N digits: perCharMs = max(75, 300/N) → total ≥ 300 ms for N ≤ 4;
+                        // for N > 4 the 75 ms floor keeps pacing human-like (total > 300 ms).
+                        long perCharMs = Math.max(75L, 300L / (long) amountToType.length());
                         if (now - signLastTypedAt >= perCharMs) {
                             signScreen.charTyped(new net.minecraft.client.input.CharInput(
                                     (int) amountToType.charAt(signTypingStep - 1), 0));

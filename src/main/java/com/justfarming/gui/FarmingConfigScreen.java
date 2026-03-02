@@ -119,7 +119,7 @@ public class FarmingConfigScreen extends Screen {
 
     // ── Scroll / search state (persists across clearAndInit) ──────────────────
     private final int[]    tabScrollOffsets  = new int[TAB_NAMES.length];
-    private final String[] tabSearchQueries  = {"", "", "", "", ""};
+    private final String[] tabSearchQueries  = new String[TAB_NAMES.length];
     private final int[]    tabContentHeights = new int[TAB_NAMES.length];
     private TextFieldWidget[] tabSearchFields;
     private int contentAreaTopY;
@@ -131,6 +131,7 @@ public class FarmingConfigScreen extends Screen {
         this.config         = config;
         this.macroManager   = macroManager;
         this.visitorManager = com.justfarming.JustFarming.getVisitorManager();
+        java.util.Arrays.fill(tabSearchQueries, "");
     }
 
     @Override
@@ -183,7 +184,7 @@ public class FarmingConfigScreen extends Screen {
             TextFieldWidget sf = new TextFieldWidget(
                     this.textRenderer, widgetX, contentTop, bw, searchBarH, Text.empty());
             sf.setMaxLength(64);
-            sf.setText(tabSearchQueries[t]);
+            sf.setText(tabSearchQueries[t] != null ? tabSearchQueries[t] : "");
             sf.setPlaceholder(Text.literal("Search...").withColor(COL_TEXT_MUTED));
             sf.setChangedListener(text -> {
                 tabSearchQueries[ft] = text;
@@ -464,7 +465,7 @@ public class FarmingConfigScreen extends Screen {
 
     /** Returns {@code true} if {@code w}'s label contains {@code query} (case-insensitive). */
     private boolean matchesSearch(String query, net.minecraft.client.gui.widget.ClickableWidget w) {
-        if (query.isEmpty()) return true;
+        if (query == null || query.isEmpty()) return true;
         return w.getMessage().getString().toLowerCase().contains(query.toLowerCase());
     }
 
@@ -833,9 +834,10 @@ public class FarmingConfigScreen extends Screen {
         @Override
         public void onClick(net.minecraft.client.gui.Click click, boolean toggle) {
             applyConfig();
-            tabScrollOffsets[tabIndex] = 0; // reset scroll for the target tab
             activeTab = tabIndex;
-            FarmingConfigScreen.this.clearAndInit();
+            // Lightweight visibility update: no clearAndInit() so the scroll
+            // position and search field focus are both preserved per-tab.
+            refreshWidgetVisibility();
         }
 
         @Override
