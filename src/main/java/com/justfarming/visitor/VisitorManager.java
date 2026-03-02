@@ -22,6 +22,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -54,20 +55,20 @@ public class VisitorManager {
     /** Default time to wait after {@code /tptoplot barn} before scanning (ms). */
     private static final long TELEPORT_WAIT_DEFAULT_MS = 4000;
 
-    /** Time to wait after sending an interact packet before checking for a menu (ms). */
-    private static final long INTERACT_WAIT_MS = 800;
+    /**
+     * Non-configurable random extra added on top of the teleport delay (ms).
+     * The actual teleport wait is {@code visitorsTeleportDelay + random(0, TELEPORT_EXTRA_RANDOM_MS)}.
+     */
+    private static final long TELEPORT_EXTRA_RANDOM_MS = 200;
+
+    /** Default base delay for every visitor action (ms). */
+    private static final long ACTION_DELAY_DEFAULT_MS = 600;
 
     /** Time to wait after {@code /bazaar <item>} before checking for the screen (ms). */
     private static final long BAZAAR_WAIT_MS = 1500;
 
-    /** Default time to wait between consecutive Bazaar click actions (ms). */
-    private static final long BAZAAR_CLICK_DEFAULT_MS = 300;
-
     /** Timeout for the sign-editor screen to appear after clicking "Buy Instantly" (ms). */
     private static final long ENTERING_AMOUNT_TIMEOUT_MS = 3000;
-
-    /** Time to wait after clicking "Buy Instantly" before looking for a confirm button (ms). */
-    private static final long BUY_WAIT_MS = 600;
 
     /**
      * Minimum time (ms) to wait in ENTERING_AMOUNT before falling back to the
@@ -85,6 +86,12 @@ public class VisitorManager {
 
     /** Pause after {@code /warp garden} to allow the command to register (ms). */
     private static final long WARP_COMMAND_WAIT_MS = 3000;
+
+    /**
+     * Maximum camera rotation step per tick (degrees) for smooth look-at movement.
+     * This replicates the natural feel of a player moving their mouse.
+     */
+    private static final float SMOOTH_LOOK_DEGREES_PER_TICK = 8.0f;
 
     // ── Sign-editor key constants ────────────────────────────────────────────
 
@@ -160,9 +167,18 @@ public class VisitorManager {
     private State state = State.IDLE;
     private long  stateEnteredAt     = 0;
     private long  interactCooldownUntil = 0;
+    /** Per-state cached action delay (ms), re-rolled on each state entry. */
+    private long  currentActionDelay = ACTION_DELAY_DEFAULT_MS;
+    /** Cached teleport wait (base + random extra), set when entering TELEPORTING. */
+    private long  teleportWaitMs = TELEPORT_WAIT_DEFAULT_MS;
 
     private final MinecraftClient client;
     private FarmingConfig config;
+    private final Random random = new Random();
+
+    // Smooth camera rotation targets
+    private float targetYaw   = 0f;
+    private float targetPitch = 0f;
 
     // Visitor tracking
     private Entity       currentVisitor  = null;
@@ -286,6 +302,9 @@ public class VisitorManager {
         interactCooldownUntil = 0;
         postAccept        = false;
         postPurchase      = false;
+        long base = config.visitorsTeleportDelay > 0
+                ? config.visitorsTeleportDelay : TELEPORT_WAIT_DEFAULT_MS;
+        teleportWaitMs = base + random.nextInt((int) TELEPORT_EXTRA_RANDOM_MS + 1);
         enterState(State.TELEPORTING);
         sendCommand("tptoplot barn");
     }
@@ -302,9 +321,7 @@ public class VisitorManager {
         switch (state) {
 
             case TELEPORTING -> {
-                long delay = config.visitorsTeleportDelay > 0
-                        ? config.visitorsTeleportDelay : TELEPORT_WAIT_DEFAULT_MS;
-                if (now - stateEnteredAt >= delay) {
+                if (now - stateEnteredAt >= teleportWaitMs) {
                     LOGGER.info("[JustFarming-Visitors] Teleport wait elapsed; scanning.");
                     enterState(State.SCANNING);
                 }
@@ -345,7 +362,7 @@ public class VisitorManager {
             }
 
             case INTERACTING -> {
-                if (now - stateEnteredAt >= INTERACT_WAIT_MS) {
+                if (now - stateEnteredAt >= currentActionDelay) {
                     if (client.currentScreen instanceof HandledScreen<?>) {
                         enterState(State.READING_VISITOR_MENU);
                     } else {
@@ -400,9 +417,7 @@ public class VisitorManager {
             }
 
             case CLICKING_BAZAAR_ITEM -> {
-                long clickDelay = config.bazaarClickDelay > 0
-                        ? config.bazaarClickDelay : BAZAAR_CLICK_DEFAULT_MS;
-                if (now - stateEnteredAt >= clickDelay) {
+                if (now - stateEnteredAt >= currentActionDelay) {
                     if (client.currentScreen instanceof HandledScreen<?> screen) {
                         String itemName = pendingRequirements.get(requirementIndex).itemName;
                         if (tryClickItemByName(screen, itemName)) {
@@ -419,9 +434,7 @@ public class VisitorManager {
             }
 
             case READING_BAZAAR -> {
-                long clickDelay = config.bazaarClickDelay > 0
-                        ? config.bazaarClickDelay : BAZAAR_CLICK_DEFAULT_MS;
-                if (now - stateEnteredAt >= clickDelay) {
+                if (now - stateEnteredAt >= currentActionDelay) {
                     if (client.currentScreen instanceof HandledScreen<?> screen) {
                         if (tryClickBuyInstantly(screen)) {
                             int amount = pendingRequirements.get(requirementIndex).amount;
@@ -485,9 +498,7 @@ public class VisitorManager {
             }
 
             case CONFIRMING_PURCHASE -> {
-                long clickDelay = config.bazaarClickDelay > 0
-                        ? config.bazaarClickDelay : BAZAAR_CLICK_DEFAULT_MS;
-                if (now - stateEnteredAt >= clickDelay) {
+                if (now - stateEnteredAt >= currentActionDelay) {
                     if (client.currentScreen instanceof HandledScreen<?> screen) {
                         tryClickConfirm(screen);
                         // Press ESC to close the bazaar screen after confirming
@@ -521,7 +532,7 @@ public class VisitorManager {
             }
 
             case WAITING_FOR_ACCEPT -> {
-                if (now - stateEnteredAt >= INTERACT_WAIT_MS) {
+                if (now - stateEnteredAt >= currentActionDelay) {
                     if (client.currentScreen instanceof HandledScreen<?> screen) {
                         tryClickAcceptOffer(screen);
                         // Close after accepting; mark that the next CLOSING_MENU
@@ -551,7 +562,19 @@ public class VisitorManager {
     private void enterState(State next) {
         state          = next;
         stateEnteredAt = System.currentTimeMillis();
+        currentActionDelay = rollActionDelay();
         LOGGER.info("[JustFarming-Visitors] -> {}", next);
+    }
+
+    /**
+     * Compute a per-action delay: base delay + random(0, randomExtra).
+     * Uses the configured values from {@link FarmingConfig}.
+     */
+    private long rollActionDelay() {
+        int base = config.visitorsActionDelay > 0 ? config.visitorsActionDelay : (int) ACTION_DELAY_DEFAULT_MS;
+        int extra = config.visitorsActionDelayRandom > 0
+                ? random.nextInt(config.visitorsActionDelayRandom + 1) : 0;
+        return base + extra;
     }
 
     /** Populate {@link #pendingVisitors} with NPC entities in range. */
@@ -645,17 +668,45 @@ public class VisitorManager {
         return Math.max(1.0, attrVal / BASE_WALK_SPEED);
     }
 
-    /** Rotate the player's camera to face {@code target}. */
+    /** Smoothly rotate the player's camera toward {@code target} over multiple ticks. */
     private void lookAt(ClientPlayerEntity player, Vec3d target) {
         Vec3d eye = player.getEyePos();
         double dx = target.x - eye.x;
         double dy = (target.y + 1.0) - eye.y; // aim at roughly head height
         double dz = target.z - eye.z;
         double distXZ = Math.sqrt(dx * dx + dz * dz);
-        float  yaw    = (float) Math.toDegrees(Math.atan2(-dx, dz));
-        float  pitch  = (float) -Math.toDegrees(Math.atan2(dy, distXZ));
-        player.setYaw(yaw);
-        player.setPitch(pitch);
+        targetYaw   = (float) Math.toDegrees(Math.atan2(-dx, dz));
+        targetPitch = (float) -Math.toDegrees(Math.atan2(dy, distXZ));
+        smoothRotateCamera(player);
+    }
+
+    /**
+     * Move the player's yaw and pitch one step closer to
+     * {@link #targetYaw}/{@link #targetPitch} at a fixed rate of
+     * {@link #SMOOTH_LOOK_DEGREES_PER_TICK} degrees per tick, replicating the
+     * feel of a player naturally moving their mouse.
+     */
+    private void smoothRotateCamera(ClientPlayerEntity player) {
+        float currentYaw   = player.getYaw();
+        float currentPitch = player.getPitch();
+
+        // Normalise yaw delta to [-180, 180] to take the shortest arc
+        float yawDiff = targetYaw - currentYaw;
+        while (yawDiff >  180f) yawDiff -= 360f;
+        while (yawDiff < -180f) yawDiff += 360f;
+
+        float pitchDiff = targetPitch - currentPitch;
+
+        // Already on target – nothing to do
+        if (Math.abs(yawDiff) < 0.1f && Math.abs(pitchDiff) < 0.1f) return;
+
+        float step = SMOOTH_LOOK_DEGREES_PER_TICK;
+        float newYaw   = currentYaw   + Math.max(-step, Math.min(step, yawDiff));
+        float newPitch = currentPitch + Math.max(-step, Math.min(step, pitchDiff));
+        newPitch = Math.max(-90f, Math.min(90f, newPitch));
+
+        player.setYaw(newYaw);
+        player.setPitch(newPitch);
     }
 
     private void releaseMovementKeys() {
@@ -832,8 +883,18 @@ public class VisitorManager {
             LOGGER.info("[JustFarming-Visitors] Moving to next visitor.");
             enterState(State.NAVIGATING);
         } else {
-            LOGGER.info("[JustFarming-Visitors] All visitors processed.");
-            returnToFarm();
+            // Re-scan in case a new (6th) visitor appeared after we started processing
+            if (client.player != null) {
+                scanForVisitors(client.player);
+            }
+            if (!pendingVisitors.isEmpty()) {
+                currentVisitor = pendingVisitors.remove(0);
+                LOGGER.info("[JustFarming-Visitors] Found additional visitor(s) after rescan.");
+                enterState(State.NAVIGATING);
+            } else {
+                LOGGER.info("[JustFarming-Visitors] All visitors processed.");
+                returnToFarm();
+            }
         }
     }
 
