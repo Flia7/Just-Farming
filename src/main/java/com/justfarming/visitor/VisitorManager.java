@@ -372,6 +372,28 @@ public class VisitorManager {
         sendCommand("tptoplot barn");
     }
 
+    /**
+     * Called every render frame from the render thread to apply incremental
+     * camera rotation toward {@link #targetYaw}/{@link #targetPitch}.
+     *
+     * <p>Running this at render-frame frequency (typically 60+ FPS) instead of
+     * only on game ticks (20 TPS) produces micro-steps of roughly 0.5° per
+     * frame at 60 FPS, well within the 0.2°–1.5° per-step range the
+     * time-based formula computes.  Total angular speed stays at
+     * {@link #SMOOTH_LOOK_DEGREES_PER_SECOND} because each step is proportional
+     * to actual elapsed wall-clock time.
+     *
+     * <p>Only active while the routine is in a navigation or offer-accepting
+     * state; all other states are ignored to avoid interfering with
+     * other camera logic.
+     */
+    public void onRenderTick() {
+        if (state != State.NAVIGATING && state != State.ACCEPTING_OFFER) return;
+        ClientPlayerEntity player = client.player;
+        if (player == null) return;
+        smoothRotateCamera(player);
+    }
+
     /** Called every client tick from the main tick event. */
     public void onTick() {
         if (state == State.IDLE || state == State.DONE) return;
