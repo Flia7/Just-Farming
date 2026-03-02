@@ -166,15 +166,27 @@ public class FarmingConfig {
     public boolean visitorsBuyFromBazaar = true;
 
     /**
-     * Delay in milliseconds between consecutive visitor entity-interact attempts
-     * (right-click on the NPC to open its menu).
+     * Base delay in milliseconds applied to every visitor action: bazaar GUI
+     * clicks, NPC interactions, camera rotation and player movement.
+     * A randomised extra of up to {@link #visitorsActionDelayRandom} ms is
+     * added on top of this value for each individual action.
      */
-    public int visitorsInteractDelay = 600;
+    public int visitorsActionDelay = 600;
+
+    /**
+     * Maximum extra random milliseconds added on top of
+     * {@link #visitorsActionDelay} for each visitor action.
+     * The actual per-action delay will be
+     * {@code visitorsActionDelay + random(0, visitorsActionDelayRandom)}.
+     */
+    public int visitorsActionDelayRandom = 0;
 
     /**
      * How long (in milliseconds) to wait after sending {@code /tptoplot barn}
      * before scanning for visitor NPCs.  Increase this if the server is slow
      * to process the teleport.
+     * An additional non-configurable random extra of up to 200 ms is always
+     * added on top of this value.
      */
     public int visitorsTeleportDelay = 4000;
 
@@ -184,14 +196,6 @@ public class FarmingConfig {
      * bazaar screen is slow to open.
      */
     public int bazaarSearchDelay = 1500;
-
-    /**
-     * Delay in milliseconds between consecutive click actions inside the
-     * Bazaar GUI (e.g. clicking the search-result item, then "Buy Instantly",
-     * then confirming the purchase).
-     * Increase this if Hypixel's server is slow to update the screen.
-     */
-    public int bazaarClickDelay = 300;
 
     /**
      * Visitor names to skip automatically.  Any visitor whose name appears in

@@ -101,10 +101,10 @@ public class FarmingConfigScreen extends Screen {
     private FlatBoolToggleWidget  visitorsEnabledButton;
     private FlatBoolToggleWidget  visitorsBuyFromBazaarButton;
     private FlatButtonWidget              visitorsBlacklistButton;
-    private VisitorInteractDelaySlider    visitorsInteractDelaySlider;
+    private VisitorsDelaySlider           visitorsDelaySlider;
+    private VisitorsRandomSlider          visitorsRandomSlider;
     private VisitorTeleportDelaySlider    visitorsTeleportDelaySlider;
     private BazaarSearchDelaySlider       bazaarSearchDelaySlider;
-    private BazaarClickDelaySlider        bazaarClickDelaySlider;
 
 
     // ── Always-visible widget ─────────────────────────────────────────────────
@@ -379,24 +379,31 @@ public class FarmingConfigScreen extends Screen {
                 "Choose which visitors to automatically skip, regardless of their required items.")));
         y += bh + pad + gap;
 
-        visitorsInteractDelaySlider = new VisitorInteractDelaySlider(widgetX, y, bw, bh, config.visitorsInteractDelay);
-        this.addDrawableChild(visitorsInteractDelaySlider);
-        visitorsInteractDelaySlider.setTooltip(Tooltip.of(Text.literal("Delay between visitor NPC right-click attempts (ms)")));
+        visitorsDelaySlider = new VisitorsDelaySlider(widgetX, y, bw, bh, config.visitorsActionDelay);
+        this.addDrawableChild(visitorsDelaySlider);
+        visitorsDelaySlider.setTooltip(Tooltip.of(Text.literal(
+                "Visitors Delay: adds delay to every bazaar interaction\n" +
+                "and NPC interaction. Also controls how long the macro\n" +
+                "waits before checking for menus after each action.\n" +
+                "Increase to make the macro look more human-like. (ms)")));
+        y += bh + pad;
+
+        visitorsRandomSlider = new VisitorsRandomSlider(widgetX, y, bw, bh, config.visitorsActionDelayRandom);
+        this.addDrawableChild(visitorsRandomSlider);
+        visitorsRandomSlider.setTooltip(Tooltip.of(Text.literal(
+                "Maximum random extra delay added on top of the Visitors Delay\nfor each individual action. (ms)")));
         y += bh + pad;
 
         visitorsTeleportDelaySlider = new VisitorTeleportDelaySlider(widgetX, y, bw, bh, config.visitorsTeleportDelay);
         this.addDrawableChild(visitorsTeleportDelaySlider);
-        visitorsTeleportDelaySlider.setTooltip(Tooltip.of(Text.literal("How long to wait after /tptoplot barn\nbefore scanning for visitor NPCs. (ms)")));
+        visitorsTeleportDelaySlider.setTooltip(Tooltip.of(Text.literal(
+                "How long to wait after /tptoplot barn\nbefore scanning for visitor NPCs.\n" +
+                "An extra random 0–200 ms is always added. (ms)")));
         y += bh + pad;
 
         bazaarSearchDelaySlider = new BazaarSearchDelaySlider(widgetX, y, bw, bh, config.bazaarSearchDelay);
         this.addDrawableChild(bazaarSearchDelaySlider);
         bazaarSearchDelaySlider.setTooltip(Tooltip.of(Text.literal("How long to wait after /bazaar <item>\nbefore interacting with the search results. (ms)")));
-        y += bh + pad;
-
-        bazaarClickDelaySlider = new BazaarClickDelaySlider(widgetX, y, bw, bh, config.bazaarClickDelay);
-        this.addDrawableChild(bazaarClickDelaySlider);
-        bazaarClickDelaySlider.setTooltip(Tooltip.of(Text.literal("Delay for all bazaar GUI actions:\nselecting item, clicking Buy Instantly, confirming purchase. (ms)")));
 
         // ── Always-visible: Close button anchored to the bottom ───────────────
         int closeBtnY = winY + winH - bh - pad;
@@ -443,10 +450,10 @@ public class FarmingConfigScreen extends Screen {
         visitorsEnabledButton.visible         = t4;
         visitorsBuyFromBazaarButton.visible   = t4;
         visitorsBlacklistButton.visible       = t4;
-        visitorsInteractDelaySlider.visible   = t4;
+        visitorsDelaySlider.visible           = t4;
+        visitorsRandomSlider.visible          = t4;
         visitorsTeleportDelaySlider.visible   = t4;
         bazaarSearchDelaySlider.visible       = t4;
-        bazaarClickDelaySlider.visible        = t4;
     }
 
     @Override
@@ -582,10 +589,10 @@ public class FarmingConfigScreen extends Screen {
         config.squeakyMousematEnabled = squeakyMousematButton.getValue();
         config.visitorsEnabled          = visitorsEnabledButton.getValue();
         config.visitorsBuyFromBazaar    = visitorsBuyFromBazaarButton.getValue();
-        config.visitorsInteractDelay    = visitorsInteractDelaySlider.getDelayValue();
+        config.visitorsActionDelay      = visitorsDelaySlider.getDelayValue();
+        config.visitorsActionDelayRandom = visitorsRandomSlider.getRandomValue();
         config.visitorsTeleportDelay    = visitorsTeleportDelaySlider.getDelayValue();
         config.bazaarSearchDelay        = bazaarSearchDelaySlider.getDelayValue();
-        config.bazaarClickDelay         = bazaarClickDelaySlider.getDelayValue();
         macroManager.setConfig(config);
         if (visitorManager != null) visitorManager.setConfig(config);
     }
@@ -947,10 +954,10 @@ public class FarmingConfigScreen extends Screen {
         protected void applyValue() {}
     }
 
-    /** Slider for the visitor NPC interact delay (200–3000 ms). */
-    private static class VisitorInteractDelaySlider extends IntStepSlider {
+    /** Slider for the visitors action delay – applies to all visitor interactions (200–3000 ms). */
+    private static class VisitorsDelaySlider extends IntStepSlider {
 
-        VisitorInteractDelaySlider(int x, int y, int width, int height, int initialValue) {
+        VisitorsDelaySlider(int x, int y, int width, int height, int initialValue) {
             super(x, y, width, height, 200, 3000, initialValue);
         }
 
@@ -958,7 +965,22 @@ public class FarmingConfigScreen extends Screen {
 
         @Override
         protected void updateMessage() {
-            setMessage(Text.literal(String.format("Visitor Interact Delay: %d ms", getIntValue())));
+            setMessage(Text.literal(String.format("Visitors Delay: %d ms", getIntValue())));
+        }
+    }
+
+    /** Slider for the random extra visitors delay (0–2000 ms). */
+    private static class VisitorsRandomSlider extends IntStepSlider {
+
+        VisitorsRandomSlider(int x, int y, int width, int height, int initialValue) {
+            super(x, y, width, height, 0, 2000, initialValue);
+        }
+
+        int getRandomValue() { return getIntValue(); }
+
+        @Override
+        protected void updateMessage() {
+            setMessage(Text.literal(String.format("Visitors Randomization: %d ms", getIntValue())));
         }
     }
 
@@ -973,7 +995,7 @@ public class FarmingConfigScreen extends Screen {
 
         @Override
         protected void updateMessage() {
-            setMessage(Text.literal(String.format("Barn Teleport Wait: %d ms", getIntValue())));
+            setMessage(Text.literal(String.format("Teleport to Visitor's Delay: %d ms", getIntValue())));
         }
     }
 
@@ -989,21 +1011,6 @@ public class FarmingConfigScreen extends Screen {
         @Override
         protected void updateMessage() {
             setMessage(Text.literal(String.format("Bazaar Search Delay: %d ms", getIntValue())));
-        }
-    }
-
-    /** Slider for the delay between consecutive bazaar click actions (100–3000 ms). */
-    private static class BazaarClickDelaySlider extends IntStepSlider {
-
-        BazaarClickDelaySlider(int x, int y, int width, int height, int initialValue) {
-            super(x, y, width, height, 100, 3000, initialValue);
-        }
-
-        int getDelayValue() { return getIntValue(); }
-
-        @Override
-        protected void updateMessage() {
-            setMessage(Text.literal(String.format("Bazaar Click Delay: %d ms", getIntValue())));
         }
     }
 }
