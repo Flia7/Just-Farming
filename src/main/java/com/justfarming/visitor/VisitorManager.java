@@ -91,9 +91,6 @@ public class VisitorManager {
     /** GLFW key code for Backspace. */
     private static final int GLFW_KEY_BACKSPACE = 259;
 
-    /** GLFW key code for Enter/Return. */
-    private static final int GLFW_KEY_ENTER = 257;
-
     /**
      * Number of backspace presses sent to clear the sign editor's default text.
      * Hypixel Skyblock sign prompts are always short, so 50 presses is more
@@ -440,8 +437,9 @@ public class VisitorManager {
                                 (int) amountToType.charAt(signTypingStep - 1), 0));
                         signTypingStep++;
                     } else {
-                        // All digits typed – press Enter to confirm
-                        signScreen.keyPressed(new net.minecraft.client.input.KeyInput(GLFW_KEY_ENTER, 0, 0));
+                        // All digits typed – close the sign editor via its close() method,
+                        // which calls finishEditing() to send the sign text to the server.
+                        signScreen.close();
                         enterState(State.CONFIRMING_PURCHASE);
                     }
                 } else if (currentScreen instanceof HandledScreen<?> screen
