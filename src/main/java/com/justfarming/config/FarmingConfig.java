@@ -191,9 +191,9 @@ public class FarmingConfig {
     public int visitorsTeleportDelay = 4000;
 
     /**
-     * Delay in milliseconds after sending {@code /bazaar <item>} before
-     * interacting with the bazaar search-results screen.  Increase this if the
-     * bazaar screen is slow to open.
+     * Delay in milliseconds simulating the player typing {@code /bazaar <item>}
+     * in chat before the command is actually sent.  Use this to make the macro
+     * look more human-like when searching the bazaar.
      */
     public int bazaarSearchDelay = 1500;
 

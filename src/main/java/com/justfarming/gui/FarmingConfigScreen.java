@@ -404,7 +404,7 @@ public class FarmingConfigScreen extends Screen {
 
         bazaarSearchDelaySlider = new BazaarSearchDelaySlider(widgetX, y, bw, bh, config.bazaarSearchDelay);
         this.addDrawableChild(bazaarSearchDelaySlider);
-        bazaarSearchDelaySlider.setTooltip(Tooltip.of(Text.literal("How long to wait after /bazaar <item>\nbefore interacting with the search results. (ms)")));
+        bazaarSearchDelaySlider.setTooltip(Tooltip.of(Text.literal("How long to wait before typing /bazaar <item>\nin chat (simulates the player typing the command). (ms)")));
 
         // ── Always-visible: Close button anchored to the bottom ───────────────
         int closeBtnY = winY + winH - bh - pad;
@@ -1002,7 +1002,7 @@ public class FarmingConfigScreen extends Screen {
 
         @Override
         protected void updateMessage() {
-            setMessage(Text.literal(String.format("Bazaar Search Delay: %d ms", getIntValue())));
+            setMessage(Text.literal(String.format("Bazaar Typing Delay: %d ms", getIntValue())));
         }
     }
 }

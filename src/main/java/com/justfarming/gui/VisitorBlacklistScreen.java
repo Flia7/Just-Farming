@@ -59,8 +59,9 @@ public class VisitorBlacklistScreen extends Screen {
     private static final int COL_BLACKLISTED_HIGHLIGHT = 0x30FF5060;
     private static final int COL_TEXT_MUTED   = 0x66FFFFFF;
 
-    // ── Natural panel dimensions ───────────────────────────────────────────────
-    private static final int PANEL_WIDTH   = 300;
+    // ── Layout ────────────────────────────────────────────────────────────────
+    private static final int COLUMNS      = 3;
+    private static final int PANEL_WIDTH  = 420;
     private static final int HEADER_HEIGHT = 28;
     private static final int BUTTON_HEIGHT = 20;
     private static final int PADDING       = 5;
@@ -84,8 +85,9 @@ public class VisitorBlacklistScreen extends Screen {
 
     @Override
     protected void init() {
+        int numRows  = (ALL_VISITORS.length + COLUMNS - 1) / COLUMNS;
         int naturalH = HEADER_HEIGHT + PADDING
-                + ALL_VISITORS.length * (BUTTON_HEIGHT + PADDING)
+                + numRows * (BUTTON_HEIGHT + PADDING)
                 + BUTTON_HEIGHT + PADDING;
 
         panelW = Math.min(PANEL_WIDTH, this.width  - 10);
@@ -97,10 +99,12 @@ public class VisitorBlacklistScreen extends Screen {
         int contentH = panelH - HEADER_HEIGHT - PADDING - (BUTTON_HEIGHT + PADDING);
         maxVisibleRows = Math.max(1, contentH / (BUTTON_HEIGHT + PADDING));
 
-        int maxScroll = Math.max(0, ALL_VISITORS.length - maxVisibleRows);
+        int maxScroll = Math.max(0, numRows - maxVisibleRows);
         scrollOffset = Math.min(scrollOffset, maxScroll);
 
-        int bw = panelW - 2 * PADDING - 4;
+        int colGap  = PADDING;
+        int totalBW = panelW - 2 * PADDING - 4;
+        int bw = (totalBW - (COLUMNS - 1) * colGap) / COLUMNS;
         int bh = BUTTON_HEIGHT;
         int wx = panelX + PADDING + 2;
         int y  = panelY + HEADER_HEIGHT + PADDING;
@@ -111,9 +115,12 @@ public class VisitorBlacklistScreen extends Screen {
 
         for (int i = 0; i < ALL_VISITORS.length; i++) {
             final String visitor = ALL_VISITORS[i];
-            int visibleIndex = i - scrollOffset;
+            int row        = i / COLUMNS;
+            int col        = i % COLUMNS;
+            int visibleRow = row - scrollOffset;
+            int bx = wx + col * (bw + colGap);
             visitorButtons[i] = new FlatButtonWidget(
-                    wx, y + visibleIndex * (bh + PADDING), bw, bh,
+                    bx, y + visibleRow * (bh + PADDING), bw, bh,
                     getButtonText(visitor),
                     btn -> {
                         // Toggle blacklist membership
@@ -125,14 +132,14 @@ public class VisitorBlacklistScreen extends Screen {
                         config.save();
                         btn.setMessage(getButtonText(visitor));
                     });
-            if (visibleIndex >= 0 && visibleIndex < maxVisibleRows) {
+            if (visibleRow >= 0 && visibleRow < maxVisibleRows) {
                 this.addDrawableChild(visitorButtons[i]);
             }
         }
 
         // Close/Done button pinned to the bottom of the panel
         this.addDrawableChild(new FlatButtonWidget(
-                wx, panelY + panelH - bh - PADDING, bw, bh,
+                wx, panelY + panelH - bh - PADDING, totalBW, bh,
                 Text.literal("Done"),
                 btn -> { if (this.client != null) this.client.setScreen(parent); }));
     }
@@ -147,7 +154,8 @@ public class VisitorBlacklistScreen extends Screen {
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY,
                                   double horizontalAmount, double verticalAmount) {
-        int maxScroll = Math.max(0, ALL_VISITORS.length - maxVisibleRows);
+        int numRows   = (ALL_VISITORS.length + COLUMNS - 1) / COLUMNS;
+        int maxScroll = Math.max(0, numRows - maxVisibleRows);
         int delta = verticalAmount > 0 ? -1 : 1;
         int newOffset = Math.max(0, Math.min(maxScroll, scrollOffset + delta));
         if (newOffset != scrollOffset) {
@@ -183,8 +191,8 @@ public class VisitorBlacklistScreen extends Screen {
         // Highlight blacklisted visitors
         if (config.visitorBlacklist != null) {
             for (int i = 0; i < ALL_VISITORS.length; i++) {
-                int visibleIndex = i - scrollOffset;
-                if (visibleIndex < 0 || visibleIndex >= maxVisibleRows) continue;
+                int visibleRow = (i / COLUMNS) - scrollOffset;
+                if (visibleRow < 0 || visibleRow >= maxVisibleRows) continue;
                 if (config.visitorBlacklist.contains(ALL_VISITORS[i])) {
                     FlatButtonWidget b = visitorButtons[i];
                     context.fill(b.getX() - 1, b.getY() - 1,
@@ -197,7 +205,8 @@ public class VisitorBlacklistScreen extends Screen {
         super.render(context, mouseX, mouseY, delta);
 
         // Scroll indicators
-        int maxScroll = Math.max(0, ALL_VISITORS.length - maxVisibleRows);
+        int numRows   = (ALL_VISITORS.length + COLUMNS - 1) / COLUMNS;
+        int maxScroll = Math.max(0, numRows - maxVisibleRows);
         int indicatorX = panelX + panelW - PADDING - 2;
         int contentTopY = panelY + HEADER_HEIGHT + PADDING;
         if (scrollOffset > 0) {
