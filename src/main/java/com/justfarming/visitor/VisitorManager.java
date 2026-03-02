@@ -446,10 +446,17 @@ public class VisitorManager {
                     }
                 } else if (currentScreen instanceof HandledScreen<?> screen
                         && now - stateEnteredAt >= ENTERING_AMOUNT_HANDLED_SCREEN_FALLBACK_MS) {
-                    // Sign screen did not appear within the fallback window – try to
-                    // confirm directly from whatever handled screen is currently open.
-                    tryClickConfirm(screen);
-                    enterState(State.CLOSING_MENU);
+                    // Hypixel shows an amount-selection screen after "Buy Instantly"
+                    // that contains a "Custom Amount" sign item.  Click it to open
+                    // the sign editor; reset the state timer so we wait for the sign.
+                    if (tryClickSlotWithName(screen, "Custom Amount")) {
+                        stateEnteredAt = now;
+                    } else {
+                        // No Custom Amount button found – fall back to confirming
+                        // whatever screen is currently open.
+                        tryClickConfirm(screen);
+                        enterState(State.CLOSING_MENU);
+                    }
                 } else if (currentScreen == null && now - stateEnteredAt >= 500) {
                     // Screen closed on its own (purchase may have completed)
                     nextRequirementOrAccept();
@@ -854,13 +861,20 @@ public class VisitorManager {
     }
 
     /**
-     * Scan the open screen for a confirmation slot ("Confirm", "Yes", "Buy")
-     * and click it.
+     * Scan the open screen for a confirmation slot and click it.
+     *
+     * <p>Recognises {@code "Confirm"} and {@code "Yes"} (standard Hypixel
+     * confirm buttons) as well as {@code "Custom Amount"} – the renamed-crop
+     * item that Hypixel places in the post-sign confirmation screen when
+     * buying a custom quantity from the Bazaar.  Note: the pre-sign
+     * amount-selection screen also contains a "Custom Amount" sign item, but
+     * that click is handled separately in {@link com.justfarming.visitor.VisitorManager.State#ENTERING_AMOUNT}
+     * before this method is ever reached.
      *
      * @return {@code true} if a matching button was found and clicked.
      */
     private boolean tryClickConfirm(HandledScreen<?> screen) {
-        return tryClickSlotWithName(screen, "Confirm", "Yes");
+        return tryClickSlotWithName(screen, "Confirm", "Yes", "Custom Amount");
     }
 
     /**
