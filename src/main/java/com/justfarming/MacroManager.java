@@ -4,11 +4,13 @@ import com.justfarming.config.FarmingConfig;
 import com.justfarming.visitor.VisitorManager;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.client.util.InputUtil;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
+import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,6 +51,12 @@ public class MacroManager {
 
     /** Ticks to observe before choosing initial direction. */
     private static final int DETECT_TICKS = 5;
+
+    /**
+     * How long (ms) the macro waits in the DETECTING phase for the player to
+     * press a direction key (W / S / D) before falling back to the default.
+     */
+    private static final long START_DIRECTION_WAIT_MS = 1000L;
 
     /**
      * Consecutive ticks the player must stay still (while a movement key is held)
@@ -115,6 +123,12 @@ public class MacroManager {
     /** Position recorded at the start of the DETECTING phase. */
     private Vec3d detectStartPos = null;
     private int detectTicks = 0;
+
+    /**
+     * System-time (ms) when the DETECTING phase started; {@code 0} if not yet
+     * initialised.  Used for the 1-second direction-choice window.
+     */
+    private long startDetectTime = 0;
 
     /** Position recorded at the previous movement tick (for stuck detection). */
     private Vec3d lastPos = null;
@@ -265,6 +279,7 @@ public class MacroManager {
         state = (config.squeakyMousematEnabled && !skipMousemat) ? MacroState.MOUSEMAT_CLICK : MacroState.DETECTING;
         detectTicks = 0;
         detectStartPos = null;
+        startDetectTime = 0;
         lastPos = null;
         stuckTicks = 0;
         customFlipped = false;
@@ -412,6 +427,7 @@ public class MacroManager {
                     // Begin a fresh detection cycle after warping back to garden
                     state = MacroState.DETECTING;
                     detectTicks = 0;
+                    startDetectTime = 0;
                     detectStartPos = new Vec3d(player.getX(), player.getY(), player.getZ());
                     lastPos = null;
                     stuckTicks = 0;
@@ -423,6 +439,7 @@ public class MacroManager {
                 if (visitorManager != null && visitorManager.isDone()) {
                     state = MacroState.DETECTING;
                     detectTicks = 0;
+                    startDetectTime = 0;
                     detectStartPos = new Vec3d(player.getX(), player.getY(), player.getZ());
                     lastPos = null;
                     stuckTicks = 0;
@@ -488,6 +505,7 @@ public class MacroManager {
                         LOGGER.info("[JustFarming] Squeaky Mousemat not found in hotbar – skipping.");
                         state = MacroState.DETECTING;
                         detectTicks = 0;
+                        startDetectTime = 0;
                         detectStartPos = null;
                         return;
                     }
@@ -547,6 +565,7 @@ public class MacroManager {
                     mousematTargetSlot = -1;
                     state = MacroState.DETECTING;
                     detectTicks = 0;
+                    startDetectTime = 0;
                     detectStartPos = null;
                 }
             }
@@ -588,14 +607,18 @@ public class MacroManager {
     }
 
     /**
-     * Observation phase: no keys are pressed; we watch the player move (or not)
-     * to decide whether to start going backward or forward.
+     * Observation phase: the macro releases all movement keys and gives the
+     * player up to {@value #START_DIRECTION_WAIT_MS} ms to press a direction
+     * key (W for Cocoa Beans, D for S-Shape / left-back / Cactus, S for
+     * Mushroom) to choose which side to start from.  If no key is pressed the
+     * macro falls back to the movement-observation heuristic that was used
+     * before.
      */
     private void tickDetecting(ClientPlayerEntity player) {
         releaseKeys();
 
-        // If a custom key configuration is active, skip the movement-detection
-        // heuristic and jump straight into the user-configured key state.
+        // If a custom key configuration is active, skip the detection heuristic
+        // and jump straight into the user-configured key state.
         com.justfarming.config.FarmingConfig.CropCustomSettings cs =
                 config.getCropSettings(config.selectedCrop);
         if (cs != null) {
@@ -603,61 +626,111 @@ public class MacroManager {
             state = deriveStateFromCustomKeys(cs);
             lastPos = new Vec3d(player.getX(), player.getY(), player.getZ());
             stuckTicks = 0;
+            startDetectTime = 0;
             LOGGER.info("[JustFarming] Custom key config – starting {}.", state);
             return;
         }
 
-        if (detectStartPos == null) {
+        long now = System.currentTimeMillis();
+        if (startDetectTime == 0) {
+            startDetectTime = now;
             detectStartPos = new Vec3d(player.getX(), player.getY(), player.getZ());
         }
 
-        detectTicks++;
-        if (detectTicks < DETECT_TICKS) return;
-
-        // Decide initial direction from observed movement
-        Vec3d currentXYZ = new Vec3d(player.getX(), player.getY(), player.getZ());
-        Vec3d delta = currentXYZ.subtract(detectStartPos);
-        double moved = Math.sqrt(delta.x * delta.x + delta.z * delta.z);
-
-        if (moved > 0.2) {
-            if (config.selectedCrop.isSShape()) {
-                // S-Shape crops always move forward
-                state = MacroState.FORWARD_LEFT;
-                LOGGER.info("[JustFarming] Detected movement – S-Shape crop, starting FORWARD_LEFT.");
-            } else if (config.selectedCrop.isLeftBack()) {
-                state = MacroState.STRAFE_LEFT_ONLY;
-                LOGGER.info("[JustFarming] Detected movement – left-back crop, starting STRAFE_LEFT_ONLY.");
-            } else if (config.selectedCrop.isCactus()) {
-                state = MacroState.STRAFE_LEFT_ONLY;
-                LOGGER.info("[JustFarming] Detected movement – cactus, starting STRAFE_LEFT_ONLY.");
-            } else {
-                // Project delta onto the player's forward axis
-                double yawRad = Math.toRadians(config.selectedCrop.getDefaultYaw());
-                double fwdX = -Math.sin(yawRad);
-                double fwdZ =  Math.cos(yawRad);
-                double forwardComponent = delta.x * fwdX + delta.z * fwdZ;
-
-                if (config.selectedCrop.isForwardBack()) {
-                    state = (forwardComponent > 0) ? MacroState.FORWARD_ONLY : MacroState.BACK_ONLY;
-                } else {
-                    state = (forwardComponent > 0) ? MacroState.FORWARD_LEFT : MacroState.BACKWARD_LEFT;
-                }
-                LOGGER.info("[JustFarming] Detected movement – starting {}.", state);
-            }
-        } else {
-            // Player is stationary
-            if (config.selectedCrop.isSShape()) {
-                state = MacroState.FORWARD_LEFT;
-            } else if (config.selectedCrop.isLeftBack() || config.selectedCrop.isCactus()) {
-                state = MacroState.STRAFE_LEFT_ONLY;
-            } else if (config.selectedCrop.isForwardBack()) {
-                state = MacroState.FORWARD_ONLY;
-            } else {
-                state = MacroState.BACKWARD_LEFT;
-            }
-            LOGGER.info("[JustFarming] No movement detected – defaulting to {}.", state);
+        // Check raw GLFW key state so we can read the physical key even while the
+        // macro itself has setPressed(false) on all movement bindings.
+        // If the window is unavailable the booleans stay false and the macro falls
+        // back to the default direction after the wait expires.
+        CropType crop = config.selectedCrop;
+        boolean wPressed = false, sPressed = false, dPressed = false;
+        if (client.getWindow() != null) {
+            wPressed = InputUtil.isKeyPressed(client.getWindow(), GLFW.GLFW_KEY_W);
+            sPressed = InputUtil.isKeyPressed(client.getWindow(), GLFW.GLFW_KEY_S);
+            dPressed = InputUtil.isKeyPressed(client.getWindow(), GLFW.GLFW_KEY_D);
         }
 
+        // Determine whether the player has indicated a starting direction.
+        boolean choiceForward = (crop == CropType.COCOA_BEANS) && wPressed;
+        boolean choiceRight   = (crop.isSShape() || crop.isLeftBack() || crop.isCactus()) && dPressed;
+        boolean choiceBack    = crop.isForwardBack() && sPressed;
+        boolean hasMadeChoice = choiceForward || choiceRight || choiceBack;
+
+        // Wait up to START_DIRECTION_WAIT_MS for the player's input.
+        long elapsed = now - startDetectTime;
+        if (!hasMadeChoice && elapsed < START_DIRECTION_WAIT_MS) {
+            return;
+        }
+
+        // Apply the chosen or default direction.
+        if (hasMadeChoice) {
+            if (choiceForward) {
+                // Cocoa Beans + W: start going forward instead of backward.
+                state = MacroState.FORWARD_LEFT;
+                LOGGER.info("[JustFarming] Direction choice (W) – starting FORWARD_LEFT.");
+            } else if (choiceRight) {
+                if (crop.isSShape()) {
+                    // S-Shape crops + D: start going right instead of left.
+                    state = MacroState.FORWARD_RIGHT;
+                    LOGGER.info("[JustFarming] Direction choice (D) – starting FORWARD_RIGHT.");
+                } else if (crop.isLeftBack()) {
+                    // Left-Back crops (Cane/Moonflower/Wild Rose/Sunflower) + D: start going back.
+                    state = MacroState.BACK_ONLY;
+                    LOGGER.info("[JustFarming] Direction choice (D) – starting BACK_ONLY.");
+                } else {
+                    // Cactus + D: start strafing right instead of left.
+                    state = MacroState.STRAFE_RIGHT_ONLY;
+                    LOGGER.info("[JustFarming] Direction choice (D) – starting STRAFE_RIGHT_ONLY.");
+                }
+            } else {
+                // Mushroom + S: start going backward instead of forward.
+                state = MacroState.BACK_ONLY;
+                LOGGER.info("[JustFarming] Direction choice (S) – starting BACK_ONLY.");
+            }
+        } else {
+            // No direction key pressed – fall back to the original movement heuristic.
+            Vec3d currentXYZ = new Vec3d(player.getX(), player.getY(), player.getZ());
+            Vec3d delta = currentXYZ.subtract(detectStartPos);
+            double moved = Math.sqrt(delta.x * delta.x + delta.z * delta.z);
+
+            if (moved > 0.2) {
+                if (crop.isSShape()) {
+                    state = MacroState.FORWARD_LEFT;
+                    LOGGER.info("[JustFarming] Detected movement – S-Shape crop, starting FORWARD_LEFT.");
+                } else if (crop.isLeftBack()) {
+                    state = MacroState.STRAFE_LEFT_ONLY;
+                    LOGGER.info("[JustFarming] Detected movement – left-back crop, starting STRAFE_LEFT_ONLY.");
+                } else if (crop.isCactus()) {
+                    state = MacroState.STRAFE_LEFT_ONLY;
+                    LOGGER.info("[JustFarming] Detected movement – cactus, starting STRAFE_LEFT_ONLY.");
+                } else {
+                    // Project delta onto the crop's forward axis.
+                    double yawRad = Math.toRadians(crop.getDefaultYaw());
+                    double fwdX = -Math.sin(yawRad);
+                    double fwdZ =  Math.cos(yawRad);
+                    double forwardComponent = delta.x * fwdX + delta.z * fwdZ;
+                    if (crop.isForwardBack()) {
+                        state = (forwardComponent > 0) ? MacroState.FORWARD_ONLY : MacroState.BACK_ONLY;
+                    } else {
+                        state = (forwardComponent > 0) ? MacroState.FORWARD_LEFT : MacroState.BACKWARD_LEFT;
+                    }
+                    LOGGER.info("[JustFarming] Detected movement – starting {}.", state);
+                }
+            } else {
+                // Player is stationary – use per-crop default starting direction.
+                if (crop.isSShape()) {
+                    state = MacroState.FORWARD_LEFT;
+                } else if (crop.isLeftBack() || crop.isCactus()) {
+                    state = MacroState.STRAFE_LEFT_ONLY;
+                } else if (crop.isForwardBack()) {
+                    state = MacroState.FORWARD_ONLY;
+                } else {
+                    state = MacroState.BACKWARD_LEFT;
+                }
+                LOGGER.info("[JustFarming] No movement detected – defaulting to {}.", state);
+            }
+        }
+
+        startDetectTime = 0;
         lastPos = new Vec3d(player.getX(), player.getY(), player.getZ());
         stuckTicks = 0;
     }
