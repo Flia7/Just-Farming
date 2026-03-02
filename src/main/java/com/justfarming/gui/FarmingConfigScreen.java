@@ -26,7 +26,7 @@ public class FarmingConfigScreen extends Screen {
 
     // ── Natural/maximum dimensions ────────────────────────────────────────────
     private static final int WINDOW_WIDTH   = 420;
-    private static final int WINDOW_HEIGHT  = 380;
+    private static final int WINDOW_HEIGHT  = 490;
     private static final int NAV_WIDTH      = 110;
     private static final int BUTTON_WIDTH   = 220;
     private static final int BUTTON_HEIGHT  = 20;
@@ -111,8 +111,9 @@ public class FarmingConfigScreen extends Screen {
     // ── Section-label Y positions (set in init, used in render) ───────────────
     private int sectionCropY, actionSeparatorY;
     private int sectionPestsY, sectionMiscY, miscSeparatorY;
-    private int sectionLaneSwapY, sectionRewarpDelayY, sectionMousematDelayY;
+    private int sectionLaneSwapY, sectionRewarpDelayY, sectionMousematDelayY, sectionVisitorDelaysY;
     private int sectionVisitorsY;
+    private int visitorStatusY;
 
     public FarmingConfigScreen(Screen parent, FarmingConfig config, MacroManager macroManager) {
         super(Text.translatable("gui.just-farming.title"));
@@ -345,6 +346,35 @@ public class FarmingConfigScreen extends Screen {
         mousematResumeDelaySlider = new MousematResumeDelaySlider(widgetX, y, bw, bh, config.mousematResumeDelay);
         this.addDrawableChild(mousematResumeDelaySlider);
         mousematResumeDelaySlider.setTooltip(Tooltip.of(Text.literal("Wait after swapping back to the farming tool\nbefore resuming farming. (ms)")));
+        y += bh + pad + gap;
+
+        sectionVisitorDelaysY = y;
+        y += sLH;
+        visitorsDelaySlider = new VisitorsDelaySlider(widgetX, y, bw, bh, config.visitorsActionDelay);
+        this.addDrawableChild(visitorsDelaySlider);
+        visitorsDelaySlider.setTooltip(Tooltip.of(Text.literal(
+                "Visitors Delay: adds delay to every bazaar interaction\n" +
+                "and NPC interaction. Also controls how long the macro\n" +
+                "waits before checking for menus after each action.\n" +
+                "Increase to make the macro look more human-like. (ms)")));
+        y += bh + pad;
+
+        visitorsRandomSlider = new VisitorsRandomSlider(widgetX, y, bw, bh, config.visitorsActionDelayRandom);
+        this.addDrawableChild(visitorsRandomSlider);
+        visitorsRandomSlider.setTooltip(Tooltip.of(Text.literal(
+                "Maximum random extra delay added on top of the Visitors Delay\nfor each individual action. (ms)")));
+        y += bh + pad;
+
+        visitorsTeleportDelaySlider = new VisitorTeleportDelaySlider(widgetX, y, bw, bh, config.visitorsTeleportDelay);
+        this.addDrawableChild(visitorsTeleportDelaySlider);
+        visitorsTeleportDelaySlider.setTooltip(Tooltip.of(Text.literal(
+                "How long to wait after /tptoplot barn\nbefore scanning for visitor NPCs.\n" +
+                "An extra random 0–200 ms is always added. (ms)")));
+        y += bh + pad;
+
+        bazaarSearchDelaySlider = new BazaarSearchDelaySlider(widgetX, y, bw, bh, config.bazaarSearchDelay);
+        this.addDrawableChild(bazaarSearchDelaySlider);
+        bazaarSearchDelaySlider.setTooltip(Tooltip.of(Text.literal("How long to wait before typing /bazaar <item>\nin chat (simulates the player typing the command). (ms)")));
 
         // ── Tab 4 – Visitors ──────────────────────────────────────────────────
         y = contentTop;
@@ -379,32 +409,7 @@ public class FarmingConfigScreen extends Screen {
         visitorsBlacklistButton.setTooltip(Tooltip.of(Text.literal(
                 "Choose which visitors to automatically skip, regardless of their required items.")));
         y += bh + pad + gap;
-
-        visitorsDelaySlider = new VisitorsDelaySlider(widgetX, y, bw, bh, config.visitorsActionDelay);
-        this.addDrawableChild(visitorsDelaySlider);
-        visitorsDelaySlider.setTooltip(Tooltip.of(Text.literal(
-                "Visitors Delay: adds delay to every bazaar interaction\n" +
-                "and NPC interaction. Also controls how long the macro\n" +
-                "waits before checking for menus after each action.\n" +
-                "Increase to make the macro look more human-like. (ms)")));
-        y += bh + pad;
-
-        visitorsRandomSlider = new VisitorsRandomSlider(widgetX, y, bw, bh, config.visitorsActionDelayRandom);
-        this.addDrawableChild(visitorsRandomSlider);
-        visitorsRandomSlider.setTooltip(Tooltip.of(Text.literal(
-                "Maximum random extra delay added on top of the Visitors Delay\nfor each individual action. (ms)")));
-        y += bh + pad;
-
-        visitorsTeleportDelaySlider = new VisitorTeleportDelaySlider(widgetX, y, bw, bh, config.visitorsTeleportDelay);
-        this.addDrawableChild(visitorsTeleportDelaySlider);
-        visitorsTeleportDelaySlider.setTooltip(Tooltip.of(Text.literal(
-                "How long to wait after /tptoplot barn\nbefore scanning for visitor NPCs.\n" +
-                "An extra random 0–200 ms is always added. (ms)")));
-        y += bh + pad;
-
-        bazaarSearchDelaySlider = new BazaarSearchDelaySlider(widgetX, y, bw, bh, config.bazaarSearchDelay);
-        this.addDrawableChild(bazaarSearchDelaySlider);
-        bazaarSearchDelaySlider.setTooltip(Tooltip.of(Text.literal("How long to wait before typing /bazaar <item>\nin chat (simulates the player typing the command). (ms)")));
+        visitorStatusY = y;
 
         // ── Always-visible: Close button anchored to the bottom ───────────────
         int closeBtnY = winY + winH - bh - pad;
@@ -446,15 +451,15 @@ public class FarmingConfigScreen extends Screen {
         mousematPreDelaySlider.visible    = t3;
         mousematPostDelaySlider.visible   = t3;
         mousematResumeDelaySlider.visible = t3;
+        visitorsDelaySlider.visible           = t3;
+        visitorsRandomSlider.visible          = t3;
+        visitorsTeleportDelaySlider.visible   = t3;
+        bazaarSearchDelaySlider.visible       = t3;
 
         boolean t4 = activeTab == 4;
         visitorsEnabledButton.visible         = t4;
         visitorsBuyFromBazaarButton.visible   = t4;
         visitorsBlacklistButton.visible       = t4;
-        visitorsDelaySlider.visible           = t4;
-        visitorsRandomSlider.visible          = t4;
-        visitorsTeleportDelaySlider.visible   = t4;
-        bazaarSearchDelaySlider.visible       = t4;
     }
 
     @Override
@@ -516,14 +521,13 @@ public class FarmingConfigScreen extends Screen {
             drawSectionLabel(context, "Lane Swap", sectionLaneSwapY);
             drawSectionLabel(context, "Rewarp",    sectionRewarpDelayY);
             drawSectionLabel(context, "Mousemat",  sectionMousematDelayY);
+            drawSectionLabel(context, "Visitor Delays", sectionVisitorDelaysY);
         } else if (activeTab == 4) {
             drawSectionLabel(context, "Visitor's macro", sectionVisitorsY);
-            // Show current visitor routine status below the sliders when active
+            // Show current visitor routine status below the buttons when active
             if (visitorManager != null && visitorManager.isActive()) {
                 String stateText = "State: " + visitorManager.getState().name();
                 int visitorStatusX = contentX + Math.round(12 * scale);
-                // Position below the two toggle buttons + gap + two sliders
-                int visitorStatusY = visitorsTeleportDelaySlider.getY() + bh + pad * 2;
                 context.drawTextWithShadow(this.textRenderer,
                         net.minecraft.text.Text.literal(stateText).withColor(COL_TEXT_MUTED),
                         visitorStatusX, visitorStatusY, COL_TEXT_MUTED);
@@ -765,25 +769,31 @@ public class FarmingConfigScreen extends Screen {
             updateMessage();
         }
 
-        /** Returns the current value as a concrete integer in [min, max]. */
+        /** Returns the current value rounded to the nearest multiple of 5, clamped to [min, max]. */
         int getIntValue() {
-            return min + (int)Math.round(value * (max - min));
+            int raw = min + (int)Math.round(value * (max - min));
+            int snapped = (int)Math.round(raw / 5.0) * 5;
+            return Math.max(min, Math.min(max, snapped));
         }
 
         @Override
         protected void applyValue() {
-            // Snap mouse-drag value to nearest integer step.
+            // Snap mouse-drag value to nearest multiple of 5.
             int steps = max - min;
-            this.value = Math.round(this.value * steps) / (double)steps;
+            int rawInt = min + (int)Math.round(this.value * steps);
+            int snapped = (int)Math.round(rawInt / 5.0) * 5;
+            snapped = Math.max(min, Math.min(max, snapped));
+            this.value = (double)(snapped - min) / steps;
         }
 
         @Override
         public boolean keyPressed(net.minecraft.client.input.KeyInput input) {
             if (input.key() == GLFW_KEY_LEFT || input.key() == GLFW_KEY_RIGHT) {
-                double step = 1.0 / (max - min);
+                double step = 5.0 / (max - min);
                 this.value = (input.key() == GLFW_KEY_LEFT)
                         ? Math.max(0.0, this.value - step)
                         : Math.min(1.0, this.value + step);
+                applyValue();
                 updateMessage();
                 return true;
             }
