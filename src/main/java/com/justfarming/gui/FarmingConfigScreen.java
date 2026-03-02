@@ -396,7 +396,7 @@ public class FarmingConfigScreen extends Screen {
 
         bazaarClickDelaySlider = new BazaarClickDelaySlider(widgetX, y, bw, bh, config.bazaarClickDelay);
         this.addDrawableChild(bazaarClickDelaySlider);
-        bazaarClickDelaySlider.setTooltip(Tooltip.of(Text.literal("Delay between consecutive click actions inside\nthe Bazaar GUI (item click, Buy Instantly click). (ms)")));
+        bazaarClickDelaySlider.setTooltip(Tooltip.of(Text.literal("Delay for all bazaar GUI actions:\nselecting item, clicking Buy Instantly, confirming purchase. (ms)")));
 
         // ── Always-visible: Close button anchored to the bottom ───────────────
         int closeBtnY = winY + winH - bh - pad;
@@ -992,11 +992,11 @@ public class FarmingConfigScreen extends Screen {
         }
     }
 
-    /** Slider for the delay between consecutive bazaar click actions (200–3000 ms). */
+    /** Slider for the delay between consecutive bazaar click actions (100–3000 ms). */
     private static class BazaarClickDelaySlider extends IntStepSlider {
 
         BazaarClickDelaySlider(int x, int y, int width, int height, int initialValue) {
-            super(x, y, width, height, 200, 3000, initialValue);
+            super(x, y, width, height, 100, 3000, initialValue);
         }
 
         int getDelayValue() { return getIntValue(); }
