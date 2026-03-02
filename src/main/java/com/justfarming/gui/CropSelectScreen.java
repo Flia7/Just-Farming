@@ -34,8 +34,9 @@ public class CropSelectScreen extends Screen {
     private static final int COL_SELECTED_HL = 0x3080FF80;
     private static final int COL_TEXT_MUTED  = 0x66FFFFFF;
 
-    // ── Natural panel dimensions ───────────────────────────────────────────────
-    private static final int PANEL_WIDTH   = 280;
+    // ── Layout ────────────────────────────────────────────────────────────────
+    private static final int COLUMNS      = 2;
+    private static final int PANEL_WIDTH  = 280;
     private static final int HEADER_HEIGHT = 28;
     private static final int BUTTON_HEIGHT = 20;
     private static final int PADDING       = 5;
@@ -47,9 +48,9 @@ public class CropSelectScreen extends Screen {
     private final FlatButtonWidget[] cropButtons = new FlatButtonWidget[CROPS.length];
 
     /** How many crop rows have been scrolled past. */
-    private int scrollOffset   = 0;
+    private int scrollOffset  = 0;
     /** How many crop rows can be displayed at once. */
-    private int maxVisibleCrops = CROPS.length;
+    private int maxVisibleRows = (CROPS.length + COLUMNS - 1) / COLUMNS;
 
     public CropSelectScreen(Screen parent, FarmingConfig config) {
         super(Text.literal("Select Crop"));
@@ -59,8 +60,9 @@ public class CropSelectScreen extends Screen {
 
     @Override
     protected void init() {
+        int numRows  = (CROPS.length + COLUMNS - 1) / COLUMNS;
         int naturalH = HEADER_HEIGHT + PADDING
-                + CROPS.length * (BUTTON_HEIGHT + PADDING)
+                + numRows * (BUTTON_HEIGHT + PADDING)
                 + BUTTON_HEIGHT + PADDING;
 
         panelW = Math.min(PANEL_WIDTH, this.width  - 10);
@@ -70,13 +72,15 @@ public class CropSelectScreen extends Screen {
 
         // How many crop rows fit between the header and the Cancel button
         int contentH = panelH - HEADER_HEIGHT - PADDING - (BUTTON_HEIGHT + PADDING);
-        maxVisibleCrops = Math.max(1, contentH / (BUTTON_HEIGHT + PADDING));
+        maxVisibleRows = Math.max(1, contentH / (BUTTON_HEIGHT + PADDING));
 
         // Clamp scrollOffset so it never shows blank space at the bottom
-        int maxScroll = Math.max(0, CROPS.length - maxVisibleCrops);
+        int maxScroll = Math.max(0, numRows - maxVisibleRows);
         scrollOffset = Math.min(scrollOffset, maxScroll);
 
-        int bw = panelW - 2 * PADDING - 4;
+        int colGap  = PADDING;
+        int totalBW = panelW - 2 * PADDING - 4;
+        int bw = (totalBW - (COLUMNS - 1) * colGap) / COLUMNS;
         int bh = BUTTON_HEIGHT;
         int wx = panelX + PADDING + 2;
         int y  = panelY + HEADER_HEIGHT + PADDING;
@@ -84,9 +88,12 @@ public class CropSelectScreen extends Screen {
         for (int i = 0; i < CROPS.length; i++) {
             final CropType crop = CROPS[i];
             String label = Text.translatable(crop.getTranslationKey()).getString();
-            int visibleIndex = i - scrollOffset;
+            int row        = i / COLUMNS;
+            int col        = i % COLUMNS;
+            int visibleRow = row - scrollOffset;
+            int bx = wx + col * (bw + colGap);
             cropButtons[i] = new FlatButtonWidget(
-                    wx, y + visibleIndex * (bh + PADDING), bw, bh,
+                    bx, y + visibleRow * (bh + PADDING), bw, bh,
                     Text.literal(label),
                     btn -> {
                         config.selectedCrop = crop;
@@ -94,20 +101,21 @@ public class CropSelectScreen extends Screen {
                         if (this.client != null) this.client.setScreen(parent);
                     });
             // Only register buttons that are within the visible window
-            if (visibleIndex >= 0 && visibleIndex < maxVisibleCrops) {
+            if (visibleRow >= 0 && visibleRow < maxVisibleRows) {
                 this.addDrawableChild(cropButtons[i]);
             }
         }
 
         this.addDrawableChild(new FlatButtonWidget(
-                wx, panelY + panelH - bh - PADDING, bw, bh,
+                wx, panelY + panelH - bh - PADDING, totalBW, bh,
                 Text.literal("Cancel"),
                 btn -> { if (this.client != null) this.client.setScreen(parent); }));
     }
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        int maxScroll = Math.max(0, CROPS.length - maxVisibleCrops);
+        int numRows   = (CROPS.length + COLUMNS - 1) / COLUMNS;
+        int maxScroll = Math.max(0, numRows - maxVisibleRows);
         int delta = verticalAmount > 0 ? -1 : 1;
         int newOffset = Math.max(0, Math.min(maxScroll, scrollOffset + delta));
         if (newOffset != scrollOffset) {
@@ -142,8 +150,8 @@ public class CropSelectScreen extends Screen {
 
         // Highlight selected crop (only when it is in the visible window)
         for (int i = 0; i < CROPS.length; i++) {
-            int visibleIndex = i - scrollOffset;
-            if (CROPS[i] == config.selectedCrop && visibleIndex >= 0 && visibleIndex < maxVisibleCrops) {
+            int visibleRow = (i / COLUMNS) - scrollOffset;
+            if (CROPS[i] == config.selectedCrop && visibleRow >= 0 && visibleRow < maxVisibleRows) {
                 FlatButtonWidget b = cropButtons[i];
                 context.fill(b.getX() - 1, b.getY() - 1,
                         b.getX() + b.getWidth() + 1, b.getY() + b.getHeight() + 1,
@@ -154,7 +162,8 @@ public class CropSelectScreen extends Screen {
         super.render(context, mouseX, mouseY, delta);
 
         // Scroll indicators (drawn after widgets so they appear on top)
-        int maxScroll = Math.max(0, CROPS.length - maxVisibleCrops);
+        int numRows   = (CROPS.length + COLUMNS - 1) / COLUMNS;
+        int maxScroll = Math.max(0, numRows - maxVisibleRows);
         int indicatorX = panelX + panelW - PADDING - 2;
         int contentTopY = panelY + HEADER_HEIGHT + PADDING;
         if (scrollOffset > 0) {

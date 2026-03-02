@@ -144,6 +144,8 @@ public class VisitorManager {
         READING_VISITOR_MENU,
         /** Waiting for the visitor menu to close before the next action. */
         CLOSING_MENU,
+        /** Simulating the player typing {@code /bazaar <item>}; waiting bazaarSearchDelay ms. */
+        TYPING_BAZAAR_COMMAND,
         /** {@code /bazaar <item>} sent; waiting for the bazaar search-results screen. */
         OPENING_BAZAAR,
         /** Bazaar search-results screen is open; clicking the matching item. */
@@ -403,10 +405,19 @@ public class VisitorManager {
                 }
             }
 
-            case OPENING_BAZAAR -> {
-                long searchDelay = config.bazaarSearchDelay > 0
+            case TYPING_BAZAAR_COMMAND -> {
+                long typingDelay = config.bazaarSearchDelay > 0
                         ? config.bazaarSearchDelay : BAZAAR_WAIT_MS;
-                if (now - stateEnteredAt >= searchDelay) {
+                if (now - stateEnteredAt >= typingDelay) {
+                    String itemName = pendingRequirements.get(requirementIndex).itemName;
+                    sendCommand("bazaar " + itemName);
+                    enterState(State.OPENING_BAZAAR);
+                    LOGGER.info("[JustFarming-Visitors] Opening bazaar for: {}", itemName);
+                }
+            }
+
+            case OPENING_BAZAAR -> {
+                if (now - stateEnteredAt >= currentActionDelay) {
                     if (client.currentScreen instanceof HandledScreen<?>) {
                         enterState(State.CLICKING_BAZAAR_ITEM);
                     } else {
@@ -853,12 +864,11 @@ public class VisitorManager {
             startAcceptingOffer();
             return;
         }
-        String itemName = pendingRequirements.get(requirementIndex).itemName;
-        amountToType  = null;
+        amountToType   = null;
         signTypingStep = 0;
-        sendCommand("bazaar " + itemName);
-        enterState(State.OPENING_BAZAAR);
-        LOGGER.info("[JustFarming-Visitors] Opening bazaar for: {}", itemName);
+        enterState(State.TYPING_BAZAAR_COMMAND);
+        LOGGER.info("[JustFarming-Visitors] Preparing to type /bazaar for: {}",
+                pendingRequirements.get(requirementIndex).itemName);
     }
 
     private void nextRequirementOrAccept() {
