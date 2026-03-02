@@ -190,8 +190,11 @@ public class JustFarming implements ClientModInitializer {
             pestDetector.update(client);
             pestEntityDetector.update(client);
 
-            // Stop macro if Garden-only mode is enabled and the player left the Garden
-            if (!pestDetector.isInGarden() && config.gardenOnlyEnabled && macroManager.isRunning()) {
+            // Stop macro if Garden-only mode is enabled and the player left the Garden.
+            // Do not stop while the visitor routine is active or while the macro is in
+            // the VISITING state (returning from visitors to the garden).
+            if (!pestDetector.isInGarden() && config.gardenOnlyEnabled && macroManager.isRunning()
+                    && !visitorManager.isActive() && !macroManager.isVisiting()) {
                 macroManager.stop();
                 if (client.player != null) {
                     client.player.sendMessage(net.minecraft.text.Text.literal(
