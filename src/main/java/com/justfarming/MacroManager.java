@@ -217,6 +217,11 @@ public class MacroManager {
     /** Start the macro. */
     public void start() {
         if (running) return;
+        // Do not start the farming macro while the visitor routine is active.
+        if (visitorManager != null && visitorManager.isActive()) {
+            LOGGER.info("[JustFarming] Cannot start farming macro while visitor routine is active.");
+            return;
+        }
         running = true;
         boolean skipMousemat = false;
         if (config.squeakyMousematEnabled && client.player != null) {

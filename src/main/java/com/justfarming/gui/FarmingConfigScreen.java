@@ -211,7 +211,13 @@ public class FarmingConfigScreen extends Screen {
                         getMacroToggleText(),
                         btn -> {
                             applyConfig();
-                            macroManager.toggle();
+                            // If the visitor routine is active and farming is not running,
+                            // stop the visitor instead of starting the farming macro.
+                            if (visitorManager != null && visitorManager.isActive() && !macroManager.isRunning()) {
+                                visitorManager.stop();
+                            } else {
+                                macroManager.toggle();
+                            }
                             btn.setMessage(getMacroToggleText());
                         });
         this.addDrawableChild(toggleMacroButton);
@@ -595,6 +601,9 @@ public class FarmingConfigScreen extends Screen {
     }
 
     private Text getMacroToggleText() {
+        if (visitorManager != null && visitorManager.isActive() && !macroManager.isRunning()) {
+            return Text.translatable("gui.just-farming.stop_visitor");
+        }
         return macroManager.isRunning()
                 ? Text.translatable("gui.just-farming.stop_macro")
                 : Text.translatable("gui.just-farming.start_macro");
