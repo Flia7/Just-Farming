@@ -167,8 +167,7 @@ public class FarmingConfigScreen extends Screen {
         y = contentTop;
         sectionCropY = y;
         y += sLH;
-        // Row 1: cropSelectButton | cropSettingsButton (2 columns)
-        cropSelectButton = new FlatButtonWidget(col1X, y, halfBW, bh,
+        cropSelectButton = new FlatButtonWidget(widgetX, y, bw, bh,
                         getCropSelectText(),
                         btn -> {
                             applyConfig();
@@ -177,8 +176,9 @@ public class FarmingConfigScreen extends Screen {
                         });
         this.addDrawableChild(cropSelectButton);
         cropSelectButton.setTooltip(Tooltip.of(Text.literal("Choose the crop type to farm")));
+        y += bh + pad;
 
-        cropSettingsButton = new FlatButtonWidget(col2X, y, halfBW, bh,
+        cropSettingsButton = new FlatButtonWidget(widgetX, y, bw, bh,
                         getCropSettingsText(),
                         btn -> {
                             applyConfig();
@@ -192,8 +192,7 @@ public class FarmingConfigScreen extends Screen {
         actionSeparatorY = y;
         y += Math.max(2, Math.round(4 * scale));
 
-        // Row 2: setRewarpButton | toggleMacroButton (2 columns)
-        setRewarpButton = new FlatButtonWidget(col1X, y, halfBW, bh,
+        setRewarpButton = new FlatButtonWidget(widgetX, y, bw, bh,
                         getRewarpButtonText(),
                         btn -> {
                             if (this.client != null && this.client.player != null) {
@@ -207,8 +206,9 @@ public class FarmingConfigScreen extends Screen {
                         });
         this.addDrawableChild(setRewarpButton);
         setRewarpButton.setTooltip(Tooltip.of(Text.literal("Save your current position as the rewarp waypoint.\nThe macro sends /warp garden when it reaches this point.")));
+        y += bh + pad;
 
-        toggleMacroButton = new FlatButtonWidget(col2X, y, halfBW, bh,
+        toggleMacroButton = new FlatButtonWidget(widgetX, y, bw, bh,
                         getMacroToggleText(),
                         btn -> {
                             applyConfig();
@@ -351,16 +351,16 @@ public class FarmingConfigScreen extends Screen {
         sectionVisitorsY = y;
         y += sLH;
 
-        // Row 1: visitorsEnabledButton | visitorsBuyFromBazaarButton (2 columns)
-        visitorsEnabledButton = new FlatBoolToggleWidget(col1X, y, halfBW, bh,
+        visitorsEnabledButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
                         Text.translatable("gui.just-farming.visitors_enabled_label"),
                         config.visitorsEnabled);
         this.addDrawableChild(visitorsEnabledButton);
         visitorsEnabledButton.setTooltip(Tooltip.of(Text.literal(
                 "When enabled, the macro teleports to the barn at the rewarp point,\n" +
                 "interacts with each garden visitor, and returns to farming.")));
+        y += bh + pad;
 
-        visitorsBuyFromBazaarButton = new FlatBoolToggleWidget(col2X, y, halfBW, bh,
+        visitorsBuyFromBazaarButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
                         Text.translatable("gui.just-farming.visitors_buy_bazaar_label"),
                         config.visitorsBuyFromBazaar);
         this.addDrawableChild(visitorsBuyFromBazaarButton);
@@ -1002,7 +1002,7 @@ public class FarmingConfigScreen extends Screen {
 
         @Override
         protected void updateMessage() {
-            setMessage(Text.literal(String.format("Bazaar Typing Delay: %d ms", getIntValue())));
+            setMessage(Text.literal(String.format("Bazaar Delay: %d ms", getIntValue())));
         }
     }
 }

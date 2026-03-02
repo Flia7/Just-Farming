@@ -88,6 +88,13 @@ public class VisitorManager {
     private static final long WARP_COMMAND_WAIT_MS = 3000;
 
     /**
+     * Minimum pause (ms) after the bazaar GUI closes before the player starts
+     * walking toward the visitor.  Prevents the abrupt camera snap that occurs
+     * when movement begins immediately after an ESC close.
+     */
+    private static final long POST_BAZAAR_WALK_DELAY_MS = 150;
+
+    /**
      * Maximum camera rotation step per tick (degrees) for smooth look-at movement.
      * This replicates the natural feel of a player moving their mouse.
      */
@@ -523,6 +530,7 @@ public class VisitorManager {
             }
 
             case ACCEPTING_OFFER -> {
+                if (now - stateEnteredAt < POST_BAZAAR_WALK_DELAY_MS) return;
                 if (currentVisitor == null || !currentVisitor.isAlive()) {
                     nextVisitor();
                     return;
