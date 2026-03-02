@@ -21,6 +21,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
 import java.util.Set;
@@ -95,13 +96,28 @@ public class VisitorManager {
      * walking toward the visitor.  Prevents the abrupt camera snap that occurs
      * when movement begins immediately after an ESC close.
      */
-    private static final long POST_BAZAAR_WALK_DELAY_MS = 150;
+    private static final long POST_BAZAAR_WALK_DELAY_MS = 1000;
 
     /**
-     * Maximum camera rotation step per tick (degrees) for smooth look-at movement.
-     * This replicates the natural feel of a player moving their mouse.
+     * Camera rotation speed (degrees per second) for smooth look-at movement.
+     * At 20 TPS this yields ~1.5° per tick – small increments that feel natural
+     * while still covering 30° in one second (fast enough to track moving visitors).
      */
-    private static final float SMOOTH_LOOK_DEGREES_PER_TICK = 8.0f;
+    private static final float SMOOTH_LOOK_DEGREES_PER_SECOND = 30.0f;
+
+    /**
+     * Assumed elapsed time (ms) used on the very first {@code smoothRotateCamera}
+     * call, before a previous timestamp is available.  50 ms corresponds to one
+     * tick at the standard 20 TPS rate.
+     */
+    private static final float SMOOTH_LOOK_INITIAL_DELTA_MS = 50.0f;
+
+    /**
+     * Maximum elapsed time (ms) used in {@code smoothRotateCamera}.
+     * Caps the step during a severe lag spike so the camera doesn't teleport
+     * to the target after a multi-second freeze.
+     */
+    private static final float SMOOTH_LOOK_MAX_DELTA_MS = 250.0f;
 
     /**
      * Maximum random yaw offset (degrees) applied to the walking direction so the
@@ -206,6 +222,8 @@ public class VisitorManager {
     // Smooth camera rotation targets
     private float targetYaw   = 0f;
     private float targetPitch = 0f;
+    /** Wall-clock time (ms) of the previous smoothRotateCamera call; 0 = not yet called. */
+    private long  lastSmoothLookTime = 0;
 
     // Walk-direction jitter for humanlike path variation
     /** Current random yaw offset (degrees) added to the walking direction. */
@@ -216,6 +234,12 @@ public class VisitorManager {
     // Visitor tracking
     private Entity       currentVisitor  = null;
     private final List<Entity> pendingVisitors = new ArrayList<>();
+    /**
+     * Entity IDs of visitors whose offer has already been accepted this run.
+     * Used to prevent re-navigating to a visitor that is still physically present
+     * after their offer was completed (they take a moment to despawn on Hypixel).
+     */
+    private final Set<Integer> completedVisitorIds = new HashSet<>();
 
     // Item requirements extracted from the current visitor's menu
     private final List<VisitorRequirement> pendingRequirements = new ArrayList<>();
@@ -332,6 +356,7 @@ public class VisitorManager {
         LOGGER.info("[JustFarming-Visitors] Starting visitor routine.");
         pendingVisitors.clear();
         pendingRequirements.clear();
+        completedVisitorIds.clear();
         requirementIndex  = 0;
         currentVisitor    = null;
         interactCooldownUntil = 0;
@@ -339,11 +364,34 @@ public class VisitorManager {
         postPurchase      = false;
         walkJitter        = 0f;
         walkJitterNextUpdate = 0;
+        lastSmoothLookTime = 0;
         long base = config.visitorsTeleportDelay > 0
                 ? config.visitorsTeleportDelay : TELEPORT_WAIT_DEFAULT_MS;
         teleportWaitMs = base + random.nextInt((int) TELEPORT_EXTRA_RANDOM_MS + 1);
         enterState(State.TELEPORTING);
         sendCommand("tptoplot barn");
+    }
+
+    /**
+     * Called every render frame from the render thread to apply incremental
+     * camera rotation toward {@link #targetYaw}/{@link #targetPitch}.
+     *
+     * <p>Running this at render-frame frequency (typically 60+ FPS) instead of
+     * only on game ticks (20 TPS) produces micro-steps of roughly 0.5° per
+     * frame at 60 FPS, well within the 0.2°–1.5° per-step range the
+     * time-based formula computes.  Total angular speed stays at
+     * {@link #SMOOTH_LOOK_DEGREES_PER_SECOND} because each step is proportional
+     * to actual elapsed wall-clock time.
+     *
+     * <p>Only active while the routine is in a navigation or offer-accepting
+     * state; all other states are ignored to avoid interfering with
+     * other camera logic.
+     */
+    public void onRenderTick() {
+        if (state != State.NAVIGATING && state != State.ACCEPTING_OFFER) return;
+        ClientPlayerEntity player = client.player;
+        if (player == null) return;
+        smoothRotateCamera(player);
     }
 
     /** Called every client tick from the main tick event. */
@@ -597,12 +645,26 @@ public class VisitorManager {
             case WAITING_FOR_ACCEPT -> {
                 if (now - stateEnteredAt >= currentActionDelay) {
                     if (client.currentScreen instanceof HandledScreen<?> screen) {
-                        tryClickAcceptOffer(screen);
-                        // Close after accepting; mark that the next CLOSING_MENU
-                        // should move to the next visitor, not re-enter accepting.
-                        postAccept = true;
-                        player.closeHandledScreen();
-                        enterState(State.CLOSING_MENU);
+                        boolean accepted = tryClickAcceptOffer(screen);
+                        // Record the visitor as completed so we never interact with
+                        // them again if they haven't despawned yet (prevents re-clicking
+                        // an already-accepted offer during the post-accept re-scan).
+                        if (currentVisitor != null) {
+                            completedVisitorIds.add(currentVisitor.getId());
+                        }
+                        if (!accepted) {
+                            // Accept button not present – offer was already completed.
+                            // Skip directly to the next visitor without marking postAccept
+                            // (which would cause an extra CLOSING_MENU→nextVisitor() cycle).
+                            player.closeHandledScreen();
+                            nextVisitor();
+                        } else {
+                            // Close after accepting; mark that the next CLOSING_MENU
+                            // should move to the next visitor, not re-enter accepting.
+                            postAccept = true;
+                            player.closeHandledScreen();
+                            enterState(State.CLOSING_MENU);
+                        }
                     } else {
                         nextVisitor();
                     }
@@ -651,6 +713,10 @@ public class VisitorManager {
                             if (e.getCustomName() == null || e instanceof PlayerEntity) return false;
                             String name = stripFormatting(e.getCustomName().getString());
                             if (!KNOWN_VISITOR_NAMES.contains(name)) return false;
+                            if (completedVisitorIds.contains(e.getId())) {
+                                LOGGER.info("[JustFarming-Visitors] Skipping already-accepted visitor: {}", name);
+                                return false;
+                            }
                             if (config.visitorBlacklist != null && config.visitorBlacklist.contains(name)) {
                                 LOGGER.info("[JustFarming-Visitors] Skipping blacklisted visitor: {}", name);
                                 return false;
@@ -781,11 +847,24 @@ public class VisitorManager {
 
     /**
      * Move the player's yaw and pitch one step closer to
-     * {@link #targetYaw}/{@link #targetPitch} at a fixed rate of
-     * {@link #SMOOTH_LOOK_DEGREES_PER_TICK} degrees per tick, replicating the
+     * {@link #targetYaw}/{@link #targetPitch} at a time-based rate of
+     * {@link #SMOOTH_LOOK_DEGREES_PER_SECOND} degrees per second, replicating the
      * feel of a player naturally moving their mouse.
+     *
+     * <p>Using elapsed real time instead of a fixed per-tick step means the camera
+     * glides smoothly regardless of frame rate or server lag spikes.
      */
     private void smoothRotateCamera(ClientPlayerEntity player) {
+        long now = System.currentTimeMillis();
+        // Cap the delta to SMOOTH_LOOK_MAX_DELTA_MS so a severe lag spike doesn't teleport the camera.
+        float deltaMs = (lastSmoothLookTime == 0)
+                ? SMOOTH_LOOK_INITIAL_DELTA_MS
+                : Math.min(SMOOTH_LOOK_MAX_DELTA_MS, (float)(now - lastSmoothLookTime));
+        lastSmoothLookTime = now;
+
+        // Scale the maximum step by actual elapsed time for frame-rate independence.
+        float step = SMOOTH_LOOK_DEGREES_PER_SECOND * deltaMs / 1000.0f;
+
         float currentYaw   = player.getYaw();
         float currentPitch = player.getPitch();
 
@@ -799,7 +878,6 @@ public class VisitorManager {
         // Already on target – nothing to do
         if (Math.abs(yawDiff) < 0.1f && Math.abs(pitchDiff) < 0.1f) return;
 
-        float step = SMOOTH_LOOK_DEGREES_PER_TICK;
         float newYaw   = currentYaw   + Math.max(-step, Math.min(step, yawDiff));
         float newPitch = currentPitch + Math.max(-step, Math.min(step, pitchDiff));
         newPitch = Math.max(-90f, Math.min(90f, newPitch));
