@@ -183,6 +183,11 @@ public class MacroManager {
                 || state == MacroState.STRAFE_RIGHT_ONLY
                 || state == MacroState.BACK_ONLY || state == MacroState.FORWARD_ONLY);
     }
+    /** Returns {@code true} when the macro is in the VISITING state (visitor routine active). */
+    public boolean isVisiting() {
+        return state == MacroState.VISITING;
+    }
+
     /** Returns {@code true} if freelook mode is enabled. */
     public boolean isFreelookEnabled() {
         return freelookEnabled;
@@ -643,6 +648,7 @@ public class MacroManager {
                 && !client.world.getBlockState(blockHit.getBlockPos()).isAir()) {
             client.interactionManager.updateBlockBreakingProgress(
                     blockHit.getBlockPos(), blockHit.getSide());
+            player.swingHand(net.minecraft.util.Hand.MAIN_HAND);
         }
 
         // ---- Stuck detection (end of row) ----

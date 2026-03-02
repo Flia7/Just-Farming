@@ -44,8 +44,6 @@ public class FarmingConfigScreen extends Screen {
     private static final int COL_TEXT_MUTED  = 0x66FFFFFF; // rgba(1,1,1,0.40) muted text
     private static final int COL_ACCENT      = 0xFF7C4DFF; // purple accent
     private static final int COL_TAB_ACTIVE  = 0x26FFFFFF; // active tab tint
-    private static final int COL_STATUS_ON   = 0xFF50E890; // green  (running)
-    private static final int COL_STATUS_OFF  = 0xFFFF5060; // red    (stopped)
     private static final int COL_SHADOW      = 0x60000000; // drop shadow
 
     // ── Tabs ──────────────────────────────────────────────────────────────────
@@ -147,9 +145,12 @@ public class FarmingConfigScreen extends Screen {
 
         int centerContent = contentX + contentW / 2;
         int widgetX       = centerContent - bw / 2;
+        int col1X         = contentX + pad;
+        int halfBW        = (contentW - 3 * pad) / 2;
+        int col2X         = col1X + halfBW + pad;
 
         // ── Tab buttons in the left nav panel ─────────────────────────────────
-        int firstTabY = winY + Math.round(46 * scale);
+        int firstTabY = winY + Math.round(30 * scale);
         tabButtons = new TabButton[TAB_NAMES.length];
         for (int i = 0; i < TAB_NAMES.length; i++) {
             tabButtons[i] = new TabButton(
@@ -166,7 +167,8 @@ public class FarmingConfigScreen extends Screen {
         y = contentTop;
         sectionCropY = y;
         y += sLH;
-        cropSelectButton = new FlatButtonWidget(widgetX, y, bw, bh,
+        // Row 1: cropSelectButton | cropSettingsButton (2 columns)
+        cropSelectButton = new FlatButtonWidget(col1X, y, halfBW, bh,
                         getCropSelectText(),
                         btn -> {
                             applyConfig();
@@ -175,9 +177,8 @@ public class FarmingConfigScreen extends Screen {
                         });
         this.addDrawableChild(cropSelectButton);
         cropSelectButton.setTooltip(Tooltip.of(Text.literal("Choose the crop type to farm")));
-        y += bh + pad;
 
-        cropSettingsButton = new FlatButtonWidget(widgetX, y, bw, bh,
+        cropSettingsButton = new FlatButtonWidget(col2X, y, halfBW, bh,
                         getCropSettingsText(),
                         btn -> {
                             applyConfig();
@@ -191,7 +192,8 @@ public class FarmingConfigScreen extends Screen {
         actionSeparatorY = y;
         y += Math.max(2, Math.round(4 * scale));
 
-        setRewarpButton = new FlatButtonWidget(widgetX, y, bw, bh,
+        // Row 2: setRewarpButton | toggleMacroButton (2 columns)
+        setRewarpButton = new FlatButtonWidget(col1X, y, halfBW, bh,
                         getRewarpButtonText(),
                         btn -> {
                             if (this.client != null && this.client.player != null) {
@@ -205,9 +207,8 @@ public class FarmingConfigScreen extends Screen {
                         });
         this.addDrawableChild(setRewarpButton);
         setRewarpButton.setTooltip(Tooltip.of(Text.literal("Save your current position as the rewarp waypoint.\nThe macro sends /warp garden when it reaches this point.")));
-        y += bh + pad;
 
-        toggleMacroButton = new FlatButtonWidget(widgetX, y, bw, bh,
+        toggleMacroButton = new FlatButtonWidget(col2X, y, halfBW, bh,
                         getMacroToggleText(),
                         btn -> {
                             applyConfig();
@@ -350,16 +351,16 @@ public class FarmingConfigScreen extends Screen {
         sectionVisitorsY = y;
         y += sLH;
 
-        visitorsEnabledButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
+        // Row 1: visitorsEnabledButton | visitorsBuyFromBazaarButton (2 columns)
+        visitorsEnabledButton = new FlatBoolToggleWidget(col1X, y, halfBW, bh,
                         Text.translatable("gui.just-farming.visitors_enabled_label"),
                         config.visitorsEnabled);
         this.addDrawableChild(visitorsEnabledButton);
         visitorsEnabledButton.setTooltip(Tooltip.of(Text.literal(
                 "When enabled, the macro teleports to the barn at the rewarp point,\n" +
                 "interacts with each garden visitor, and returns to farming.")));
-        y += bh + pad;
 
-        visitorsBuyFromBazaarButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
+        visitorsBuyFromBazaarButton = new FlatBoolToggleWidget(col2X, y, halfBW, bh,
                         Text.translatable("gui.just-farming.visitors_buy_bazaar_label"),
                         config.visitorsBuyFromBazaar);
         this.addDrawableChild(visitorsBuyFromBazaarButton);
@@ -486,17 +487,8 @@ public class FarmingConfigScreen extends Screen {
                 Text.literal("Just Farming").withColor(COL_TEXT),
                 navCenterX, navTitleY, COL_TEXT);
 
-        // ── Nav: status indicator ─────────────────────────────────────────────
-        boolean running   = macroManager.isRunning();
-        int statusColor   = running ? COL_STATUS_ON : COL_STATUS_OFF;
-        String statusTxt  = running ? "\u25CF Running" : "\u25CF Stopped";
-        int statusY       = navTitleY + 11;
-        context.drawCenteredTextWithShadow(this.textRenderer,
-                Text.literal(statusTxt).withColor(statusColor),
-                navCenterX, statusY, statusColor);
-
-        // ── Nav: separator line below status ─────────────────────────────────
-        int navSepY = statusY + 12;
+        // ── Nav: separator line below title ─────────────────────────────────
+        int navSepY = navTitleY + 14;
         context.fill(winX + 8, navSepY, winX + navW - 8, navSepY + 1, COL_SEP);
 
         // ── Content: current tab section title ────────────────────────────────
