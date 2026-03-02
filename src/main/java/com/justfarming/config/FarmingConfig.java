@@ -179,6 +179,20 @@ public class FarmingConfig {
     public int visitorsTeleportDelay = 4000;
 
     /**
+     * Delay in milliseconds after sending {@code /bazaar <item>} before
+     * interacting with the bazaar search-results screen.  Increase this if the
+     * bazaar screen is slow to open.
+     */
+    public int bazaarSearchDelay = 1500;
+
+    /**
+     * Delay in milliseconds between consecutive click actions inside the
+     * Bazaar GUI (e.g. clicking the search-result item, then "Buy Instantly").
+     * Increase this if Hypixel's server is slow to update the screen.
+     */
+    public int bazaarClickDelay = 800;
+
+    /**
      * Visitor names to skip automatically.  Any visitor whose name appears in
      * this list will be ignored by the visitor routine regardless of their
      * required items or rewards.
