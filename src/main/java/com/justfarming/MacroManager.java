@@ -238,8 +238,7 @@ public class MacroManager {
      * is disabled.
      *
      * <p>When this returns {@code true}, {@link #tickMoving} releases all keys and
-     * returns immediately, and {@link #shouldBreak()} returns {@code false} so that
-     * the mixins in {@code MinecraftClientMixin} do not force block-breaking.
+     * returns immediately, and {@link #shouldBreak()} returns {@code false}.
      */
     private boolean isGuiBlocking() {
         return !config.macroEnabledInGui && client.currentScreen != null;
@@ -247,12 +246,7 @@ public class MacroManager {
 
     /**
      * Returns {@code true} when the macro is actively in a movement+breaking
-     * phase (BACKWARD_LEFT or FORWARD_LEFT).
-     *
-     * <p>Used by {@code MinecraftClientMixin} to decide whether to force
-     * block-breaking even when a GUI screen is open, and to skip
-     * {@link net.minecraft.client.option.KeyBinding#unpressAll()} so that
-     * movement and attack keys stay pressed when a GUI is opened.
+     * phase (BACKWARD_LEFT, FORWARD_LEFT, etc.).
      *
      * <p>Returns {@code false} while a GUI is open and
      * {@link FarmingConfig#macroEnabledInGui} is disabled, matching the user's
