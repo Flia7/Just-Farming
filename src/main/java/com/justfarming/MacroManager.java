@@ -256,6 +256,19 @@ public class MacroManager {
     }
 
     /**
+     * Returns {@code true} when the macro should pause movement and block-breaking
+     * because a GUI screen is open while {@link FarmingConfig#macroEnabledInGui}
+     * is disabled.
+     *
+     * <p>When this returns {@code true}, {@link #tickMoving} releases all keys and
+     * returns immediately, and {@link #shouldBreak()} returns {@code false} so that
+     * the mixins in {@code MinecraftClientMixin} do not force block-breaking.
+     */
+    private boolean isGuiBlocking() {
+        return !config.macroEnabledInGui && client.currentScreen != null;
+    }
+
+    /**
      * Returns {@code true} when the macro is actively in a movement+breaking
      * phase (BACKWARD_LEFT or FORWARD_LEFT).
      *
@@ -263,8 +276,13 @@ public class MacroManager {
      * block-breaking even when a GUI screen is open, and to skip
      * {@link net.minecraft.client.option.KeyBinding#unpressAll()} so that
      * movement and attack keys stay pressed when a GUI is opened.
+     *
+     * <p>Returns {@code false} while a GUI is open and
+     * {@link FarmingConfig#macroEnabledInGui} is disabled, matching the user's
+     * expectation that the macro pauses when a screen is open in that mode.
      */
     public boolean shouldBreak() {
+        if (isGuiBlocking()) return false;
         return running && (state == MacroState.BACKWARD_LEFT || state == MacroState.FORWARD_LEFT
                 || state == MacroState.FORWARD_RIGHT || state == MacroState.STRAFE_LEFT_ONLY
                 || state == MacroState.STRAFE_RIGHT_ONLY
@@ -859,6 +877,11 @@ public class MacroManager {
      * Movement phase: presses the appropriate directional keys and monitors the
      * player's position for end-of-row or rewarp-trigger events.
      *
+     * <p>When a GUI screen is open and {@link FarmingConfig#macroEnabledInGui} is
+     * disabled, all keys are released and the method returns early so the player
+     * stops moving and breaking.  Position tracking is also suspended so that
+     * being blocked by the GUI is not misidentified as an end-of-row event.
+     *
      * @param forward    {@code true} = press the forward key.
      * @param back       {@code true} = press the back key.
      * @param strafeLeft {@code true} = press the left-strafe key.
@@ -866,6 +889,14 @@ public class MacroManager {
      */
     private void tickMoving(ClientPlayerEntity player, boolean forward, boolean back,
                             boolean strafeLeft, boolean strafeRight) {
+        // Pause all movement and breaking when the GUI is blocking
+        // (macroEnabledInGui = false while a screen is open).
+        if (isGuiBlocking()) {
+            releaseKeys();
+            lastPos = null; // prevent stationary ticks from triggering stuck detection
+            return;
+        }
+
         // Hold attack (breaks crops in view)
         client.options.attackKey.setPressed(true);
 
@@ -984,59 +1015,86 @@ public class MacroManager {
         // keys that the state machine just set so the player presses exactly the
         // user-configured keys (swapped when customFlipped is true).
         applyCustomKeyOverrides();
+    }
 
-        // ---- Real-time alternate-direction switching via GLFW key polling ----
-        // If the player physically presses the alternate direction key while the
-        // macro is running, flip direction immediately instead of waiting for the
-        // stuck detection threshold.
-        if (client.getWindow() != null) {
-            checkInstantDirectionFlip();
+    /**
+     * Instantly alternates the macro's movement direction when the player presses
+     * the configurable alternate-direction keybind (default: N, reassignable in
+     * the Controls screen).
+     *
+     * <p>This replaces the old per-crop GLFW polling approach.  A single key now
+     * works uniformly for every crop type:
+     * <ul>
+     *   <li>S-shape crops (wheat, carrot, potato, melon, pumpkin, nether wart):
+     *       toggles between {@link MacroState#FORWARD_LEFT} and
+     *       {@link MacroState#FORWARD_RIGHT}.</li>
+     *   <li>Cactus: toggles between {@link MacroState#STRAFE_LEFT_ONLY} and
+     *       {@link MacroState#STRAFE_RIGHT_ONLY}.</li>
+     *   <li>Left-Back (sugar cane, moonflower, sunflower, wild rose): toggles
+     *       between {@link MacroState#STRAFE_LEFT_ONLY} and
+     *       {@link MacroState#BACK_ONLY}.</li>
+     *   <li>Forward-Back (mushroom): toggles between {@link MacroState#FORWARD_ONLY}
+     *       and {@link MacroState#BACK_ONLY}.</li>
+     *   <li>Cocoa Beans / other back-left crops: toggles between
+     *       {@link MacroState#BACKWARD_LEFT} and {@link MacroState#FORWARD_LEFT}.</li>
+     *   <li>Custom-key crops: toggles {@link #customFlipped} and immediately
+     *       applies the new key combination.</li>
+     * </ul>
+     *
+     * <p>Any pending {@link MacroState#LANE_SWAP_WAITING} delay is cancelled so
+     * the switch is truly instantaneous.
+     *
+     * <p>Called by {@link com.justfarming.JustFarming}'s tick handler whenever
+     * the {@code alternate_direction} keybind reports a fresh press
+     * ({@link net.minecraft.client.option.KeyBinding#wasPressed()}).
+     */
+    public void triggerInstantAlternate() {
+        if (!running) return;
+        CropType crop = config.selectedCrop;
+        com.justfarming.config.FarmingConfig.CropCustomSettings cs =
+                config.getCropSettings(crop);
+
+        if (cs != null) {
+            // Custom key mode: flip the customFlipped flag immediately.
+            customFlipped = !customFlipped;
+            // Cancel any in-progress lane-swap delay.
+            if (state == MacroState.LANE_SWAP_WAITING) {
+                state = deriveStateFromCustomKeys(cs);
+            }
+            stuckTicks = 0;
+            lastPos    = null;
+            LOGGER.info("[JustFarming] Alternate key – custom flip {} (crop: {}).",
+                    customFlipped ? "on" : "off", crop);
+        } else {
+            // Built-in pattern: compute and jump directly to the opposite state.
+            MacroState nextState = computeAlternateState(crop);
+            if (nextState != null && nextState != state) {
+                // Cancel any in-progress lane-swap delay.
+                state      = nextState;
+                stuckTicks = 0;
+                lastPos    = null;
+                LOGGER.info("[JustFarming] Alternate key – switching to {} (crop: {}).",
+                        nextState, crop);
+            }
         }
     }
 
     /**
-     * Polls physical GLFW key state each tick during a movement phase.
-     * When the player presses the crop's alternate direction key, the macro
-     * instantly flips to the opposite direction rather than waiting for the
-     * end-of-row (stuck detection).
-     *
-     * <p>This is only applied for built-in key patterns (no custom key config).
-     * Custom key crops still rely on stuck detection for direction flips.
+     * Returns the alternate {@link MacroState} for the given built-in crop type,
+     * toggling between the two halves of its row pattern.
      */
-    private void checkInstantDirectionFlip() {
-        CropType crop = config.selectedCrop;
-        // Custom key config: skip – custom crops use stuck detection.
-        if (config.getCropSettings(crop) != null) return;
-        net.minecraft.client.util.Window win = client.getWindow();
-
-        MacroState nextState = null;
+    private MacroState computeAlternateState(CropType crop) {
         if (crop.isSShape()) {
-            // S-Shape: D → right start, A → left start
-            if (state == MacroState.FORWARD_LEFT  && InputUtil.isKeyPressed(win, GLFW.GLFW_KEY_D)) nextState = MacroState.FORWARD_RIGHT;
-            if (state == MacroState.FORWARD_RIGHT && InputUtil.isKeyPressed(win, GLFW.GLFW_KEY_A)) nextState = MacroState.FORWARD_LEFT;
+            return (state == MacroState.FORWARD_LEFT) ? MacroState.FORWARD_RIGHT : MacroState.FORWARD_LEFT;
         } else if (crop.isCactus()) {
-            // Cactus: D → strafe-right, A → strafe-left
-            if (state == MacroState.STRAFE_LEFT_ONLY  && InputUtil.isKeyPressed(win, GLFW.GLFW_KEY_D)) nextState = MacroState.STRAFE_RIGHT_ONLY;
-            if (state == MacroState.STRAFE_RIGHT_ONLY && InputUtil.isKeyPressed(win, GLFW.GLFW_KEY_A)) nextState = MacroState.STRAFE_LEFT_ONLY;
+            return (state == MacroState.STRAFE_LEFT_ONLY) ? MacroState.STRAFE_RIGHT_ONLY : MacroState.STRAFE_LEFT_ONLY;
         } else if (crop.isLeftBack()) {
-            // Left-Back (cane/moonflower/sunflower/wild rose): D → back-only, A → strafe-left
-            if (state == MacroState.STRAFE_LEFT_ONLY && InputUtil.isKeyPressed(win, GLFW.GLFW_KEY_D)) nextState = MacroState.BACK_ONLY;
-            if (state == MacroState.BACK_ONLY         && InputUtil.isKeyPressed(win, GLFW.GLFW_KEY_A)) nextState = MacroState.STRAFE_LEFT_ONLY;
+            return (state == MacroState.STRAFE_LEFT_ONLY) ? MacroState.BACK_ONLY : MacroState.STRAFE_LEFT_ONLY;
         } else if (crop.isForwardBack()) {
-            // Mushroom: S → back-only, W → forward-only
-            if (state == MacroState.FORWARD_ONLY && InputUtil.isKeyPressed(win, GLFW.GLFW_KEY_S)) nextState = MacroState.BACK_ONLY;
-            if (state == MacroState.BACK_ONLY    && InputUtil.isKeyPressed(win, GLFW.GLFW_KEY_W)) nextState = MacroState.FORWARD_ONLY;
+            return (state == MacroState.FORWARD_ONLY) ? MacroState.BACK_ONLY : MacroState.FORWARD_ONLY;
         } else {
-            // Cocoa Beans (and other back-left crops): W → forward, S → backward
-            if (state == MacroState.BACKWARD_LEFT && InputUtil.isKeyPressed(win, GLFW.GLFW_KEY_W)) nextState = MacroState.FORWARD_LEFT;
-            if (state == MacroState.FORWARD_LEFT  && InputUtil.isKeyPressed(win, GLFW.GLFW_KEY_S)) nextState = MacroState.BACKWARD_LEFT;
-        }
-
-        if (nextState != null && nextState != state) {
-            LOGGER.info("[JustFarming] Instant direction flip ({}) – switching to {}.", crop, nextState);
-            state     = nextState;
-            stuckTicks = 0;
-            lastPos   = null;
+            // Cocoa Beans (and other back-left crops)
+            return (state == MacroState.BACKWARD_LEFT) ? MacroState.FORWARD_LEFT : MacroState.BACKWARD_LEFT;
         }
     }
 
@@ -1079,17 +1137,27 @@ public class MacroManager {
     /**
      * After every tick where the macro is actively moving, override the
      * state-machine-set keys with the user's custom configuration (if any).
+     *
+     * <p>When {@link #customFlipped} is {@code true} the macro is in its
+     * "alternate" direction pass.  The flip axis depends on the crop:
+     * <ul>
+     *   <li><b>S-shape / pure-strafe</b> ({@link #shouldFlipStrafe} = {@code true}):
+     *       forward/back keys stay the same; left↔right are swapped.</li>
+     *   <li><b>Cocoa-Beans style</b> ({@link #shouldFlipStrafe} = {@code false}):
+     *       forward↔back are swapped; left/right keys stay the same.</li>
+     * </ul>
      */
     private void applyCustomKeyOverrides() {
         if (!shouldBreak()) return;
         com.justfarming.config.FarmingConfig.CropCustomSettings cs =
                 config.getCropSettings(config.selectedCrop);
         if (cs == null || client.options == null) return;
+        boolean flipStrafe = shouldFlipStrafe(cs);
         client.options.attackKey.setPressed(cs.attack);
-        client.options.forwardKey.setPressed(customFlipped ? cs.back    : cs.forward);
-        client.options.backKey.setPressed(   customFlipped ? cs.forward : cs.back);
-        client.options.leftKey.setPressed(   customFlipped && shouldFlipStrafe(cs) ? cs.right : cs.left);
-        client.options.rightKey.setPressed(  customFlipped && shouldFlipStrafe(cs) ? cs.left  : cs.right);
+        client.options.forwardKey.setPressed((!flipStrafe && customFlipped) ? cs.back    : cs.forward);
+        client.options.backKey.setPressed(   (!flipStrafe && customFlipped) ? cs.forward : cs.back);
+        client.options.leftKey.setPressed(   (flipStrafe  && customFlipped) ? cs.right   : cs.left);
+        client.options.rightKey.setPressed(  (flipStrafe  && customFlipped) ? cs.left    : cs.right);
     }
 
     /**
@@ -1113,13 +1181,19 @@ public class MacroManager {
      * Returns {@code true} when the strafe keys (left↔right) should be swapped
      * on a direction flip.
      *
-     * <p>Pure-strafe crops like Cactus (no forward/back movement) alternate
-     * their lateral direction on each row, so left↔right must be swapped.
-     * Crops that alternate forward/back (e.g. Cocoa Beans) keep the same
-     * strafe direction on both passes, so left↔right must NOT be swapped.
+     * <p>S-shape crops (wheat, carrot, potato, melon, pumpkin, nether wart) always
+     * move <em>forward</em> and alternate only the strafe direction (left↔right),
+     * so {@code shouldFlipStrafe} must return {@code true} for them.  Pure-strafe
+     * crops (Cactus, no forward/back) also swap strafe.  Only crops that
+     * alternate forward↔back (e.g. Cocoa Beans, where {@code cs.back = true})
+     * must return {@code false} so the strafe key remains constant.
+     *
+     * <p>Decision rule: if the crop's custom settings have {@code back = false}
+     * (either S-shape or pure-strafe), the flip axis is left↔right; otherwise
+     * it is forward↔back.
      */
     private static boolean shouldFlipStrafe(
             com.justfarming.config.FarmingConfig.CropCustomSettings cs) {
-        return !(cs.forward || cs.back);
+        return !cs.back;
     }
 }

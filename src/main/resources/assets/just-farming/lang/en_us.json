@@ -3,6 +3,7 @@
   "key.just-farming.toggle_macro": "Toggle Farming Macro",
   "key.just-farming.open_gui": "Open Farming GUI",
   "key.just-farming.freelook": "Toggle Freelook",
+  "key.just-farming.alternate_direction": "Alternate Farming Direction",
   "key.category.just-farming.categories": "Just Farming",
   "gui.just-farming.title": "Just Farming Config",
   "gui.just-farming.crop_label": "Selected Crop:",

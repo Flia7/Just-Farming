@@ -560,7 +560,10 @@ public class VisitorManager {
                         behindPoint = null;
                         behindPointStartTime = 0;
                     } else {
-                        walkToward(player, behindPoint);
+                        // Skip NPC avoidance: the path to the behind-point intentionally
+                        // passes through the line of visitors so we must not treat them
+                        // as obstacles here.
+                        walkToward(player, behindPoint, false);
                         return;
                     }
                 }
@@ -885,7 +888,25 @@ public class VisitorManager {
         });
     }
 
+    /**
+     * Navigate one tick toward {@code target}, applying NPC avoidance.
+     * Convenience overload; equivalent to {@code walkToward(player, target, true)}.
+     */
     private void walkToward(ClientPlayerEntity player, Vec3d target) {
+        walkToward(player, target, true);
+    }
+
+    /**
+     * Navigate one tick toward {@code target}.
+     *
+     * @param avoidNpcs when {@code true}, NPC entities other than
+     *                  {@link #currentVisitor} are treated as obstacles and the
+     *                  pathfinder steers around them.  Pass {@code false} when
+     *                  navigating to the {@link #behindPoint} so that the line of
+     *                  pending visitors does not block the path to the far end of
+     *                  the queue.
+     */
+    private void walkToward(ClientPlayerEntity player, Vec3d target, boolean avoidNpcs) {
         if (client.options == null || client.world == null) return;
 
         long now = System.currentTimeMillis();
@@ -918,12 +939,12 @@ public class VisitorManager {
         // If blocked (wall or nearby visitor NPC), try steering angles to navigate around.
         boolean shouldWalk = false;
         float chosenYaw = baseTargetYaw;
-        if (isPathClear(player, baseTargetYaw, probeStep)) {
+        if (isPathClear(player, baseTargetYaw, probeStep, avoidNpcs)) {
             shouldWalk = true;
             chosenYaw  = baseTargetYaw + walkJitter; // jitter for varied paths when clear
         } else {
             for (float steer : WALL_STEER_ANGLES) {
-                if (isPathClear(player, baseTargetYaw + steer, probeStep)) {
+                if (isPathClear(player, baseTargetYaw + steer, probeStep, avoidNpcs)) {
                     shouldWalk = true;
                     chosenYaw  = baseTargetYaw + steer; // steer around the wall (no jitter)
                     break;
@@ -1014,13 +1035,18 @@ public class VisitorManager {
 
     /**
      * Returns {@code true} if the path {@code probeStep} ahead in the given
-     * {@code yawDeg} direction is both terrain-passable (see {@link #isPassable})
-     * and not obstructed by a non-target visitor NPC within {@link #NPC_AVOIDANCE_DIST}.
-     * This keeps the player from walking directly through other visitor NPCs while
-     * navigating to the current target, which looks unnatural.
+     * {@code yawDeg} direction is terrain-passable (see {@link #isPassable}) and,
+     * when {@code checkNpcs} is {@code true}, not obstructed by a non-target
+     * visitor NPC within {@link #NPC_AVOIDANCE_DIST}.
+     *
+     * <p>NPC checking is skipped (pass {@code false}) when navigating toward the
+     * {@link #behindPoint} so that the line of pending visitors does not falsely
+     * block the path toward the far end of the queue.
      */
-    private boolean isPathClear(ClientPlayerEntity player, double yawDeg, double probeStep) {
+    private boolean isPathClear(ClientPlayerEntity player, double yawDeg, double probeStep,
+                                 boolean checkNpcs) {
         if (!isPassable(player, yawDeg, probeStep)) return false;
+        if (!checkNpcs) return true;
         // Check at the farther of (probeStep, NPC_AVOIDANCE_DIST) so the look-ahead
         // covers the full avoidance radius even when probeStep is larger than it.
         double checkDist = Math.max(probeStep, NPC_AVOIDANCE_DIST);
@@ -1036,6 +1062,14 @@ public class VisitorManager {
                         && KNOWN_VISITOR_NAMES.contains(
                                 stripFormatting(e.getCustomName().getString())))
                 .isEmpty();
+    }
+
+    /**
+     * Convenience overload that always checks for NPC obstacles.
+     * Equivalent to {@code isPathClear(player, yawDeg, probeStep, true)}.
+     */
+    private boolean isPathClear(ClientPlayerEntity player, double yawDeg, double probeStep) {
+        return isPathClear(player, yawDeg, probeStep, true);
     }
 
     /**
