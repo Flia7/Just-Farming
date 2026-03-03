@@ -444,12 +444,11 @@ public class MacroManager {
             float pitchDiff   = normalizeAngleDiff(targetPitch - player.getPitch());
             float yawDiff     = normalizeAngleDiff(targetYaw   - player.getYaw());
 
-            // Snap to the exact target when within half a degree to prevent
-            // infinite floating-point drift near the destination.
-            player.setPitch(Math.abs(pitchDiff) < 0.5f ? targetPitch
-                    : player.getPitch() + pitchDiff * t);
-            player.setYaw(Math.abs(yawDiff) < 0.5f ? targetYaw
-                    : player.getYaw() + yawDiff * t);
+            // Always apply a delta step (like real mouse input) rather than
+            // snapping to the target absolutely.  The exponential decay naturally
+            // converges to the correct yaw and pitch without discrete jumps.
+            player.setPitch(Math.max(-90f, Math.min(90f, player.getPitch() + pitchDiff * t)));
+            player.setYaw(player.getYaw() + yawDiff * t);
         }
 
         switch (state) {

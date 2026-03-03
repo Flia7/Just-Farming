@@ -153,6 +153,27 @@ public class VisitorManager {
     private static final double INTERACT_RADIUS = 3.5;
 
     /**
+     * Minimum distance (blocks) the player maintains from non-target visitor NPCs
+     * while navigating.  When the chosen path would pass within this radius of
+     * another visitor, the pathfinder steers around them.
+     */
+    private static final double NPC_AVOIDANCE_DIST = 2.5;
+
+    /**
+     * Amplitude (degrees) of the random tremor added to each camera rotation step
+     * in {@link #smoothRotateCamera}, replicating the micro-vibration of a real
+     * mouse player.  Small enough to be imperceptible to a human observer.
+     */
+    private static final float SMOOTH_LOOK_TREMOR_AMPLITUDE = 0.12f;
+
+    /**
+     * Scale factor applied to the pitch component of the camera tremor.
+     * Humans produce less vertical hand-shake than horizontal, so pitch
+     * tremor is intentionally smaller than yaw tremor.
+     */
+    private static final float SMOOTH_LOOK_TREMOR_PITCH_SCALE = 0.5f;
+
+    /**
      * How far ahead (blocks) to probe the terrain when navigating.
      * Slightly more than half a block so we reliably detect edges and walls
      * before the player's centre reaches them.
@@ -729,7 +750,13 @@ public class VisitorManager {
         return base + extra;
     }
 
-    /** Populate {@link #pendingVisitors} with NPC entities in range. */
+    /** Populate {@link #pendingVisitors} with NPC entities in range.
+     *
+     * <p>Visitors are sorted farthest-first so the routine processes the last
+     * visitor in the queue first (visitor 5 → 4 → 3 → 2 → 1).  Any additional
+     * visitor that arrives after the initial scan is picked up by the re-scan
+     * inside {@link #nextVisitor()} and accepted last.
+     */
     private void scanForVisitors(ClientPlayerEntity player) {
         pendingVisitors.clear();
         Box searchBox = new Box(
@@ -751,6 +778,14 @@ public class VisitorManager {
                             return true;
                         })
                 .forEach(pendingVisitors::add);
+        // Sort farthest visitor first so we accept visitor 5→4→3→2→1 in order.
+        // Pre-compute squared distances to avoid redundant Vec3d allocations inside the comparator.
+        double px = player.getX(), py = player.getY(), pz = player.getZ();
+        pendingVisitors.sort((a, b) -> {
+            double da = Math.pow(a.getX() - px, 2) + Math.pow(a.getY() - py, 2) + Math.pow(a.getZ() - pz, 2);
+            double db = Math.pow(b.getX() - px, 2) + Math.pow(b.getY() - py, 2) + Math.pow(b.getZ() - pz, 2);
+            return Double.compare(db, da); // descending: farthest first
+        });
     }
 
     private void walkToward(ClientPlayerEntity player, Vec3d target) {
@@ -783,15 +818,15 @@ public class VisitorManager {
         double probeStep = Math.min(PROBE_STEP * speedMult, 5.0);
 
         // Try the direct path first; if clear, apply jitter for humanlike variation.
-        // If blocked, try steering angles to navigate around the wall.
+        // If blocked (wall or nearby visitor NPC), try steering angles to navigate around.
         boolean shouldWalk = false;
         float chosenYaw = baseTargetYaw;
-        if (isPassable(player, baseTargetYaw, probeStep)) {
+        if (isPathClear(player, baseTargetYaw, probeStep)) {
             shouldWalk = true;
             chosenYaw  = baseTargetYaw + walkJitter; // jitter for varied paths when clear
         } else {
             for (float steer : WALL_STEER_ANGLES) {
-                if (isPassable(player, baseTargetYaw + steer, probeStep)) {
+                if (isPathClear(player, baseTargetYaw + steer, probeStep)) {
                     shouldWalk = true;
                     chosenYaw  = baseTargetYaw + steer; // steer around the wall (no jitter)
                     break;
@@ -852,6 +887,32 @@ public class VisitorManager {
     }
 
     /**
+     * Returns {@code true} if the path {@code probeStep} ahead in the given
+     * {@code yawDeg} direction is both terrain-passable (see {@link #isPassable})
+     * and not obstructed by a non-target visitor NPC within {@link #NPC_AVOIDANCE_DIST}.
+     * This keeps the player from walking directly through other visitor NPCs while
+     * navigating to the current target, which looks unnatural.
+     */
+    private boolean isPathClear(ClientPlayerEntity player, double yawDeg, double probeStep) {
+        if (!isPassable(player, yawDeg, probeStep)) return false;
+        // Check at the farther of (probeStep, NPC_AVOIDANCE_DIST) so the look-ahead
+        // covers the full avoidance radius even when probeStep is larger than it.
+        double checkDist = Math.max(probeStep, NPC_AVOIDANCE_DIST);
+        double yawRad = Math.toRadians(yawDeg);
+        double probeX = player.getX() - Math.sin(yawRad) * checkDist;
+        double probeZ = player.getZ() + Math.cos(yawRad) * checkDist;
+        Box avoidBox = new Box(probeX - 1.0, player.getY() - 2.0, probeZ - 1.0,
+                               probeX + 1.0, player.getY() + 2.0, probeZ + 1.0);
+        return client.world.getEntitiesByClass(LivingEntity.class, avoidBox,
+                e -> e != currentVisitor
+                        && !(e instanceof PlayerEntity)
+                        && e.getCustomName() != null
+                        && KNOWN_VISITOR_NAMES.contains(
+                                stripFormatting(e.getCustomName().getString())))
+                .isEmpty();
+    }
+
+    /**
      * Returns the player's movement speed as a multiple of the vanilla default.
      * 1.0 = normal speed; values above 1.0 indicate SkyBlock speed buffs.
      */
@@ -909,8 +970,13 @@ public class VisitorManager {
         float newPitch = currentPitch + Math.max(-step, Math.min(step, pitchDiff));
         newPitch = Math.max(-90f, Math.min(90f, newPitch));
 
-        player.setYaw(newYaw);
-        player.setPitch(newPitch);
+        // Add a tiny random tremor to simulate the micro-vibration of a real
+        // mouse player (delta-based, like genuine mouse input).
+        float tremorYaw   = (random.nextFloat() * 2f - 1f) * SMOOTH_LOOK_TREMOR_AMPLITUDE;
+        float tremorPitch = (random.nextFloat() * 2f - 1f) * SMOOTH_LOOK_TREMOR_AMPLITUDE * SMOOTH_LOOK_TREMOR_PITCH_SCALE;
+
+        player.setYaw(newYaw + tremorYaw);
+        player.setPitch(newPitch + tremorPitch);
     }
 
     private void releaseMovementKeys() {
