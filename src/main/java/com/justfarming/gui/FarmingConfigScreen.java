@@ -245,13 +245,7 @@ public class FarmingConfigScreen extends Screen {
                         getMacroToggleText(),
                         btn -> {
                             applyConfig();
-                            // If the visitor routine is active and farming is not running,
-                            // stop the visitor instead of starting the farming macro.
-                            if (visitorManager != null && visitorManager.isActive() && !macroManager.isRunning()) {
-                                visitorManager.stop();
-                            } else {
-                                macroManager.toggle();
-                            }
+                            macroManager.toggle();
                             btn.setMessage(getMacroToggleText());
                         });
         this.addDrawableChild(toggleMacroButton);
@@ -318,7 +312,7 @@ public class FarmingConfigScreen extends Screen {
                         Text.translatable("gui.just-farming.unlocked_mouse_label"),
                         config.unlockedMouseEnabled);
         this.addDrawableChild(unlockedMouseButton);
-        unlockedMouseButton.setTooltip(Tooltip.of(Text.literal("Release the cursor while the macro runs so you can interact with other windows")));
+        unlockedMouseButton.setTooltip(Tooltip.of(Text.literal("Release the cursor while the macro runs")));
         y += bh + pad;
 
         gardenOnlyButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
@@ -388,28 +382,24 @@ public class FarmingConfigScreen extends Screen {
         visitorsDelaySlider = new VisitorsDelaySlider(widgetX, y, bw, bh, config.visitorsActionDelay);
         this.addDrawableChild(visitorsDelaySlider);
         visitorsDelaySlider.setTooltip(Tooltip.of(Text.literal(
-                "Visitors Delay: adds delay to every bazaar interaction\n" +
-                "and NPC interaction. Also controls how long the macro\n" +
-                "waits before checking for menus after each action.\n" +
-                "Increase to make the macro look more human-like. (ms)")));
+                "Delay before each bazaar click and NPC interaction. (ms)")));
         y += bh + pad;
 
         visitorsRandomSlider = new VisitorsRandomSlider(widgetX, y, bw, bh, config.visitorsActionDelayRandom);
         this.addDrawableChild(visitorsRandomSlider);
         visitorsRandomSlider.setTooltip(Tooltip.of(Text.literal(
-                "Maximum random extra delay added on top of the Visitors Delay\nfor each individual action. (ms)")));
+                "Extra random delay added on top of Bazaar Click Delay for each action. (ms)")));
         y += bh + pad;
 
         visitorsTeleportDelaySlider = new VisitorTeleportDelaySlider(widgetX, y, bw, bh, config.visitorsTeleportDelay);
         this.addDrawableChild(visitorsTeleportDelaySlider);
         visitorsTeleportDelaySlider.setTooltip(Tooltip.of(Text.literal(
-                "How long to wait after /tptoplot barn\nbefore scanning for visitor NPCs.\n" +
-                "An extra random 0–200 ms is always added. (ms)")));
+                "How long to wait after /tptoplot barn\nbefore scanning for visitor NPCs. (ms)")));
         y += bh + pad;
 
         bazaarSearchDelaySlider = new BazaarSearchDelaySlider(widgetX, y, bw, bh, config.bazaarSearchDelay);
         this.addDrawableChild(bazaarSearchDelaySlider);
-        bazaarSearchDelaySlider.setTooltip(Tooltip.of(Text.literal("How long to wait before typing /bazaar <item>\nin chat (simulates the player typing the command). (ms)")));
+        bazaarSearchDelaySlider.setTooltip(Tooltip.of(Text.literal("How long to wait before opening the bazaar for each item. (ms)")));
         tabContentHeights[3] = y + bh - contentAreaTopY + tabScrollOffsets[3];
 
         // ── Tab 4 – Visitors ──────────────────────────────────────────────────
@@ -705,10 +695,11 @@ public class FarmingConfigScreen extends Screen {
     }
 
     private Text getMacroToggleText() {
-        if (visitorManager != null && visitorManager.isActive() && !macroManager.isRunning()) {
+        boolean visitorActive = visitorManager != null && visitorManager.isActive();
+        if (!macroManager.isRunning() && visitorActive) {
             return Text.translatable("gui.just-farming.stop_visitor");
         }
-        return macroManager.isRunning()
+        return macroManager.isRunning() || visitorActive
                 ? Text.translatable("gui.just-farming.stop_macro")
                 : Text.translatable("gui.just-farming.start_macro");
     }
@@ -1082,7 +1073,7 @@ public class FarmingConfigScreen extends Screen {
 
         @Override
         protected void updateMessage() {
-            setMessage(Text.literal(String.format("Visitors Delay: %d ms", getIntValue())));
+            setMessage(Text.literal(String.format("Bazaar Click Delay: %d ms", getIntValue())));
         }
     }
 
@@ -1127,7 +1118,7 @@ public class FarmingConfigScreen extends Screen {
 
         @Override
         protected void updateMessage() {
-            setMessage(Text.literal(String.format("Bazaar Delay: %d ms", getIntValue())));
+            setMessage(Text.literal(String.format("Bazaar Open Delay: %d ms", getIntValue())));
         }
     }
 }

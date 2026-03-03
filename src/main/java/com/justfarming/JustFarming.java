@@ -132,17 +132,9 @@ public class JustFarming implements ClientModInitializer {
         // Register client tick callback
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (toggleMacroKey.wasPressed()) {
-                // If the visitor routine is running and the farming macro is not,
-                // pressing the toggle key stops the visitor instead of starting farming.
-                if (visitorManager.isActive() && !macroManager.isRunning()) {
-                    visitorManager.stop();
-                    if (client.player != null) {
-                        client.player.sendMessage(
-                                net.minecraft.text.Text.literal("§c[JustFarming] Visitor routine stopped."), true);
-                    }
-                    continue;
-                }
-                if (!macroManager.isRunning() && config.gardenOnlyEnabled && !pestDetector.isInGarden()) {
+                // macroManager.toggle() handles all states including visitor-wait
+                boolean wasActive = macroManager.isRunning() || visitorManager.isActive();
+                if (!wasActive && config.gardenOnlyEnabled && !pestDetector.isInGarden()) {
                     // Prevent starting the macro outside the Garden.
                     if (client.player != null) {
                         client.player.sendMessage(net.minecraft.text.Text.literal(
