@@ -73,7 +73,12 @@ public class VisitorBlacklistScreen extends Screen {
     private final FarmingConfig config;
 
     private int panelX, panelY, panelW, panelH;
-    private final FlatButtonWidget[] visitorButtons = new FlatButtonWidget[ALL_VISITORS.length];
+    /**
+     * Buttons for the currently filtered visitor list.  Rebuilt each time
+     * {@link #init()} runs (i.e. on search-query changes and scroll events).
+     * Indexed by position in {@link #filteredVisitors}, not in ALL_VISITORS.
+     */
+    private FlatButtonWidget[] filteredButtons = new FlatButtonWidget[0];
 
     /** Current search query; persists across clearAndInit. */
     private String searchQuery = "";
@@ -155,6 +160,8 @@ public class VisitorBlacklistScreen extends Screen {
             config.visitorBlacklist = new ArrayList<>();
         }
 
+        filteredButtons = new FlatButtonWidget[filteredVisitors.length];
+
         for (int i = 0; i < filteredVisitors.length; i++) {
             final String visitor = filteredVisitors[i];
             int row        = i / COLUMNS;
@@ -174,11 +181,7 @@ public class VisitorBlacklistScreen extends Screen {
                         config.save();
                         b.setMessage(getButtonText(visitor));
                     });
-            // Store in array only if position matches ALL_VISITORS index
-            int origIdx = java.util.Arrays.asList(ALL_VISITORS).indexOf(visitor);
-            if (origIdx >= 0 && origIdx < visitorButtons.length) {
-                visitorButtons[origIdx] = btn;
-            }
+            filteredButtons[i] = btn;
             if (visibleRow >= 0 && visibleRow < maxVisibleRows) {
                 this.addDrawableChild(btn);
             }
@@ -240,14 +243,12 @@ public class VisitorBlacklistScreen extends Screen {
             for (int i = 0; i < filteredVisitors.length; i++) {
                 int visibleRow = (i / COLUMNS) - scrollOffset;
                 if (visibleRow < 0 || visibleRow >= maxVisibleRows) continue;
-                if (config.visitorBlacklist.contains(filteredVisitors[i])) {
-                    int origIdx = java.util.Arrays.asList(ALL_VISITORS).indexOf(filteredVisitors[i]);
-                    if (origIdx >= 0 && origIdx < visitorButtons.length && visitorButtons[origIdx] != null) {
-                        FlatButtonWidget b = visitorButtons[origIdx];
-                        context.fill(b.getX() - 1, b.getY() - 1,
-                                b.getX() + b.getWidth() + 1, b.getY() + b.getHeight() + 1,
-                                COL_BLACKLISTED_HIGHLIGHT);
-                    }
+                if (config.visitorBlacklist.contains(filteredVisitors[i])
+                        && i < filteredButtons.length && filteredButtons[i] != null) {
+                    FlatButtonWidget b = filteredButtons[i];
+                    context.fill(b.getX() - 1, b.getY() - 1,
+                            b.getX() + b.getWidth() + 1, b.getY() + b.getHeight() + 1,
+                            COL_BLACKLISTED_HIGHLIGHT);
                 }
             }
         }
