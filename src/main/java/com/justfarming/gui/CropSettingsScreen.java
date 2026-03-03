@@ -116,7 +116,7 @@ public class CropSettingsScreen extends Screen {
         this.addDrawableChild(resetButton);
 
         saveCloseButton = new FlatButtonWidget(widgetX, closeY, bw, bh,
-                Text.literal("Save & Close"),
+                Text.literal("Close"),
                 btn -> close());
         this.addDrawableChild(saveCloseButton);
     }

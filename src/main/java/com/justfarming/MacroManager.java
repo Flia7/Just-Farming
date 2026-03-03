@@ -110,7 +110,7 @@ public class MacroManager {
     // State
     // -----------------------------------------------------------------------
 
-    private enum MacroState { IDLE, MOUSEMAT_CLICK, DETECTING, BACKWARD_LEFT, FORWARD_LEFT, FORWARD_RIGHT,
+    private enum MacroState { IDLE, MOUSEMAT_CLICK, ALIGNING_ROTATION, DETECTING, BACKWARD_LEFT, FORWARD_LEFT, FORWARD_RIGHT,
             STRAFE_LEFT_ONLY, STRAFE_RIGHT_ONLY, BACK_ONLY, FORWARD_ONLY, WARPING,
             LANE_SWAP_WAITING, VISITING }
 
@@ -327,7 +327,7 @@ public class MacroManager {
                 LOGGER.info("[JustFarming] Already aimed at target yaw/pitch – skipping Squeaky Mousemat.");
             }
         }
-        state = (config.squeakyMousematEnabled && !skipMousemat) ? MacroState.MOUSEMAT_CLICK : MacroState.DETECTING;
+        state = (config.squeakyMousematEnabled && !skipMousemat) ? MacroState.MOUSEMAT_CLICK : MacroState.ALIGNING_ROTATION;
         detectTicks = 0;
         detectStartPos = null;
         startDetectTime = 0;
@@ -484,6 +484,7 @@ public class MacroManager {
 
         switch (state) {
             case MOUSEMAT_CLICK     -> tickMousematClick(player);
+            case ALIGNING_ROTATION -> tickAligningRotation(player);
             case DETECTING         -> tickDetecting(player);
             case BACKWARD_LEFT     -> tickMoving(player, false, true,  true,  false);
             case FORWARD_LEFT      -> tickMoving(player, true,  false, true,  false);
@@ -555,6 +556,33 @@ public class MacroManager {
     // -----------------------------------------------------------------------
     // State handlers
     // -----------------------------------------------------------------------
+
+    /**
+     * Rotation-alignment phase: releases all movement keys and waits until the
+     * player's yaw and pitch have settled within {@value #ROTATION_ALIGN_THRESHOLD}
+     * degrees of the crop-specific target.  Only entered when the Squeaky
+     * Mousemat is disabled; it ensures the camera is aimed correctly before the
+     * macro starts moving or breaking any blocks.
+     *
+     * <p>Camera rotation is driven by {@link #onRenderTick()} which runs at
+     * render frequency and is not affected by this state.
+     */
+    private static final float ROTATION_ALIGN_THRESHOLD = 2.0f;
+
+    private void tickAligningRotation(ClientPlayerEntity player) {
+        releaseKeys();
+        float targetYaw   = config.getEffectiveYaw(config.selectedCrop);
+        float targetPitch = config.getEffectivePitch(config.selectedCrop);
+        float yawDiff     = Math.abs(normalizeAngleDiff(player.getYaw()   - targetYaw));
+        float pitchDiff   = Math.abs(normalizeAngleDiff(player.getPitch() - targetPitch));
+        if (yawDiff <= ROTATION_ALIGN_THRESHOLD && pitchDiff <= ROTATION_ALIGN_THRESHOLD) {
+            state = MacroState.DETECTING;
+            startDetectTime  = 0;
+            detectTicks      = 0;
+            detectStartPos   = null;
+            LOGGER.info("[JustFarming] Rotation aligned (yaw diff={}, pitch diff={}) – starting detection.", yawDiff, pitchDiff);
+        }
+    }
 
     /**
      * Mousemat click phases:
@@ -956,6 +984,60 @@ public class MacroManager {
         // keys that the state machine just set so the player presses exactly the
         // user-configured keys (swapped when customFlipped is true).
         applyCustomKeyOverrides();
+
+        // ---- Real-time alternate-direction switching via GLFW key polling ----
+        // If the player physically presses the alternate direction key while the
+        // macro is running, flip direction immediately instead of waiting for the
+        // stuck detection threshold.
+        if (client.getWindow() != null) {
+            checkInstantDirectionFlip();
+        }
+    }
+
+    /**
+     * Polls physical GLFW key state each tick during a movement phase.
+     * When the player presses the crop's alternate direction key, the macro
+     * instantly flips to the opposite direction rather than waiting for the
+     * end-of-row (stuck detection).
+     *
+     * <p>This is only applied for built-in key patterns (no custom key config).
+     * Custom key crops still rely on stuck detection for direction flips.
+     */
+    private void checkInstantDirectionFlip() {
+        CropType crop = config.selectedCrop;
+        // Custom key config: skip – custom crops use stuck detection.
+        if (config.getCropSettings(crop) != null) return;
+        net.minecraft.client.util.Window win = client.getWindow();
+
+        MacroState nextState = null;
+        if (crop.isSShape()) {
+            // S-Shape: D → right start, A → left start
+            if (state == MacroState.FORWARD_LEFT  && InputUtil.isKeyPressed(win, GLFW.GLFW_KEY_D)) nextState = MacroState.FORWARD_RIGHT;
+            if (state == MacroState.FORWARD_RIGHT && InputUtil.isKeyPressed(win, GLFW.GLFW_KEY_A)) nextState = MacroState.FORWARD_LEFT;
+        } else if (crop.isCactus()) {
+            // Cactus: D → strafe-right, A → strafe-left
+            if (state == MacroState.STRAFE_LEFT_ONLY  && InputUtil.isKeyPressed(win, GLFW.GLFW_KEY_D)) nextState = MacroState.STRAFE_RIGHT_ONLY;
+            if (state == MacroState.STRAFE_RIGHT_ONLY && InputUtil.isKeyPressed(win, GLFW.GLFW_KEY_A)) nextState = MacroState.STRAFE_LEFT_ONLY;
+        } else if (crop.isLeftBack()) {
+            // Left-Back (cane/moonflower/sunflower/wild rose): D → back-only, A → strafe-left
+            if (state == MacroState.STRAFE_LEFT_ONLY && InputUtil.isKeyPressed(win, GLFW.GLFW_KEY_D)) nextState = MacroState.BACK_ONLY;
+            if (state == MacroState.BACK_ONLY         && InputUtil.isKeyPressed(win, GLFW.GLFW_KEY_A)) nextState = MacroState.STRAFE_LEFT_ONLY;
+        } else if (crop.isForwardBack()) {
+            // Mushroom: S → back-only, W → forward-only
+            if (state == MacroState.FORWARD_ONLY && InputUtil.isKeyPressed(win, GLFW.GLFW_KEY_S)) nextState = MacroState.BACK_ONLY;
+            if (state == MacroState.BACK_ONLY    && InputUtil.isKeyPressed(win, GLFW.GLFW_KEY_W)) nextState = MacroState.FORWARD_ONLY;
+        } else {
+            // Cocoa Beans (and other back-left crops): W → forward, S → backward
+            if (state == MacroState.BACKWARD_LEFT && InputUtil.isKeyPressed(win, GLFW.GLFW_KEY_W)) nextState = MacroState.FORWARD_LEFT;
+            if (state == MacroState.FORWARD_LEFT  && InputUtil.isKeyPressed(win, GLFW.GLFW_KEY_S)) nextState = MacroState.BACKWARD_LEFT;
+        }
+
+        if (nextState != null && nextState != state) {
+            LOGGER.info("[JustFarming] Instant direction flip ({}) – switching to {}.", crop, nextState);
+            state     = nextState;
+            stuckTicks = 0;
+            lastPos   = null;
+        }
     }
 
     /** Release all held movement / attack keys. */

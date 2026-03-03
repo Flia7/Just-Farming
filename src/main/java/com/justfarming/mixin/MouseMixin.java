@@ -68,18 +68,24 @@ public class MouseMixin {
      * open, so the macro keeps breaking crops regardless of which screen the
      * player has open.
      *
-     * <p>When the Just Farming config GUI or its sub-screens are open, we do
+     * <p>When the Just Farming config GUI or its sub-screens are open and the
+     * {@code macroEnabledInGui} option is <em>disabled</em>, we do
      * <em>not</em> override the value so that the camera remains stationary
-     * while the player adjusts settings.
+     * while the player adjusts settings.  When {@code macroEnabledInGui} is
+     * <em>enabled</em>, the override applies to every screen (including Just
+     * Farming screens), which removes any GUI-open/close micro-stutter.
      */
     @Inject(method = "isCursorLocked", at = @At("HEAD"), cancellable = true)
     private void onIsCursorLocked(CallbackInfoReturnable<Boolean> cir) {
         MacroManager mm = JustFarming.getMacroManager();
         if (mm != null && mm.isRunning()) {
             MinecraftClient client = MinecraftClient.getInstance();
-            if (client.currentScreen instanceof FarmingConfigScreen
-                    || client.currentScreen instanceof CropSettingsScreen
-                    || client.currentScreen instanceof CropSelectScreen) {
+            FarmingConfig cfg = JustFarming.getConfig();
+            boolean enabledInGui = cfg != null && cfg.macroEnabledInGui;
+            if (!enabledInGui
+                    && (client.currentScreen instanceof FarmingConfigScreen
+                        || client.currentScreen instanceof CropSettingsScreen
+                        || client.currentScreen instanceof CropSelectScreen)) {
                 return;
             }
             cir.setReturnValue(true);
