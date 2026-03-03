@@ -182,6 +182,19 @@ public class VisitorManager {
     private static final double PROBE_STEP = 0.6;
 
     /**
+     * Distance (blocks) past the farthest visitor to navigate before starting
+     * to process them.  The player approaches from behind the last visitor so
+     * they can then walk forward through the visitor queue naturally.
+     */
+    private static final double BEHIND_VISITOR_DIST = 1.5;
+
+    /**
+     * How close (blocks) the player must get to the behind-point before it is
+     * considered reached and normal visitor navigation begins.
+     */
+    private static final double BEHIND_POINT_REACH_DIST = 1.5;
+
+    /**
      * Vanilla-default player walk-speed attribute value.
      * Used as a baseline to measure how much faster the player is moving on
      * Hypixel SkyBlock (due to Speed buffs from armour, pets, enchants, etc.).
@@ -270,6 +283,14 @@ public class VisitorManager {
      * after their offer was completed (they take a moment to despawn on Hypixel).
      */
     private final Set<Integer> completedVisitorIds = new HashSet<>();
+    /**
+     * Intermediate waypoint placed {@link #BEHIND_VISITOR_DIST} blocks past the
+     * farthest visitor (away from the player's starting position).  The routine
+     * navigates here before turning to accept the first visitor so it approaches
+     * from behind the queue.  {@code null} once the point has been reached or
+     * when not applicable.
+     */
+    private Vec3d behindPoint = null;
 
     // Item requirements extracted from the current visitor's menu
     private final List<VisitorRequirement> pendingRequirements = new ArrayList<>();
@@ -378,6 +399,7 @@ public class VisitorManager {
         releaseMovementKeys();
         postAccept = false;
         postPurchase = false;
+        behindPoint = null;
         returnWarpDelay = 0;
         returnWarpSentAt = 0;
         enterState(State.IDLE);
@@ -391,6 +413,7 @@ public class VisitorManager {
         completedVisitorIds.clear();
         requirementIndex  = 0;
         currentVisitor    = null;
+        behindPoint       = null;
         interactCooldownUntil = 0;
         postAccept        = false;
         postPurchase      = false;
@@ -451,7 +474,18 @@ public class VisitorManager {
                 scanForVisitors(player);
                 if (!pendingVisitors.isEmpty()) {
                     currentVisitor = pendingVisitors.remove(0);
-                    LOGGER.info("[JustFarming-Visitors] Found {} visitor(s).",
+                    // Compute a waypoint BEHIND_VISITOR_DIST blocks past the farthest visitor
+                    // in the direction from the player to that visitor.  Navigating there first
+                    // means the player approaches from behind the queue and then walks
+                    // forward through visitors in order (farthest → nearest).
+                    Vec3d visitorPos = new Vec3d(currentVisitor.getX(), currentVisitor.getY(), currentVisitor.getZ());
+                    Vec3d playerPos  = new Vec3d(player.getX(), player.getY(), player.getZ());
+                    Vec3d dir = visitorPos.subtract(playerPos);
+                    double len = dir.length();
+                    behindPoint = (len > 0.01)
+                            ? visitorPos.add(dir.multiply(BEHIND_VISITOR_DIST / len))
+                            : null;
+                    LOGGER.info("[JustFarming-Visitors] Found {} visitor(s). Navigating behind last visitor first.",
                             pendingVisitors.size() + 1);
                     enterState(State.NAVIGATING);
                 } else if (now - stateEnteredAt >= SCAN_TIMEOUT_MS) {
@@ -467,6 +501,18 @@ public class VisitorManager {
                     return;
                 }
                 Vec3d visitorPos = new Vec3d(currentVisitor.getX(), currentVisitor.getY(), currentVisitor.getZ());
+                // Navigate to the behind-point first so the player approaches the
+                // visitor queue from the far end rather than walking through the line.
+                if (behindPoint != null) {
+                    double behindDist = new Vec3d(player.getX(), player.getY(), player.getZ())
+                            .distanceTo(behindPoint);
+                    if (behindDist <= BEHIND_POINT_REACH_DIST) {
+                        behindPoint = null; // behind-point reached; proceed to visitor
+                    } else {
+                        walkToward(player, behindPoint);
+                        return;
+                    }
+                }
                 double dist = new Vec3d(player.getX(), player.getY(), player.getZ()).distanceTo(visitorPos);
                 if (dist <= INTERACT_RADIUS) {
                     releaseMovementKeys();
@@ -1146,6 +1192,7 @@ public class VisitorManager {
     }
 
     private void nextVisitor() {
+        behindPoint = null; // behind-point only applies to the first (farthest) visitor
         currentVisitor = null;
         if (!pendingVisitors.isEmpty()) {
             currentVisitor = pendingVisitors.remove(0);
