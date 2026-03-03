@@ -15,6 +15,7 @@ import net.minecraft.screen.GenericContainerScreenHandler;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 import org.slf4j.Logger;
@@ -189,10 +190,34 @@ public class VisitorManager {
     private static final double BEHIND_VISITOR_DIST = 1.5;
 
     /**
+     * Fallback distances (blocks) tried in decreasing order when the primary
+     * {@link #BEHIND_VISITOR_DIST} behind-point turns out to be inside a wall.
+     * If all fallbacks are also blocked the behind-point is skipped entirely.
+     */
+    private static final double[] BEHIND_VISITOR_DIST_FALLBACKS = { 1.0, 0.5 };
+
+    /**
      * How close (blocks) the player must get to the behind-point before it is
      * considered reached and normal visitor navigation begins.
      */
     private static final double BEHIND_POINT_REACH_DIST = 1.5;
+
+    /**
+     * Maximum time (ms) to spend navigating toward the behind-point before
+     * giving up and proceeding directly to the first visitor.  Guards against
+     * a behind-point that is technically passable but effectively unreachable
+     * (e.g., separated from the player by a wall at a different angle).
+     */
+    private static final long BEHIND_POINT_TIMEOUT_MS = 5000;
+
+    /**
+     * Maximum angular error (degrees) between the player's current yaw and the
+     * chosen walk direction before walking is suppressed.  Prevents the player
+     * from pressing the forward key in the wrong direction while the camera is
+     * still rotating to face the target – which would carry them away from or
+     * into a wall.
+     */
+    private static final float MAX_WALK_YAW_ERROR_DEGREES = 45f;
 
     /**
      * Vanilla-default player walk-speed attribute value.
@@ -291,6 +316,8 @@ public class VisitorManager {
      * when not applicable.
      */
     private Vec3d behindPoint = null;
+    /** Wall-clock time (ms) when navigation toward {@link #behindPoint} began; 0 = not started. */
+    private long  behindPointStartTime = 0;
 
     // Item requirements extracted from the current visitor's menu
     private final List<VisitorRequirement> pendingRequirements = new ArrayList<>();
@@ -400,6 +427,7 @@ public class VisitorManager {
         postAccept = false;
         postPurchase = false;
         behindPoint = null;
+        behindPointStartTime = 0;
         returnWarpDelay = 0;
         returnWarpSentAt = 0;
         enterState(State.IDLE);
@@ -414,6 +442,7 @@ public class VisitorManager {
         requirementIndex  = 0;
         currentVisitor    = null;
         behindPoint       = null;
+        behindPointStartTime = 0;
         interactCooldownUntil = 0;
         postAccept        = false;
         postPurchase      = false;
@@ -482,11 +511,25 @@ public class VisitorManager {
                     Vec3d playerPos  = new Vec3d(player.getX(), player.getY(), player.getZ());
                     Vec3d dir = visitorPos.subtract(playerPos);
                     double len = dir.length();
-                    behindPoint = (len > 0.01)
-                            ? visitorPos.add(dir.multiply(BEHIND_VISITOR_DIST / len))
-                            : null;
-                    LOGGER.info("[JustFarming-Visitors] Found {} visitor(s). Navigating behind last visitor first.",
-                            pendingVisitors.size() + 1);
+                    behindPoint = null;
+                    behindPointStartTime = 0;
+                    if (len > 0.01) {
+                        // Try BEHIND_VISITOR_DIST first, then progressively smaller fallbacks.
+                        // Skip the behind-point entirely if every candidate is inside a wall.
+                        double[] distances = new double[1 + BEHIND_VISITOR_DIST_FALLBACKS.length];
+                        distances[0] = BEHIND_VISITOR_DIST;
+                        System.arraycopy(BEHIND_VISITOR_DIST_FALLBACKS, 0, distances, 1, BEHIND_VISITOR_DIST_FALLBACKS.length);
+                        for (double d : distances) {
+                            Vec3d candidate = visitorPos.add(dir.multiply(d / len));
+                            if (isBehindPointPassable(candidate)) {
+                                behindPoint = candidate;
+                                break;
+                            }
+                        }
+                    }
+                    LOGGER.info("[JustFarming-Visitors] Found {} visitor(s). {}",
+                            pendingVisitors.size() + 1,
+                            behindPoint != null ? "Navigating behind last visitor first." : "Behind-point blocked by wall; navigating directly.");
                     enterState(State.NAVIGATING);
                 } else if (now - stateEnteredAt >= SCAN_TIMEOUT_MS) {
                     // Waited 3 s and still no visitors – go back to farming
@@ -504,10 +547,18 @@ public class VisitorManager {
                 // Navigate to the behind-point first so the player approaches the
                 // visitor queue from the far end rather than walking through the line.
                 if (behindPoint != null) {
+                    // Start the timeout clock on the first tick we handle behindPoint.
+                    if (behindPointStartTime == 0) behindPointStartTime = now;
                     double behindDist = new Vec3d(player.getX(), player.getY(), player.getZ())
                             .distanceTo(behindPoint);
-                    if (behindDist <= BEHIND_POINT_REACH_DIST) {
-                        behindPoint = null; // behind-point reached; proceed to visitor
+                    boolean reached  = behindDist <= BEHIND_POINT_REACH_DIST;
+                    boolean timedOut = (now - behindPointStartTime) >= BEHIND_POINT_TIMEOUT_MS;
+                    if (reached || timedOut) {
+                        if (timedOut && !reached) {
+                            LOGGER.info("[JustFarming-Visitors] Behind-point not reached in {}ms; skipping.", BEHIND_POINT_TIMEOUT_MS);
+                        }
+                        behindPoint = null;
+                        behindPointStartTime = 0;
                     } else {
                         walkToward(player, behindPoint);
                         return;
@@ -900,6 +951,20 @@ public class VisitorManager {
             }
         }
 
+        // Suppress walking when the camera is still far from the chosen direction.
+        // The forward key moves the player in the direction they are currently looking,
+        // so pressing it while the camera is >MAX_WALK_YAW_ERROR_DEGREES off-target
+        // would carry them in the wrong direction (e.g. away from the visitor or into
+        // a wall after rounding the behind-point).
+        if (shouldWalk) {
+            float yawError = chosenYaw - player.getYaw();
+            while (yawError >  180f) yawError -= 360f;
+            while (yawError < -180f) yawError += 360f;
+            if (Math.abs(yawError) > MAX_WALK_YAW_ERROR_DEGREES) {
+                shouldWalk = false;
+            }
+        }
+
         // Only walk forward when there is solid ground ahead and no wall blocking the path.
         // Never trigger a jump – on Hypixel SkyBlock speed/jump buffs can reach level 10,
         // so autonomous jumping causes erratic movement near visitor NPCs.
@@ -920,16 +985,31 @@ public class VisitorManager {
         double nextX  = player.getX() + -Math.sin(yawRad) * probeStep;
         double nextZ  = player.getZ() +  Math.cos(yawRad) * probeStep;
         int    feetY  = (int) Math.floor(player.getY());
-        net.minecraft.util.math.BlockPos floorPos =
-                new net.minecraft.util.math.BlockPos((int) Math.floor(nextX), feetY - 1, (int) Math.floor(nextZ));
-        net.minecraft.util.math.BlockPos feetPos =
-                new net.minecraft.util.math.BlockPos((int) Math.floor(nextX), feetY,     (int) Math.floor(nextZ));
-        net.minecraft.util.math.BlockPos headPos =
-                new net.minecraft.util.math.BlockPos((int) Math.floor(nextX), feetY + 1, (int) Math.floor(nextZ));
+        BlockPos floorPos = new BlockPos((int) Math.floor(nextX), feetY - 1, (int) Math.floor(nextZ));
+        BlockPos feetPos  = new BlockPos((int) Math.floor(nextX), feetY,     (int) Math.floor(nextZ));
+        BlockPos headPos  = new BlockPos((int) Math.floor(nextX), feetY + 1, (int) Math.floor(nextZ));
         boolean floorAhead = !client.world.getBlockState(floorPos).isAir();
         boolean wallAhead  = !client.world.getBlockState(feetPos).isAir()
                           || !client.world.getBlockState(headPos).isAir();
         return floorAhead && !wallAhead;
+    }
+
+    /**
+     * Returns {@code true} if {@code point} is a valid standing position:
+     * the block at the feet and head levels must both be air, and there must
+     * be a solid floor one block below.  Used to verify that the computed
+     * behind-point is not embedded in a wall before the player is sent there.
+     */
+    private boolean isBehindPointPassable(Vec3d point) {
+        int bx = (int) Math.floor(point.x);
+        int by = (int) Math.floor(point.y);
+        int bz = (int) Math.floor(point.z);
+        BlockPos floorPos = new BlockPos(bx, by - 1, bz);
+        BlockPos feetPos  = new BlockPos(bx, by,     bz);
+        BlockPos headPos  = new BlockPos(bx, by + 1, bz);
+        return !client.world.getBlockState(floorPos).isAir()
+                && client.world.getBlockState(feetPos).isAir()
+                && client.world.getBlockState(headPos).isAir();
     }
 
     /**
@@ -1193,6 +1273,7 @@ public class VisitorManager {
 
     private void nextVisitor() {
         behindPoint = null; // behind-point only applies to the first (farthest) visitor
+        behindPointStartTime = 0;
         currentVisitor = null;
         if (!pendingVisitors.isEmpty()) {
             currentVisitor = pendingVisitors.remove(0);
