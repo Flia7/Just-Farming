@@ -178,6 +178,20 @@ public class MacroManager {
     private boolean laneSwapPendingCustomFlip = false;
 
     /**
+     * Whether to keep the strafe-left key pressed during {@link MacroState#LANE_SWAP_WAITING}.
+     * Set when the left-strafe direction is common to both the outgoing and incoming movement
+     * state, so the key is never released and no lateral micro-movement occurs.
+     */
+    private boolean laneSwapKeepLeft = false;
+
+    /**
+     * Whether to keep the strafe-right key pressed during {@link MacroState#LANE_SWAP_WAITING}.
+     * Set when the right-strafe direction is common to both the outgoing and incoming movement
+     * state, so the key is never released and no lateral micro-movement occurs.
+     */
+    private boolean laneSwapKeepRight = false;
+
+    /**
      * Tracks which phase of the MOUSEMAT_CLICK state we are in.
      * {@code 0} = waiting for swap-to delay (or detecting slot on first tick);
      * {@code 1} = on mousemat slot, waiting {@code mousematPreDelay} ms before clicking;
@@ -478,7 +492,19 @@ public class MacroManager {
                 }
             }
             case LANE_SWAP_WAITING -> {
-                releaseMovementKeys();
+                if (laneSwapPendingCustomFlip) {
+                    // Custom-key flip: release all movement keys (existing behaviour).
+                    releaseMovementKeys();
+                } else {
+                    // Standard flip: keep only the strafe key(s) that are common to both
+                    // the outgoing and incoming state so there is no lateral micro-movement.
+                    if (client.options != null) {
+                        client.options.forwardKey.setPressed(false);
+                        client.options.backKey.setPressed(false);
+                        client.options.leftKey.setPressed(laneSwapKeepLeft);
+                        client.options.rightKey.setPressed(laneSwapKeepRight);
+                    }
+                }
                 if (System.currentTimeMillis() - laneSwapStartTime >= laneSwapTargetDelay) {
                     if (laneSwapPendingCustomFlip) {
                         customFlipped = !customFlipped;
@@ -806,17 +832,15 @@ public class MacroManager {
 
             if (stuckTicks >= STUCK_THRESHOLD) {
                 // End of row reached – flip direction (with optional lane-swap delay).
-                // Release movement keys immediately so the player stops before the delay,
-                // but keep the attack key held so block breaking continues.
                 stuckTicks = 0;
-                releaseMovementKeys();
                 com.justfarming.config.FarmingConfig.CropCustomSettings cs =
                         config.getCropSettings(config.selectedCrop);
                 long swapDelay = config.laneSwapDelayMin
                         + random.nextLong(config.laneSwapDelayRandom + 1)
                         + randomJitter();
                 if (cs != null) {
-                    // Custom key mode: toggle the flip flag (forward↔back, left↔right)
+                    // Custom key mode: release movement keys and toggle the flip flag.
+                    releaseMovementKeys();
                     if (swapDelay > 0) {
                         laneSwapStartTime = System.currentTimeMillis();
                         laneSwapTargetDelay = swapDelay;
@@ -851,13 +875,32 @@ public class MacroManager {
                     nextState = (state == MacroState.FORWARD_LEFT)
                             ? MacroState.BACKWARD_LEFT : MacroState.FORWARD_LEFT;
                 }
+                // Determine which strafe key(s) are shared by both the outgoing and the
+                // incoming state.  A shared strafe key is never released, which prevents
+                // a one-tick lateral micro-movement during the direction flip.
+                boolean nextStrafeLeft  = (nextState == MacroState.BACKWARD_LEFT
+                        || nextState == MacroState.FORWARD_LEFT
+                        || nextState == MacroState.STRAFE_LEFT_ONLY);
+                boolean nextStrafeRight = (nextState == MacroState.FORWARD_RIGHT
+                        || nextState == MacroState.STRAFE_RIGHT_ONLY);
+                laneSwapKeepLeft  = strafeLeft  && nextStrafeLeft;
+                laneSwapKeepRight = strafeRight && nextStrafeRight;
                 if (swapDelay > 0) {
+                    // Release only the directional (forward/back) keys; keep the preserved
+                    // strafe key held so there is no lateral micro-movement during the wait.
+                    client.options.forwardKey.setPressed(false);
+                    client.options.backKey.setPressed(false);
+                    client.options.leftKey.setPressed(laneSwapKeepLeft);
+                    client.options.rightKey.setPressed(laneSwapKeepRight);
                     laneSwapStartTime = System.currentTimeMillis();
                     laneSwapTargetDelay = swapDelay;
                     laneSwapPendingCustomFlip = false;
                     laneSwapNextState = nextState;
                     state = MacroState.LANE_SWAP_WAITING;
                 } else {
+                    // Immediate transition: the current-tick keys remain set until the
+                    // next tick when the new state's tickMoving overwrites them.  Because
+                    // the strafe key is still held there is no lateral micro-movement.
                     state = nextState;
                     LOGGER.info("[JustFarming] End of row – switching to {}.", state);
                 }
