@@ -104,10 +104,11 @@ public class VisitorManager {
 
     /**
      * Camera rotation speed (degrees per second) for smooth look-at movement.
-     * At 20 TPS this yields ~1.5° per tick – small increments that feel natural
-     * while still covering 30° in one second (fast enough to track moving visitors).
+     * The rotation is time-based (using elapsed wall-clock milliseconds) so the
+     * angular speed is independent of frame rate: at this rate the camera covers
+     * 90° in one second, providing snappy but smooth tracking of visitor NPCs.
      */
-    private static final float SMOOTH_LOOK_DEGREES_PER_SECOND = 30.0f;
+    private static final float SMOOTH_LOOK_DEGREES_PER_SECOND = 90.0f;
 
     /**
      * Assumed elapsed time (ms) used on the very first {@code smoothRotateCamera}
@@ -312,6 +313,18 @@ public class VisitorManager {
      */
     private final Set<Integer> completedVisitorIds = new HashSet<>();
     /**
+     * Number of visitors whose offer has been accepted so far in this run.
+     * Used to trigger the mid-run rescan for a 6th visitor after the second
+     * visitor (the farthest one) has been processed.
+     */
+    private int visitorsAccepted = 0;
+    /**
+     * {@code true} once the mid-run rescan (triggered after the 2nd visitor)
+     * has been performed this run.  Prevents the end-of-queue rescan from
+     * scanning a second time when the initial scan had only 2 visitors.
+     */
+    private boolean midRunRescanPerformed = false;
+    /**
      * Intermediate waypoint placed {@link #BEHIND_VISITOR_DIST} blocks past the
      * farthest visitor (away from the player's starting position).  The routine
      * navigates here before turning to accept the first visitor so it approaches
@@ -433,6 +446,8 @@ public class VisitorManager {
         behindPointStartTime = 0;
         returnWarpDelay = 0;
         returnWarpSentAt = 0;
+        visitorsAccepted = 0;
+        midRunRescanPerformed = false;
         enterState(State.IDLE);
     }
 
@@ -454,6 +469,8 @@ public class VisitorManager {
         lastSmoothLookTime = 0;
         returnWarpDelay   = 0;
         returnWarpSentAt  = 0;
+        visitorsAccepted  = 0;
+        midRunRescanPerformed = false;
         long base = config.visitorsTeleportDelay > 0
                 ? config.visitorsTeleportDelay : TELEPORT_WAIT_DEFAULT_MS;
         teleportWaitMs = base + random.nextInt((int) TELEPORT_EXTRA_RANDOM_MS + 1)
@@ -506,33 +523,10 @@ public class VisitorManager {
                 scanForVisitors(player);
                 if (!pendingVisitors.isEmpty()) {
                     currentVisitor = pendingVisitors.remove(0);
-                    // Compute a waypoint BEHIND_VISITOR_DIST blocks past the farthest visitor
-                    // in the direction from the player to that visitor.  Navigating there first
-                    // means the player approaches from behind the queue and then walks
-                    // forward through visitors in order (farthest → nearest).
-                    Vec3d visitorPos = new Vec3d(currentVisitor.getX(), currentVisitor.getY(), currentVisitor.getZ());
-                    Vec3d playerPos  = new Vec3d(player.getX(), player.getY(), player.getZ());
-                    Vec3d dir = visitorPos.subtract(playerPos);
-                    double len = dir.length();
                     behindPoint = null;
                     behindPointStartTime = 0;
-                    if (len > 0.01) {
-                        // Try BEHIND_VISITOR_DIST first, then progressively smaller fallbacks.
-                        // Skip the behind-point entirely if every candidate is inside a wall.
-                        double[] distances = new double[1 + BEHIND_VISITOR_DIST_FALLBACKS.length];
-                        distances[0] = BEHIND_VISITOR_DIST;
-                        System.arraycopy(BEHIND_VISITOR_DIST_FALLBACKS, 0, distances, 1, BEHIND_VISITOR_DIST_FALLBACKS.length);
-                        for (double d : distances) {
-                            Vec3d candidate = visitorPos.add(dir.multiply(d / len));
-                            if (isBehindPointPassable(candidate)) {
-                                behindPoint = candidate;
-                                break;
-                            }
-                        }
-                    }
-                    LOGGER.info("[JustFarming-Visitors] Found {} visitor(s). {}",
-                            pendingVisitors.size() + 1,
-                            behindPoint != null ? "Navigating behind last visitor first." : "Behind-point blocked by wall; navigating directly.");
+                    LOGGER.info("[JustFarming-Visitors] Found {} visitor(s). Navigating to nearest first.",
+                            pendingVisitors.size() + 1);
                     enterState(State.NAVIGATING);
                 } else if (now - stateEnteredAt >= SCAN_TIMEOUT_MS) {
                     // Waited 3 s and still no visitors – go back to farming
@@ -855,10 +849,11 @@ public class VisitorManager {
 
     /** Populate {@link #pendingVisitors} with NPC entities in range.
      *
-     * <p>Visitors are sorted farthest-first so the routine processes the last
-     * visitor in the queue first (visitor 5 → 4 → 3 → 2 → 1).  Any additional
-     * visitor that arrives after the initial scan is picked up by the re-scan
-     * inside {@link #nextVisitor()} and accepted last.
+     * <p>Visitors are sorted so the nearest visitor (position 1) is processed
+     * first, followed by the remaining visitors in farthest-to-nearest order
+     * (position 5 → 4 → 3 → 2).  This gives the acceptance sequence
+     * 1 → 5 → [6 if present] → 4 → 3 → 2 when combined with the mid-run
+     * rescan that fires after the second visitor is accepted.
      */
     private void scanForVisitors(ClientPlayerEntity player) {
         pendingVisitors.clear();
@@ -881,14 +876,27 @@ public class VisitorManager {
                             return true;
                         })
                 .forEach(pendingVisitors::add);
-        // Sort farthest visitor first so we accept visitor 5→4→3→2→1 in order.
-        // Pre-compute squared distances to avoid redundant Vec3d allocations inside the comparator.
+
         double px = player.getX(), py = player.getY(), pz = player.getZ();
-        pendingVisitors.sort((a, b) -> {
-            double da = Math.pow(a.getX() - px, 2) + Math.pow(a.getY() - py, 2) + Math.pow(a.getZ() - pz, 2);
-            double db = Math.pow(b.getX() - px, 2) + Math.pow(b.getY() - py, 2) + Math.pow(b.getZ() - pz, 2);
-            return Double.compare(db, da); // descending: farthest first
-        });
+
+        if (pendingVisitors.size() >= 2) {
+            // Sort nearest-first to find visitor 1.
+            pendingVisitors.sort((a, b) -> {
+                double da = Math.pow(a.getX() - px, 2) + Math.pow(a.getY() - py, 2) + Math.pow(a.getZ() - pz, 2);
+                double db = Math.pow(b.getX() - px, 2) + Math.pow(b.getY() - py, 2) + Math.pow(b.getZ() - pz, 2);
+                return Double.compare(da, db); // ascending: nearest first
+            });
+            // Keep visitor 1 (nearest) at the front; sort the remaining visitors
+            // farthest-first so the order becomes [V1, V5, V4, V3, V2].
+            Entity nearest = pendingVisitors.remove(0);
+            pendingVisitors.sort((a, b) -> {
+                double da = Math.pow(a.getX() - px, 2) + Math.pow(a.getY() - py, 2) + Math.pow(a.getZ() - pz, 2);
+                double db = Math.pow(b.getX() - px, 2) + Math.pow(b.getY() - py, 2) + Math.pow(b.getZ() - pz, 2);
+                return Double.compare(db, da); // descending: farthest first
+            });
+            pendingVisitors.add(0, nearest);
+        }
+        // Single visitor: no reordering needed.
     }
 
     /**
@@ -1021,7 +1029,9 @@ public class VisitorManager {
      * The floor check spans up to 2 blocks below to allow descending stairs and
      * stepping off ledges up to 2 blocks high.  A 2-block fall causes no damage in
      * vanilla Minecraft (damage starts at falls greater than 3 blocks), so this is
-     * safe for normal garden terrain.
+     * safe for normal garden terrain.  A stair or slab at the probe's feet level
+     * also counts as its own floor (e.g. a stair step-up or step-down with open
+     * space beneath it).
      */
     private boolean isPassable(ClientPlayerEntity player, double yawDeg, double probeStep) {
         double yawRad = Math.toRadians(yawDeg);
@@ -1036,8 +1046,11 @@ public class VisitorManager {
         boolean wallAhead = (!feetState.isAir() && !isStepBlock(feetState))
                          || !headState.isAir();
         // Allow stepping down up to 2 blocks (covers descending stairs and shallow drops).
+        // Also treat a stair/slab at feet level as its own floor so step-up and
+        // step-down stairs with open space beneath are correctly marked passable.
         boolean floorAhead = !client.world.getBlockState(new BlockPos(bx, feetY - 1, bz)).isAir()
-                          || !client.world.getBlockState(new BlockPos(bx, feetY - 2, bz)).isAir();
+                          || !client.world.getBlockState(new BlockPos(bx, feetY - 2, bz)).isAir()
+                          || isStepBlock(feetState);
         return floorAhead && !wallAhead;
     }
 
@@ -1142,6 +1155,7 @@ public class VisitorManager {
         float deltaMs = (lastSmoothLookTime == 0)
                 ? SMOOTH_LOOK_INITIAL_DELTA_MS
                 : Math.min(SMOOTH_LOOK_MAX_DELTA_MS, (float)(now - lastSmoothLookTime));
+        // Always advance the timestamp so the next call computes an accurate delta.
         lastSmoothLookTime = now;
 
         // Scale the maximum step by actual elapsed time for frame-rate independence.
@@ -1157,8 +1171,9 @@ public class VisitorManager {
 
         float pitchDiff = targetPitch - currentPitch;
 
-        // Already on target – nothing to do
-        if (Math.abs(yawDiff) < 0.1f && Math.abs(pitchDiff) < 0.1f) return;
+        // Already on target – nothing to do.  Threshold is set above the tremor
+        // amplitude so the camera does not oscillate around the aim point.
+        if (Math.abs(yawDiff) < 1.0f && Math.abs(pitchDiff) < 1.0f) return;
 
         float newYaw   = currentYaw   + Math.max(-step, Math.min(step, yawDiff));
         float newPitch = currentPitch + Math.max(-step, Math.min(step, pitchDiff));
@@ -1343,13 +1358,27 @@ public class VisitorManager {
         behindPoint = null; // behind-point only applies to the first (farthest) visitor
         behindPointStartTime = 0;
         currentVisitor = null;
+        visitorsAccepted++;
+
+        // Mid-run rescan: after accepting the 2nd visitor (the farthest one, V5),
+        // scan again so that any 6th visitor who spawned in V1's vacated slot is
+        // detected.  The sort inside scanForVisitors puts them in the right order:
+        // new nearest visitor first, then the remaining ones farthest-to-nearest.
+        if (visitorsAccepted == 2 && !midRunRescanPerformed && client.player != null) {
+            midRunRescanPerformed = true;
+            scanForVisitors(client.player);
+            LOGGER.info("[JustFarming-Visitors] Mid-run rescan after 2nd visitor; {} visitor(s) found.", pendingVisitors.size());
+        }
+
         if (!pendingVisitors.isEmpty()) {
             currentVisitor = pendingVisitors.remove(0);
             LOGGER.info("[JustFarming-Visitors] Moving to next visitor.");
             enterState(State.NAVIGATING);
         } else {
-            // Re-scan in case a new (6th) visitor appeared after we started processing
-            if (client.player != null) {
+            // End-of-queue rescan: check for a late-arriving visitor when the
+            // mid-run rescan was not triggered (fewer than 2 visitors initially).
+            if (!midRunRescanPerformed && client.player != null) {
+                midRunRescanPerformed = true;
                 scanForVisitors(client.player);
             }
             if (!pendingVisitors.isEmpty()) {

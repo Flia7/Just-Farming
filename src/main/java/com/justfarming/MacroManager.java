@@ -1016,13 +1016,13 @@ public class MacroManager {
         // user-configured keys (swapped when customFlipped is true).
         applyCustomKeyOverrides();
 
-        // When a GUI screen is open, Minecraft's vanilla handleBlockBreaking skips
-        // block breaking (because currentScreen != null makes its condition false).
-        // Directly call the interaction manager here to ensure crops are broken
-        // regardless of which screen is currently open.  The attack-key state
-        // is checked so that custom key overrides disabling attack are respected.
-        if (client.currentScreen != null && client.options != null
-                && client.options.attackKey.isPressed()) {
+        // Always call directBreakBlock() when the attack key is pressed so that
+        // block breaking is never interrupted by opening or closing a GUI.  This
+        // supplements vanilla handleBlockBreaking (which is suppressed when a
+        // screen is open) and ensures continuous harvesting in all GUI states.
+        // The attack-key state is checked so that custom key overrides disabling
+        // attack are still respected.
+        if (client.options != null && client.options.attackKey.isPressed()) {
             directBreakBlock();
         }
     }
@@ -1031,8 +1031,10 @@ public class MacroManager {
      * Directly attacks the block at the crosshair target via the interaction
      * manager, bypassing the vanilla input-event handler.
      *
-     * <p>This is used when a GUI screen is open and Minecraft's own
-     * {@code handleBlockBreaking} would otherwise skip block breaking.
+     * <p>Called every tick regardless of GUI state so that block breaking is
+     * never interrupted by opening or closing a screen.  Also swings the
+     * player's hand to play the break animation, matching the vanilla behaviour
+     * of {@code handleBlockBreaking}.
      * For Hypixel SkyBlock instant-break crops one call per tick is enough
      * to continuously harvest the targeted block.
      */
@@ -1042,6 +1044,9 @@ public class MacroManager {
         BlockPos pos = blockHit.getBlockPos();
         if (!client.world.getBlockState(pos).isAir()) {
             client.interactionManager.attackBlock(pos, blockHit.getSide());
+            if (client.player != null) {
+                client.player.swingHand(Hand.MAIN_HAND);
+            }
         }
     }
 
