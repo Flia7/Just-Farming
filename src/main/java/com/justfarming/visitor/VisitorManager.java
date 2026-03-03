@@ -525,7 +525,7 @@ public class VisitorManager {
                     currentVisitor = pendingVisitors.remove(0);
                     behindPoint = null;
                     behindPointStartTime = 0;
-                    LOGGER.info("[JustFarming-Visitors] Found {} visitor(s). Navigating to nearest first.",
+                    LOGGER.info("[JustFarming-Visitors] Found {} visitor(s). Navigating farthest first.",
                             pendingVisitors.size() + 1);
                     enterState(State.NAVIGATING);
                 } else if (now - stateEnteredAt >= SCAN_TIMEOUT_MS) {
@@ -849,11 +849,9 @@ public class VisitorManager {
 
     /** Populate {@link #pendingVisitors} with NPC entities in range.
      *
-     * <p>Visitors are sorted so the nearest visitor (position 1) is processed
-     * first, followed by the remaining visitors in farthest-to-nearest order
-     * (position 5 → 4 → 3 → 2).  This gives the acceptance sequence
-     * 1 → 5 → [6 if present] → 4 → 3 → 2 when combined with the mid-run
-     * rescan that fires after the second visitor is accepted.
+     * <p>Visitors are sorted farthest-first so the acceptance sequence is
+     * 5 → 4 → [6 if present] → 3 → 2 → 1 when combined with the mid-run
+     * rescan that fires after the second visitor (V4) is accepted.
      */
     private void scanForVisitors(ClientPlayerEntity player) {
         pendingVisitors.clear();
@@ -880,21 +878,13 @@ public class VisitorManager {
         double px = player.getX(), py = player.getY(), pz = player.getZ();
 
         if (pendingVisitors.size() >= 2) {
-            // Sort nearest-first to find visitor 1.
-            pendingVisitors.sort((a, b) -> {
-                double da = Math.pow(a.getX() - px, 2) + Math.pow(a.getY() - py, 2) + Math.pow(a.getZ() - pz, 2);
-                double db = Math.pow(b.getX() - px, 2) + Math.pow(b.getY() - py, 2) + Math.pow(b.getZ() - pz, 2);
-                return Double.compare(da, db); // ascending: nearest first
-            });
-            // Keep visitor 1 (nearest) at the front; sort the remaining visitors
-            // farthest-first so the order becomes [V1, V5, V4, V3, V2].
-            Entity nearest = pendingVisitors.remove(0);
+            // Sort farthest-first: process from the end of the visitor line
+            // toward the nearest so the sequence becomes [V5, V4, V3, V2, V1].
             pendingVisitors.sort((a, b) -> {
                 double da = Math.pow(a.getX() - px, 2) + Math.pow(a.getY() - py, 2) + Math.pow(a.getZ() - pz, 2);
                 double db = Math.pow(b.getX() - px, 2) + Math.pow(b.getY() - py, 2) + Math.pow(b.getZ() - pz, 2);
                 return Double.compare(db, da); // descending: farthest first
             });
-            pendingVisitors.add(0, nearest);
         }
         // Single visitor: no reordering needed.
     }
@@ -1032,6 +1022,11 @@ public class VisitorManager {
      * safe for normal garden terrain.  A stair or slab at the probe's feet level
      * also counts as its own floor (e.g. a stair step-up or step-down with open
      * space beneath it).
+     *
+     * <p>When stepping DOWN (probe's foot block is air), the head check at
+     * {@code feetY+1} is skipped.  After descending, the player's head sits within
+     * the air at {@code feetY} and does not reach {@code feetY+1}, so a block there
+     * (e.g. a wall or ceiling above the stair step) must not block the path.
      */
     private boolean isPassable(ClientPlayerEntity player, double yawDeg, double probeStep) {
         double yawRad = Math.toRadians(yawDeg);
@@ -1042,9 +1037,18 @@ public class VisitorManager {
         int    bz     = (int) Math.floor(nextZ);
         // A block is a wall only if it is non-air and is not a stair/slab step-over.
         BlockState feetState = client.world.getBlockState(new BlockPos(bx, feetY,     bz));
-        BlockState headState = client.world.getBlockState(new BlockPos(bx, feetY + 1, bz));
-        boolean wallAhead = (!feetState.isAir() && !isStepBlock(feetState))
-                         || !headState.isAir();
+        // Head-level check: when the probe's foot space is clear (feetState is air)
+        // the player is stepping DOWN.  After descending, the player's head sits
+        // within the feetY block (which is already air) and does NOT reach feetY+1,
+        // so the feetY+1 check is skipped.  For same-level or step-up movement
+        // (feetState non-air) the standard feetY+1 check still applies.
+        boolean headBlocked;
+        if (feetState.isAir()) {
+            headBlocked = false; // step-down: head after descent is within the air at feetY
+        } else {
+            headBlocked = !client.world.getBlockState(new BlockPos(bx, feetY + 1, bz)).isAir();
+        }
+        boolean wallAhead = (!feetState.isAir() && !isStepBlock(feetState)) || headBlocked;
         // Allow stepping down up to 2 blocks (covers descending stairs and shallow drops).
         // Also treat a stair/slab at feet level as its own floor so step-up and
         // step-down stairs with open space beneath are correctly marked passable.
@@ -1360,10 +1364,10 @@ public class VisitorManager {
         currentVisitor = null;
         visitorsAccepted++;
 
-        // Mid-run rescan: after accepting the 2nd visitor (the farthest one, V5),
-        // scan again so that any 6th visitor who spawned in V1's vacated slot is
-        // detected.  The sort inside scanForVisitors puts them in the right order:
-        // new nearest visitor first, then the remaining ones farthest-to-nearest.
+        // Mid-run rescan: after accepting the 2nd visitor (V4), scan again so
+        // that any 6th visitor who spawned at the far end of the line is detected.
+        // The farthest-first sort inside scanForVisitors puts the new visitor
+        // before the remaining closer ones: [V6, V3, V2, V1].
         if (visitorsAccepted == 2 && !midRunRescanPerformed && client.player != null) {
             midRunRescanPerformed = true;
             scanForVisitors(client.player);
