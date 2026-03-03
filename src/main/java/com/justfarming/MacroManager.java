@@ -8,7 +8,6 @@ import net.minecraft.client.util.InputUtil;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
@@ -479,7 +478,7 @@ public class MacroManager {
                 }
             }
             case LANE_SWAP_WAITING -> {
-                releaseKeys();
+                releaseMovementKeys();
                 if (System.currentTimeMillis() - laneSwapStartTime >= laneSwapTargetDelay) {
                     if (laneSwapPendingCustomFlip) {
                         customFlipped = !customFlipped;
@@ -495,11 +494,6 @@ public class MacroManager {
             }
             default -> {}
         }
-
-        // If a custom key configuration is active for this crop, override the
-        // keys that the state machine just set so the player presses exactly the
-        // user-configured keys (swapped when customFlipped is true).
-        applyCustomKeyOverrides();
     }
 
     // -----------------------------------------------------------------------
@@ -734,7 +728,7 @@ public class MacroManager {
             }
         } else {
             // No direction key pressed – fall back to movement heuristic, then
-            // crop-growth detection, and finally the built-in per-crop default.
+            // the built-in per-crop default.
             Vec3d currentXYZ = new Vec3d(player.getX(), player.getY(), player.getZ());
             Vec3d delta = currentXYZ.subtract(detectStartPos);
             double moved = Math.sqrt(delta.x * delta.x + delta.z * delta.z);
@@ -763,11 +757,9 @@ public class MacroManager {
                     LOGGER.info("[JustFarming] Detected movement – starting {}.", state);
                 }
             } else {
-                // Player is stationary – pick the direction with grown crops,
-                // falling back to the per-crop built-in default if detection is
-                // inconclusive (world not loaded yet, no crops detected, etc.).
-                state = pickDirectionByGrowth(player, crop);
-                LOGGER.info("[JustFarming] No movement detected – crop-growth detection chose {}.", state);
+                // Player is stationary – fall back to the per-crop built-in default.
+                state = defaultStartState(crop);
+                LOGGER.info("[JustFarming] No movement detected – defaulting to {}.", state);
             }
         }
 
@@ -799,24 +791,6 @@ public class MacroManager {
         client.options.leftKey.setPressed(strafeLeft);
         client.options.rightKey.setPressed(strafeRight);
 
-        // ---- Block breaking ----
-        // When no screen is open, Minecraft's handleInputEvents() calls
-        // handleBlockBreaking(true) naturally (attackKey.isPressed() + isCursorLocked()),
-        // which in turn calls updateBlockBreakingProgress(). Duplicating that call here
-        // would cause double packets per tick and spurious START_DESTROY_BLOCK packets
-        // for already-broken (air) blocks – both detectable by server-side anti-cheat.
-        //
-        // When a screen IS open, handleInputEvents() is skipped entirely by Minecraft,
-        // so we drive breaking directly in that case only.
-        if (client.currentScreen != null
-                && client.interactionManager != null
-                && client.crosshairTarget instanceof BlockHitResult blockHit
-                && !client.world.getBlockState(blockHit.getBlockPos()).isAir()) {
-            client.interactionManager.updateBlockBreakingProgress(
-                    blockHit.getBlockPos(), blockHit.getSide());
-            player.swingHand(net.minecraft.util.Hand.MAIN_HAND);
-        }
-
         // ---- Stuck detection (end of row) ----
         Vec3d currentPos = new Vec3d(player.getX(), player.getY(), player.getZ());
         if (lastPos != null) {
@@ -831,8 +805,11 @@ public class MacroManager {
             }
 
             if (stuckTicks >= STUCK_THRESHOLD) {
-                // End of row reached – flip direction (with optional lane-swap delay)
+                // End of row reached – flip direction (with optional lane-swap delay).
+                // Release movement keys immediately so the player stops before the delay,
+                // but keep the attack key held so block breaking continues.
                 stuckTicks = 0;
+                releaseMovementKeys();
                 com.justfarming.config.FarmingConfig.CropCustomSettings cs =
                         config.getCropSettings(config.selectedCrop);
                 long swapDelay = config.laneSwapDelayMin
@@ -901,6 +878,11 @@ public class MacroManager {
                 state = MacroState.WARPING;
             }
         }
+
+        // If a custom key configuration is active for this crop, override the
+        // keys that the state machine just set so the player presses exactly the
+        // user-configured keys (swapped when customFlipped is true).
+        applyCustomKeyOverrides();
     }
 
     /** Release all held movement / attack keys. */
@@ -913,6 +895,15 @@ public class MacroManager {
         client.options.attackKey.setPressed(false);
     }
 
+    /** Release movement keys only, keeping the attack/break key held. */
+    private void releaseMovementKeys() {
+        if (client.options == null) return;
+        client.options.forwardKey.setPressed(false);
+        client.options.backKey.setPressed(false);
+        client.options.leftKey.setPressed(false);
+        client.options.rightKey.setPressed(false);
+    }
+
     /**
      * Returns a non-negative random extra delay (ms) within the configured
      * global jitter range ({@code 0} to {@code globalRandomizationMs - 1}).
@@ -922,168 +913,12 @@ public class MacroManager {
         return random.nextInt(range);
     }
 
-    // -----------------------------------------------------------------------
-    // Crop-growth direction detection
-    // -----------------------------------------------------------------------
-
-    /**
-     * Picks the best starting {@link MacroState} for the current crop based on
-     * which direction has fully-grown crops directly in the player's lane.
-     *
-     * <p>Scans up to {@value #GROWTH_SCAN_RANGE} blocks in each candidate
-     * direction along the player's movement axis and returns the state that
-     * leads toward grown crops.  Falls back to the per-crop built-in default
-     * when detection is inconclusive (world not loaded, no crops present, etc.).
-     *
-     * <p>Only blocks directly on the player's movement path (the "lane") are
-     * checked so that crops in adjacent rows do not influence the result.
-     */
-    private static final int GROWTH_SCAN_RANGE = 6;
-
-    private MacroState pickDirectionByGrowth(ClientPlayerEntity player, CropType crop) {
-        if (client.world == null) {
-            return defaultStartState(crop);
-        }
-
-        // Compute cardinal movement vectors from the crop's default yaw.
-        float yawRad = (float) Math.toRadians(crop.getDefaultYaw());
-        int fwdX = (int) Math.round(-Math.sin(yawRad));
-        int fwdZ = (int) Math.round( Math.cos(yawRad));
-        int backX = -fwdX;
-        int backZ = -fwdZ;
-        // Left-strafe: clockwise 90° rotation of the forward vector in the X-Z plane.
-        int leftX =  fwdZ;
-        int leftZ = -fwdX;
-        int rightX = -fwdZ;
-        int rightZ =  fwdX;
-
-        if (crop == CropType.COCOA_BEANS) {
-            // Cocoa Beans alternates BACKWARD_LEFT (moves East = back) and
-            // FORWARD_LEFT (moves West = forward). Check which direction has
-            // grown crops along the player's forward/backward lane.
-            boolean grownBack    = hasGrownCropsInDirection(player, backX,  backZ);
-            boolean grownForward = hasGrownCropsInDirection(player, fwdX,   fwdZ);
-            if (!grownBack && grownForward) {
-                LOGGER.info("[JustFarming] Growth check: no grown crops backward – starting FORWARD_LEFT.");
-                return MacroState.FORWARD_LEFT;
-            }
-            return MacroState.BACKWARD_LEFT; // default (also when both grown or both empty)
-        }
-
-        if (crop.isForwardBack()) {
-            // Mushroom: FORWARD_ONLY ↔ BACK_ONLY
-            boolean grownFwd  = hasGrownCropsInDirection(player, fwdX,  fwdZ);
-            boolean grownBack = hasGrownCropsInDirection(player, backX, backZ);
-            if (!grownFwd && grownBack) {
-                LOGGER.info("[JustFarming] Growth check: no grown crops forward – starting BACK_ONLY.");
-                return MacroState.BACK_ONLY;
-            }
-            return MacroState.FORWARD_ONLY;
-        }
-
-        if (crop.isCactus()) {
-            // Cactus: STRAFE_LEFT_ONLY ↔ STRAFE_RIGHT_ONLY
-            boolean grownLeft  = hasGrownCropsInDirection(player, leftX,  leftZ);
-            boolean grownRight = hasGrownCropsInDirection(player, rightX, rightZ);
-            if (!grownLeft && grownRight) {
-                LOGGER.info("[JustFarming] Growth check: no grown crops left – starting STRAFE_RIGHT_ONLY.");
-                return MacroState.STRAFE_RIGHT_ONLY;
-            }
-            return MacroState.STRAFE_LEFT_ONLY;
-        }
-
-        if (crop.isLeftBack()) {
-            // Left-Back (Sugar Cane, etc.): STRAFE_LEFT_ONLY ↔ BACK_ONLY
-            boolean grownLeft = hasGrownCropsInDirection(player, leftX, leftZ);
-            boolean grownBack = hasGrownCropsInDirection(player, backX, backZ);
-            if (!grownLeft && grownBack) {
-                LOGGER.info("[JustFarming] Growth check: no grown crops left – starting BACK_ONLY.");
-                return MacroState.BACK_ONLY;
-            }
-            return MacroState.STRAFE_LEFT_ONLY;
-        }
-
-        if (crop.isSShape()) {
-            // S-Shape: FORWARD_LEFT ↔ FORWARD_RIGHT.
-            // Check the strafe direction (left vs right) along the forward lane.
-            boolean grownLeft  = hasGrownCropsInDirection(player, leftX,  leftZ);
-            boolean grownRight = hasGrownCropsInDirection(player, rightX, rightZ);
-            if (!grownLeft && grownRight) {
-                LOGGER.info("[JustFarming] Growth check: no grown crops left – starting FORWARD_RIGHT.");
-                return MacroState.FORWARD_RIGHT;
-            }
-            return MacroState.FORWARD_LEFT;
-        }
-
-        return defaultStartState(crop);
-    }
-
     /** Returns the hard-coded default starting state for a crop when no other signal is available. */
     private static MacroState defaultStartState(CropType crop) {
         if (crop.isSShape())            return MacroState.FORWARD_LEFT;
         if (crop.isLeftBack() || crop.isCactus()) return MacroState.STRAFE_LEFT_ONLY;
         if (crop.isForwardBack())       return MacroState.FORWARD_ONLY;
         return MacroState.BACKWARD_LEFT;
-    }
-
-    /**
-     * Scans up to {@value #GROWTH_SCAN_RANGE} blocks in direction {@code (dirX, dirZ)}
-     * from the player's block position and returns {@code true} as soon as a
-     * fully-grown (or always-harvestable) crop block is found.
-     *
-     * <p>Only the player's exact lane is checked (single-block-wide column) so
-     * crops in neighbouring rows are never mistakenly detected.
-     */
-    private boolean hasGrownCropsInDirection(ClientPlayerEntity player, int dirX, int dirZ) {
-        if (client.world == null) return false;
-        // If the direction vector is zero (e.g. non-cardinal yaw rounded to 0),
-        // there is nothing useful to scan.
-        if (dirX == 0 && dirZ == 0) return false;
-
-        int px = blockCoord(player.getX());
-        int py = blockCoord(player.getY());
-        int pz = blockCoord(player.getZ());
-
-        for (int i = 1; i <= GROWTH_SCAN_RANGE; i++) {
-            int bx = px + i * dirX;
-            int bz = pz + i * dirZ;
-            // Check at the player's feet level and one block above (crops can be tall).
-            for (int dy = 0; dy <= 1; dy++) {
-                net.minecraft.block.BlockState bs =
-                        client.world.getBlockState(new BlockPos(bx, py + dy, bz));
-                if (isGrownCrop(bs)) return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Returns {@code true} if {@code state} represents a crop that is ready to
-     * harvest (fully grown, or a non-age-based harvestable block).
-     *
-     * <p>Age-based crops are recognised by the standard Minecraft
-     * {@link net.minecraft.state.property.Properties} age constants:
-     * <ul>
-     *   <li>{@code AGE_7}  – Wheat, Carrot, Potato</li>
-     *   <li>{@code AGE_3}  – Nether Wart</li>
-     *   <li>{@code AGE_2}  – Cocoa Beans</li>
-     * </ul>
-     * Any other non-air block (Sugar Cane, Cactus, Mushroom, etc.) is
-     * considered harvestable.
-     */
-    private static boolean isGrownCrop(net.minecraft.block.BlockState state) {
-        if (state.isAir()) return false;
-        if (state.contains(net.minecraft.state.property.Properties.AGE_7)) {
-            return state.get(net.minecraft.state.property.Properties.AGE_7) == 7;
-        }
-        if (state.contains(net.minecraft.state.property.Properties.AGE_3)) {
-            return state.get(net.minecraft.state.property.Properties.AGE_3) == 3;
-        }
-        if (state.contains(net.minecraft.state.property.Properties.AGE_2)) {
-            return state.get(net.minecraft.state.property.Properties.AGE_2) == 2;
-        }
-        // Non-age-based crop (Sugar Cane, Cactus, etc.): existence is enough.
-        return true;
     }
 
     /**
