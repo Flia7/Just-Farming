@@ -14,6 +14,8 @@ import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Random;
+
 /**
  * Manages the cocoa-beans farming macro state and tick logic.
  *
@@ -89,9 +91,17 @@ public class MacroManager {
      */
     private static final float ROTATION_MAX_DELTA_MS = 250.0f;
 
+    /**
+     * Upper bound (exclusive) of the non-configurable random jitter added on top
+     * of every configurable delay.  The actual extra is {@code random.nextInt(RANDOM_JITTER_MS)},
+     * giving 0–149 ms of additional variation.
+     */
+    private static final int RANDOM_JITTER_MS = 150;
+
     private final MinecraftClient client;
     private FarmingConfig config;
     private VisitorManager visitorManager;
+    private final Random random = new Random();
 
     // -----------------------------------------------------------------------
     // State
@@ -181,6 +191,12 @@ public class MacroManager {
 
     /** System-time (ms) when the last mousemat phase transition occurred. */
     private long mousematActionTime = 0;
+
+    /**
+     * Extra random delay (0–150 ms) added to the configured mousemat delay for
+     * the current phase.  Re-rolled each time {@link #mousematActionTime} is set.
+     */
+    private int mousematPhaseRandomExtra = 0;
 
 
     // -----------------------------------------------------------------------
@@ -294,6 +310,7 @@ public class MacroManager {
         preMousematSlot = -1;
         mousematTargetSlot = -1;
         mousematActionTime = 0;
+        mousematPhaseRandomExtra = 0;
         lastRotationTime = 0;
         if (config.unlockedMouseEnabled) {
             client.mouse.unlockCursor();
@@ -533,45 +550,50 @@ public class MacroManager {
                         }
                         // No swap needed – jump straight to pre-click delay.
                         mousematActionTime = now;
+                        mousematPhaseRandomExtra = random.nextInt(RANDOM_JITTER_MS);
                         mousematPhase = 1;
                     } else {
                         // Need to switch – record farming slot and start swap-to delay.
                         preMousematSlot = currentSlot;
                         mousematActionTime = now;
+                        mousematPhaseRandomExtra = random.nextInt(RANDOM_JITTER_MS);
                         // Stay in phase 0 until delay elapses.
                     }
-                } else if (now - mousematActionTime >= config.mousematSwapToDelay) {
+                } else if (now - mousematActionTime >= config.mousematSwapToDelay + mousematPhaseRandomExtra) {
                     // Swap-to delay elapsed – switch to mousemat slot.
                     player.getInventory().setSelectedSlot(mousematTargetSlot);
                     LOGGER.info("[JustFarming] Switched to Squeaky Mousemat slot {} (was slot {}).",
                             mousematTargetSlot, preMousematSlot);
                     mousematActionTime = now;
+                    mousematPhaseRandomExtra = random.nextInt(RANDOM_JITTER_MS);
                     mousematPhase = 1;
                 }
             }
             case 1 -> {
                 // Wait pre-click delay, then activate ability.
-                if (now - mousematActionTime >= config.mousematPreDelay) {
+                if (now - mousematActionTime >= config.mousematPreDelay + mousematPhaseRandomExtra) {
                     performMousematClick(player);
                     LOGGER.info("[JustFarming] Squeaky Mousemat left-click sent.");
                     mousematActionTime = now;
+                    mousematPhaseRandomExtra = random.nextInt(RANDOM_JITTER_MS);
                     mousematPhase = 2;
                 }
             }
             case 2 -> {
                 // Wait post-click delay, then restore slot.
-                if (now - mousematActionTime >= config.mousematPostDelay) {
+                if (now - mousematActionTime >= config.mousematPostDelay + mousematPhaseRandomExtra) {
                     if (preMousematSlot >= 0) {
                         player.getInventory().setSelectedSlot(preMousematSlot);
                         LOGGER.info("[JustFarming] Restored hotbar slot {}.", preMousematSlot);
                     }
                     mousematActionTime = now;
+                    mousematPhaseRandomExtra = random.nextInt(RANDOM_JITTER_MS);
                     mousematPhase = 3;
                 }
             }
             case 3 -> {
                 // Wait resume delay, then begin farming.
-                if (now - mousematActionTime >= config.mousematResumeDelay) {
+                if (now - mousematActionTime >= config.mousematResumeDelay + mousematPhaseRandomExtra) {
                     mousematPhase = 0;
                     mousematTargetSlot = -1;
                     state = MacroState.DETECTING;
@@ -803,7 +825,8 @@ public class MacroManager {
                 com.justfarming.config.FarmingConfig.CropCustomSettings cs =
                         config.getCropSettings(config.selectedCrop);
                 long swapDelay = config.laneSwapDelayMin
-                        + (long) (Math.random() * (config.laneSwapDelayRandom + 1));
+                        + random.nextLong(config.laneSwapDelayRandom + 1)
+                        + random.nextInt(RANDOM_JITTER_MS);
                 if (cs != null) {
                     // Custom key mode: toggle the flip flag (forward↔back, left↔right)
                     if (swapDelay > 0) {
@@ -862,7 +885,8 @@ public class MacroManager {
                 LOGGER.info("[JustFarming] Reached rewarp position – warping.");
                 warpStartTime   = System.currentTimeMillis();
                 warpTargetDelay = config.rewarpDelayMin
-                        + (long) (Math.random() * (config.rewarpDelayRandom + 1));
+                        + random.nextLong(config.rewarpDelayRandom + 1)
+                        + random.nextInt(RANDOM_JITTER_MS);
                 state = MacroState.WARPING;
             }
         }
