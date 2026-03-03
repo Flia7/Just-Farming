@@ -115,9 +115,12 @@ public class VisitorBlacklistScreen extends Screen {
     protected void init() {
         applyFilter();
 
-        int numRows  = (filteredVisitors.length + COLUMNS - 1) / COLUMNS;
+        // Use the full (unfiltered) visitor count to compute naturalH so that
+        // the panel never shrinks when the search query reduces the list.
+        int numRows      = (filteredVisitors.length + COLUMNS - 1) / COLUMNS;
+        int numRowsForH  = (ALL_VISITORS.length     + COLUMNS - 1) / COLUMNS;
         int naturalH = HEADER_HEIGHT + PADDING + SEARCH_HEIGHT + PADDING
-                + numRows * (BUTTON_HEIGHT + PADDING)
+                + numRowsForH * (BUTTON_HEIGHT + PADDING)
                 + BUTTON_HEIGHT + PADDING;
 
         panelW = Math.min(PANEL_WIDTH, this.width  - 10);
@@ -152,6 +155,9 @@ public class VisitorBlacklistScreen extends Screen {
             this.clearAndInit();
         });
         this.addDrawableChild(searchField);
+        // Keep keyboard focus on the search field after every clearAndInit() so
+        // the user can type continuously without re-clicking.
+        this.setFocused(searchField);
 
         // ── Visitor buttons ───────────────────────────────────────────────────
         int y = panelY + HEADER_HEIGHT + PADDING + SEARCH_HEIGHT + PADDING;
