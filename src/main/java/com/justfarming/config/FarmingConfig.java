@@ -71,6 +71,14 @@ public class FarmingConfig {
     public boolean unlockedMouseEnabled = false;
 
     /**
+     * When {@code true}, the macro continues to move and break blocks even while
+     * any GUI (including the Just Farming config screen) is open.  This mirrors
+     * the behaviour of FarmHelper's "macro enabled in GUI" option and removes
+     * the brief pause that can occur when opening or closing a screen.
+     */
+    public boolean macroEnabledInGui = false;
+
+    /**
      * When {@code true}, the macro will only start (and will auto-stop) when
      * the player is detected to be in the Hypixel Skyblock Garden.
      */
