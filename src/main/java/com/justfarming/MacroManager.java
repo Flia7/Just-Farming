@@ -478,7 +478,7 @@ public class MacroManager {
                 }
             }
             case LANE_SWAP_WAITING -> {
-                releaseKeys();
+                releaseMovementKeys();
                 if (System.currentTimeMillis() - laneSwapStartTime >= laneSwapTargetDelay) {
                     if (laneSwapPendingCustomFlip) {
                         customFlipped = !customFlipped;
@@ -791,24 +791,6 @@ public class MacroManager {
         client.options.leftKey.setPressed(strafeLeft);
         client.options.rightKey.setPressed(strafeRight);
 
-        // ---- Block breaking ----
-        // When no screen is open, Minecraft's handleInputEvents() calls
-        // handleBlockBreaking(true) naturally (attackKey.isPressed() + isCursorLocked()),
-        // which in turn calls updateBlockBreakingProgress(). Duplicating that call here
-        // would cause double packets per tick and spurious START_DESTROY_BLOCK packets
-        // for already-broken (air) blocks – both detectable by server-side anti-cheat.
-        //
-        // When a screen IS open, handleInputEvents() is skipped entirely by Minecraft,
-        // so we drive breaking directly in that case only.
-        if (client.currentScreen != null
-                && client.interactionManager != null
-                && client.crosshairTarget instanceof BlockHitResult blockHit
-                && !client.world.getBlockState(blockHit.getBlockPos()).isAir()) {
-            client.interactionManager.updateBlockBreakingProgress(
-                    blockHit.getBlockPos(), blockHit.getSide());
-            player.swingHand(net.minecraft.util.Hand.MAIN_HAND);
-        }
-
         // ---- Stuck detection (end of row) ----
         Vec3d currentPos = new Vec3d(player.getX(), player.getY(), player.getZ());
         if (lastPos != null) {
@@ -824,9 +806,10 @@ public class MacroManager {
 
             if (stuckTicks >= STUCK_THRESHOLD) {
                 // End of row reached – flip direction (with optional lane-swap delay).
-                // Release all keys immediately so the player stops before the delay.
+                // Release movement keys immediately so the player stops before the delay,
+                // but keep the attack key held so block breaking continues.
                 stuckTicks = 0;
-                releaseKeys();
+                releaseMovementKeys();
                 com.justfarming.config.FarmingConfig.CropCustomSettings cs =
                         config.getCropSettings(config.selectedCrop);
                 long swapDelay = config.laneSwapDelayMin
@@ -910,6 +893,15 @@ public class MacroManager {
         client.options.leftKey.setPressed(false);
         client.options.rightKey.setPressed(false);
         client.options.attackKey.setPressed(false);
+    }
+
+    /** Release movement keys only, keeping the attack/break key held. */
+    private void releaseMovementKeys() {
+        if (client.options == null) return;
+        client.options.forwardKey.setPressed(false);
+        client.options.backKey.setPressed(false);
+        client.options.leftKey.setPressed(false);
+        client.options.rightKey.setPressed(false);
     }
 
     /**
