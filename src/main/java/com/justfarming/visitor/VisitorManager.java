@@ -1,6 +1,9 @@
 package com.justfarming.visitor;
 
 import com.justfarming.config.FarmingConfig;
+import net.minecraft.block.BlockState;
+import net.minecraft.block.SlabBlock;
+import net.minecraft.block.StairsBlock;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.client.network.ClientPlayerEntity;
@@ -997,40 +1000,71 @@ public class VisitorManager {
     }
 
     /**
+     * Returns {@code true} if {@code state} is a stair or slab block.
+     *
+     * <p>Stair and slab blocks occupy only part of their block space and can be
+     * stepped onto automatically by Minecraft's movement code, so the pathfinder
+     * should treat them as walkable surfaces rather than walls.
+     */
+    private static boolean isStepBlock(BlockState state) {
+        return state.getBlock() instanceof StairsBlock
+                || state.getBlock() instanceof SlabBlock;
+    }
+
+    /**
      * Returns {@code true} if the path one {@code probeStep} ahead in the given
      * {@code yawDeg} direction is passable: there must be a solid floor below and
      * no wall block at feet or head level.
+     *
+     * <p>Stair and slab blocks at feet level are treated as step-up surfaces that
+     * Minecraft traverses automatically (≤ 0.5 block step), not as walls.
+     * The floor check spans up to 2 blocks below to allow descending stairs and
+     * stepping off ledges up to 2 blocks high.  A 2-block fall causes no damage in
+     * vanilla Minecraft (damage starts at falls greater than 3 blocks), so this is
+     * safe for normal garden terrain.
      */
     private boolean isPassable(ClientPlayerEntity player, double yawDeg, double probeStep) {
         double yawRad = Math.toRadians(yawDeg);
         double nextX  = player.getX() + -Math.sin(yawRad) * probeStep;
         double nextZ  = player.getZ() +  Math.cos(yawRad) * probeStep;
         int    feetY  = (int) Math.floor(player.getY());
-        BlockPos floorPos = new BlockPos((int) Math.floor(nextX), feetY - 1, (int) Math.floor(nextZ));
-        BlockPos feetPos  = new BlockPos((int) Math.floor(nextX), feetY,     (int) Math.floor(nextZ));
-        BlockPos headPos  = new BlockPos((int) Math.floor(nextX), feetY + 1, (int) Math.floor(nextZ));
-        boolean floorAhead = !client.world.getBlockState(floorPos).isAir();
-        boolean wallAhead  = !client.world.getBlockState(feetPos).isAir()
-                          || !client.world.getBlockState(headPos).isAir();
+        int    bx     = (int) Math.floor(nextX);
+        int    bz     = (int) Math.floor(nextZ);
+        // A block is a wall only if it is non-air and is not a stair/slab step-over.
+        BlockState feetState = client.world.getBlockState(new BlockPos(bx, feetY,     bz));
+        BlockState headState = client.world.getBlockState(new BlockPos(bx, feetY + 1, bz));
+        boolean wallAhead = (!feetState.isAir() && !isStepBlock(feetState))
+                         || !headState.isAir();
+        // Allow stepping down up to 2 blocks (covers descending stairs and shallow drops).
+        boolean floorAhead = !client.world.getBlockState(new BlockPos(bx, feetY - 1, bz)).isAir()
+                          || !client.world.getBlockState(new BlockPos(bx, feetY - 2, bz)).isAir();
         return floorAhead && !wallAhead;
     }
 
     /**
      * Returns {@code true} if {@code point} is a valid standing position:
-     * the block at the feet and head levels must both be air, and there must
-     * be a solid floor one block below.  Used to verify that the computed
-     * behind-point is not embedded in a wall before the player is sent there.
+     * the block at the feet level must be air or a step block (stair/slab),
+     * the head level must be air, and there must be a solid floor one block below
+     * (or a step block at feet level, since stair/slab blocks provide their own
+     * surface — e.g. a visitor standing on stairs has {@code floor(y)} land on the
+     * stair block itself, making it the effective floor even though the block
+     * directly below is air).
+     * Used to verify that the computed behind-point is not embedded in a wall
+     * before the player is sent there.
      */
     private boolean isBehindPointPassable(Vec3d point) {
         int bx = (int) Math.floor(point.x);
         int by = (int) Math.floor(point.y);
         int bz = (int) Math.floor(point.z);
-        BlockPos floorPos = new BlockPos(bx, by - 1, bz);
-        BlockPos feetPos  = new BlockPos(bx, by,     bz);
-        BlockPos headPos  = new BlockPos(bx, by + 1, bz);
-        return !client.world.getBlockState(floorPos).isAir()
-                && client.world.getBlockState(feetPos).isAir()
-                && client.world.getBlockState(headPos).isAir();
+        BlockState floorState = client.world.getBlockState(new BlockPos(bx, by - 1, bz));
+        BlockState feetState  = client.world.getBlockState(new BlockPos(bx, by,     bz));
+        BlockState headState  = client.world.getBlockState(new BlockPos(bx, by + 1, bz));
+        // hasFloor: the block below is solid OR the feet block itself is a step surface
+        // (when floor(y) lands on a stair/slab, that stair/slab is the standing surface).
+        boolean hasFloor  = !floorState.isAir() || isStepBlock(feetState);
+        boolean feetClear = feetState.isAir()   || isStepBlock(feetState);
+        boolean headClear = headState.isAir();
+        return hasFloor && feetClear && headClear;
     }
 
     /**

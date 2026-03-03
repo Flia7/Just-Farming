@@ -1015,6 +1015,34 @@ public class MacroManager {
         // keys that the state machine just set so the player presses exactly the
         // user-configured keys (swapped when customFlipped is true).
         applyCustomKeyOverrides();
+
+        // When a GUI screen is open, Minecraft's vanilla handleBlockBreaking skips
+        // block breaking (because currentScreen != null makes its condition false).
+        // Directly call the interaction manager here to ensure crops are broken
+        // regardless of which screen is currently open.  The attack-key state
+        // is checked so that custom key overrides disabling attack are respected.
+        if (client.currentScreen != null && client.options != null
+                && client.options.attackKey.isPressed()) {
+            directBreakBlock();
+        }
+    }
+
+    /**
+     * Directly attacks the block at the crosshair target via the interaction
+     * manager, bypassing the vanilla input-event handler.
+     *
+     * <p>This is used when a GUI screen is open and Minecraft's own
+     * {@code handleBlockBreaking} would otherwise skip block breaking.
+     * For Hypixel SkyBlock instant-break crops one call per tick is enough
+     * to continuously harvest the targeted block.
+     */
+    private void directBreakBlock() {
+        if (client.interactionManager == null || client.world == null) return;
+        if (!(client.crosshairTarget instanceof BlockHitResult blockHit)) return;
+        BlockPos pos = blockHit.getBlockPos();
+        if (!client.world.getBlockState(pos).isAir()) {
+            client.interactionManager.attackBlock(pos, blockHit.getSide());
+        }
     }
 
     /**
