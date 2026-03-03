@@ -8,7 +8,6 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.tooltip.Tooltip;
 import net.minecraft.client.gui.widget.SliderWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
 
 /**
@@ -33,7 +32,6 @@ public class FarmingConfigScreen extends Screen {
     private static final int BUTTON_HEIGHT  = 24;
     private static final int PADDING        = 10;
     private static final int TAB_HEIGHT     = 26;
-    private static final int SEARCH_H       = 14;
 
     // ── Colour palette (inspired by sw DEFAULT / MONOCHROME theme) ────────────
     private static final int COL_SCREEN_DIM  = 0x60000000; // full-screen dim
@@ -88,6 +86,7 @@ public class FarmingConfigScreen extends Screen {
     private FlatBoolToggleWidget  squeakyMousematButton;
 
     // ── Tab 3 – Delays widgets ────────────────────────────────────────────────
+    private GlobalRandomSlider            globalRandomSlider;
     private LaneSwapDelaySlider           laneSwapDelaySlider;
     private LaneSwapRandomSlider          laneSwapRandomSlider;
     private RewarpDelaySlider             rewarpDelaySlider;
@@ -113,15 +112,13 @@ public class FarmingConfigScreen extends Screen {
     // ── Section-label Y positions (set in init, used in render) ───────────────
     private int sectionCropY, actionSeparatorY;
     private int sectionPestsY, sectionMiscY, miscSeparatorY;
-    private int sectionLaneSwapY, sectionRewarpDelayY, sectionMousematDelayY, sectionVisitorDelaysY;
+    private int sectionGlobalRandomY, sectionLaneSwapY, sectionRewarpDelayY, sectionMousematDelayY, sectionVisitorDelaysY;
     private int sectionVisitorsY;
     private int visitorStatusY;
 
-    // ── Scroll / search state (persists across clearAndInit) ──────────────────
-    private final int[]    tabScrollOffsets  = new int[TAB_NAMES.length];
-    private final String[] tabSearchQueries  = new String[TAB_NAMES.length];
-    private final int[]    tabContentHeights = new int[TAB_NAMES.length];
-    private TextFieldWidget[] tabSearchFields;
+    // ── Scroll state (persists across clearAndInit) ───────────────────────────
+    private final int[] tabScrollOffsets  = new int[TAB_NAMES.length];
+    private final int[] tabContentHeights = new int[TAB_NAMES.length];
     private int contentAreaTopY;
     private int contentAreaBotY;
 
@@ -131,7 +128,6 @@ public class FarmingConfigScreen extends Screen {
         this.config         = config;
         this.macroManager   = macroManager;
         this.visitorManager = com.justfarming.JustFarming.getVisitorManager();
-        java.util.Arrays.fill(tabSearchQueries, "");
     }
 
     @Override
@@ -171,28 +167,10 @@ public class FarmingConfigScreen extends Screen {
             this.addDrawableChild(tabButtons[i]);
         }
 
-        // Content area starts below a small title/header area
+        // Content area starts below a small title/header area (no search bar)
         int contentTop = winY + Math.round(24 * scale);
-        int searchBarH = Math.max(10, Math.round(SEARCH_H * scale));
-        contentAreaTopY = contentTop + searchBarH + pad;
+        contentAreaTopY = contentTop + pad;
         contentAreaBotY = winY + winH - bh - pad;
-
-        // ── Search fields (one per tab; only the active one is visible) ────────
-        tabSearchFields = new TextFieldWidget[TAB_NAMES.length];
-        for (int t = 0; t < TAB_NAMES.length; t++) {
-            final int ft = t;
-            TextFieldWidget sf = new TextFieldWidget(
-                    this.textRenderer, widgetX, contentTop, bw, searchBarH, Text.empty());
-            sf.setMaxLength(64);
-            sf.setText(tabSearchQueries[t] != null ? tabSearchQueries[t] : "");
-            sf.setPlaceholder(Text.literal("Search...").withColor(COL_TEXT_MUTED));
-            sf.setChangedListener(text -> {
-                tabSearchQueries[ft] = text;
-                refreshWidgetVisibility();
-            });
-            tabSearchFields[t] = sf;
-            this.addDrawableChild(sf);
-        }
 
         int y;
 
@@ -331,6 +309,13 @@ public class FarmingConfigScreen extends Screen {
 
         // ── Tab 3 – Delays ────────────────────────────────────────────────────
         y = contentAreaTopY - tabScrollOffsets[3];
+        sectionGlobalRandomY = y;
+        y += sLH;
+        globalRandomSlider = new GlobalRandomSlider(widgetX, y, bw, bh, config.globalRandomizationMs);
+        this.addDrawableChild(globalRandomSlider);
+        globalRandomSlider.setTooltip(Tooltip.of(Text.literal("Global extra random jitter added on top of every delay throughout the macro (ms)")));
+        y += bh + pad + gap;
+
         sectionLaneSwapY = y;
         y += sLH;
         laneSwapDelaySlider = new LaneSwapDelaySlider(widgetX, y, bw, bh, config.laneSwapDelayMin);
@@ -453,65 +438,52 @@ public class FarmingConfigScreen extends Screen {
         return w.getY() + w.getHeight() > contentAreaTopY && w.getY() < contentAreaBotY;
     }
 
-    /** Returns {@code true} if {@code w}'s label contains {@code query} (case-insensitive). */
-    private boolean matchesSearch(String query, net.minecraft.client.gui.widget.ClickableWidget w) {
-        if (query == null || query.isEmpty()) return true;
-        return w.getMessage().getString().toLowerCase().contains(query.toLowerCase());
-    }
-
     /** Returns {@code true} if the given Y coordinate is within the scrollable content area. */
     private boolean yInContentBounds(int y) {
         return y >= contentAreaTopY && y < contentAreaBotY;
     }
 
-    /** Shows/hides content widgets according to activeTab, scroll position, and search query. */
+    /** Shows/hides content widgets according to activeTab and scroll position. */
     private void refreshWidgetVisibility() {
-        String q = tabSearchQueries[activeTab];
 
         boolean t0 = activeTab == 0;
-        cropSelectButton.visible   = t0 && inContentBounds(cropSelectButton)   && matchesSearch(q, cropSelectButton);
-        cropSettingsButton.visible = t0 && inContentBounds(cropSettingsButton) && matchesSearch(q, cropSettingsButton);
-        setRewarpButton.visible    = t0 && inContentBounds(setRewarpButton)    && matchesSearch(q, setRewarpButton);
-        toggleMacroButton.visible  = t0 && inContentBounds(toggleMacroButton)  && matchesSearch(q, toggleMacroButton);
+        cropSelectButton.visible   = t0 && inContentBounds(cropSelectButton);
+        cropSettingsButton.visible = t0 && inContentBounds(cropSettingsButton);
+        setRewarpButton.visible    = t0 && inContentBounds(setRewarpButton);
+        toggleMacroButton.visible  = t0 && inContentBounds(toggleMacroButton);
 
         boolean t1 = activeTab == 1;
-        pestHighlightButton.visible = t1 && inContentBounds(pestHighlightButton) && matchesSearch(q, pestHighlightButton);
-        pestLabelsButton.visible    = t1 && inContentBounds(pestLabelsButton)    && matchesSearch(q, pestLabelsButton);
-        titleScaleSlider.visible    = t1 && inContentBounds(titleScaleSlider)    && matchesSearch(q, titleScaleSlider);
-        pestEspButton.visible       = t1 && inContentBounds(pestEspButton)       && matchesSearch(q, pestEspButton);
-        pestTracerButton.visible    = t1 && inContentBounds(pestTracerButton)    && matchesSearch(q, pestTracerButton);
+        pestHighlightButton.visible = t1 && inContentBounds(pestHighlightButton);
+        pestLabelsButton.visible    = t1 && inContentBounds(pestLabelsButton);
+        titleScaleSlider.visible    = t1 && inContentBounds(titleScaleSlider);
+        pestEspButton.visible       = t1 && inContentBounds(pestEspButton);
+        pestTracerButton.visible    = t1 && inContentBounds(pestTracerButton);
 
         boolean t2 = activeTab == 2;
-        freelookButton.visible        = t2 && inContentBounds(freelookButton)        && matchesSearch(q, freelookButton);
-        unlockedMouseButton.visible   = t2 && inContentBounds(unlockedMouseButton)   && matchesSearch(q, unlockedMouseButton);
-        gardenOnlyButton.visible      = t2 && inContentBounds(gardenOnlyButton)      && matchesSearch(q, gardenOnlyButton);
-        squeakyMousematButton.visible = t2 && inContentBounds(squeakyMousematButton) && matchesSearch(q, squeakyMousematButton);
+        freelookButton.visible        = t2 && inContentBounds(freelookButton);
+        unlockedMouseButton.visible   = t2 && inContentBounds(unlockedMouseButton);
+        gardenOnlyButton.visible      = t2 && inContentBounds(gardenOnlyButton);
+        squeakyMousematButton.visible = t2 && inContentBounds(squeakyMousematButton);
 
         boolean t3 = activeTab == 3;
-        laneSwapDelaySlider.visible       = t3 && inContentBounds(laneSwapDelaySlider)       && matchesSearch(q, laneSwapDelaySlider);
-        laneSwapRandomSlider.visible      = t3 && inContentBounds(laneSwapRandomSlider)      && matchesSearch(q, laneSwapRandomSlider);
-        rewarpDelaySlider.visible         = t3 && inContentBounds(rewarpDelaySlider)         && matchesSearch(q, rewarpDelaySlider);
-        rewarpRandomSlider.visible        = t3 && inContentBounds(rewarpRandomSlider)        && matchesSearch(q, rewarpRandomSlider);
-        mousematSwapToSlider.visible      = t3 && inContentBounds(mousematSwapToSlider)      && matchesSearch(q, mousematSwapToSlider);
-        mousematPreDelaySlider.visible    = t3 && inContentBounds(mousematPreDelaySlider)    && matchesSearch(q, mousematPreDelaySlider);
-        mousematPostDelaySlider.visible   = t3 && inContentBounds(mousematPostDelaySlider)   && matchesSearch(q, mousematPostDelaySlider);
-        mousematResumeDelaySlider.visible = t3 && inContentBounds(mousematResumeDelaySlider) && matchesSearch(q, mousematResumeDelaySlider);
-        visitorsDelaySlider.visible           = t3 && inContentBounds(visitorsDelaySlider)           && matchesSearch(q, visitorsDelaySlider);
-        visitorsRandomSlider.visible          = t3 && inContentBounds(visitorsRandomSlider)          && matchesSearch(q, visitorsRandomSlider);
-        visitorsTeleportDelaySlider.visible   = t3 && inContentBounds(visitorsTeleportDelaySlider)   && matchesSearch(q, visitorsTeleportDelaySlider);
-        bazaarSearchDelaySlider.visible       = t3 && inContentBounds(bazaarSearchDelaySlider)       && matchesSearch(q, bazaarSearchDelaySlider);
+        globalRandomSlider.visible            = t3 && inContentBounds(globalRandomSlider);
+        laneSwapDelaySlider.visible       = t3 && inContentBounds(laneSwapDelaySlider);
+        laneSwapRandomSlider.visible      = t3 && inContentBounds(laneSwapRandomSlider);
+        rewarpDelaySlider.visible         = t3 && inContentBounds(rewarpDelaySlider);
+        rewarpRandomSlider.visible        = t3 && inContentBounds(rewarpRandomSlider);
+        mousematSwapToSlider.visible      = t3 && inContentBounds(mousematSwapToSlider);
+        mousematPreDelaySlider.visible    = t3 && inContentBounds(mousematPreDelaySlider);
+        mousematPostDelaySlider.visible   = t3 && inContentBounds(mousematPostDelaySlider);
+        mousematResumeDelaySlider.visible = t3 && inContentBounds(mousematResumeDelaySlider);
+        visitorsDelaySlider.visible           = t3 && inContentBounds(visitorsDelaySlider);
+        visitorsRandomSlider.visible          = t3 && inContentBounds(visitorsRandomSlider);
+        visitorsTeleportDelaySlider.visible   = t3 && inContentBounds(visitorsTeleportDelaySlider);
+        bazaarSearchDelaySlider.visible       = t3 && inContentBounds(bazaarSearchDelaySlider);
 
         boolean t4 = activeTab == 4;
-        visitorsEnabledButton.visible         = t4 && inContentBounds(visitorsEnabledButton)         && matchesSearch(q, visitorsEnabledButton);
-        visitorsBuyFromBazaarButton.visible   = t4 && inContentBounds(visitorsBuyFromBazaarButton)   && matchesSearch(q, visitorsBuyFromBazaarButton);
-        visitorsBlacklistButton.visible       = t4 && inContentBounds(visitorsBlacklistButton)       && matchesSearch(q, visitorsBlacklistButton);
-
-        // Only the active tab's search field is visible
-        for (int t = 0; t < TAB_NAMES.length; t++) {
-            if (tabSearchFields != null && tabSearchFields[t] != null) {
-                tabSearchFields[t].visible = (activeTab == t);
-            }
-        }
+        visitorsEnabledButton.visible         = t4 && inContentBounds(visitorsEnabledButton);
+        visitorsBuyFromBazaarButton.visible   = t4 && inContentBounds(visitorsBuyFromBazaarButton);
+        visitorsBlacklistButton.visible       = t4 && inContentBounds(visitorsBlacklistButton);
     }
 
     @Override
@@ -575,6 +547,8 @@ public class FarmingConfigScreen extends Screen {
             if (yInContentBounds(miscSeparatorY))
                 context.fill(contentX + 16, miscSeparatorY, winR - 16, miscSeparatorY + 1, COL_SEP);
         } else if (activeTab == 3) {
+            if (yInContentBounds(sectionGlobalRandomY))
+                drawSectionLabel(context, "Global Randomization", sectionGlobalRandomY);
             if (yInContentBounds(sectionLaneSwapY))
                 drawSectionLabel(context, "Lane Swap", sectionLaneSwapY);
             if (yInContentBounds(sectionRewarpDelayY))
@@ -658,6 +632,7 @@ public class FarmingConfigScreen extends Screen {
 
     /** Read widget values back into the config object. */
     private void applyConfig() {
+        config.globalRandomizationMs    = globalRandomSlider.getRandomValue();
         config.laneSwapDelayMin     = laneSwapDelaySlider.getDelayValue();
         config.laneSwapDelayRandom  = laneSwapRandomSlider.getRandomValue();
         config.rewarpDelayMin       = rewarpDelaySlider.getDelayValue();
@@ -909,6 +884,21 @@ public class FarmingConfigScreen extends Screen {
         @Override
         public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
             renderFlatSlider(context, getX(), getY(), getWidth(), getHeight(), value, getMessage());
+        }
+    }
+
+    /** Slider for the global randomization jitter applied to every delay (0–2000 ms). */
+    private static class GlobalRandomSlider extends IntStepSlider {
+
+        GlobalRandomSlider(int x, int y, int width, int height, int initialValue) {
+            super(x, y, width, height, 0, 2000, initialValue);
+        }
+
+        int getRandomValue() { return getIntValue(); }
+
+        @Override
+        protected void updateMessage() {
+            setMessage(Text.literal(String.format("Global Randomization: %d ms", getIntValue())));
         }
     }
 

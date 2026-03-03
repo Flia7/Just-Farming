@@ -3,6 +3,7 @@ package com.justfarming.gui;
 import com.justfarming.config.FarmingConfig;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
 
 import java.util.ArrayList;
@@ -13,6 +14,7 @@ import java.util.List;
  * Clicking a visitor's name toggles their blacklist status: blacklisted visitors
  * are automatically skipped by the visitor routine regardless of their
  * required items.  Red-tinted entries are currently blacklisted.
+ * A search bar at the top filters the list by visitor name.
  */
 public class VisitorBlacklistScreen extends Screen {
 
@@ -60,11 +62,12 @@ public class VisitorBlacklistScreen extends Screen {
     private static final int COL_TEXT_MUTED   = 0x66FFFFFF;
 
     // ── Layout ────────────────────────────────────────────────────────────────
-    private static final int COLUMNS      = 3;
-    private static final int PANEL_WIDTH  = 420;
+    private static final int COLUMNS       = 3;
+    private static final int PANEL_WIDTH   = 460;
     private static final int HEADER_HEIGHT = 28;
-    private static final int BUTTON_HEIGHT = 20;
-    private static final int PADDING       = 5;
+    private static final int SEARCH_HEIGHT = 20;
+    private static final int BUTTON_HEIGHT = 22;
+    private static final int PADDING       = 6;
 
     private final Screen        parent;
     private final FarmingConfig config;
@@ -72,10 +75,16 @@ public class VisitorBlacklistScreen extends Screen {
     private int panelX, panelY, panelW, panelH;
     private final FlatButtonWidget[] visitorButtons = new FlatButtonWidget[ALL_VISITORS.length];
 
+    /** Current search query; persists across clearAndInit. */
+    private String searchQuery = "";
+
     /** How many visitor rows have been scrolled past. */
     private int scrollOffset    = 0;
     /** How many visitor rows can be displayed at once. */
     private int maxVisibleRows  = ALL_VISITORS.length;
+
+    /** The names that match the current search query. */
+    private String[] filteredVisitors = ALL_VISITORS;
 
     public VisitorBlacklistScreen(Screen parent, FarmingConfig config) {
         super(Text.literal("Blacklist Visitors"));
@@ -83,10 +92,26 @@ public class VisitorBlacklistScreen extends Screen {
         this.config = config;
     }
 
+    /** Recomputes {@link #filteredVisitors} from {@link #searchQuery}. */
+    private void applyFilter() {
+        if (searchQuery == null || searchQuery.isEmpty()) {
+            filteredVisitors = ALL_VISITORS;
+        } else {
+            String lower = searchQuery.toLowerCase();
+            List<String> result = new ArrayList<>();
+            for (String v : ALL_VISITORS) {
+                if (v.toLowerCase().contains(lower)) result.add(v);
+            }
+            filteredVisitors = result.toArray(new String[0]);
+        }
+    }
+
     @Override
     protected void init() {
-        int numRows  = (ALL_VISITORS.length + COLUMNS - 1) / COLUMNS;
-        int naturalH = HEADER_HEIGHT + PADDING
+        applyFilter();
+
+        int numRows  = (filteredVisitors.length + COLUMNS - 1) / COLUMNS;
+        int naturalH = HEADER_HEIGHT + PADDING + SEARCH_HEIGHT + PADDING
                 + numRows * (BUTTON_HEIGHT + PADDING)
                 + BUTTON_HEIGHT + PADDING;
 
@@ -95,8 +120,9 @@ public class VisitorBlacklistScreen extends Screen {
         panelX = (this.width  - panelW) / 2;
         panelY = (this.height - panelH) / 2;
 
-        // How many visitor rows fit between the header and the Cancel/Close button
-        int contentH = panelH - HEADER_HEIGHT - PADDING - (BUTTON_HEIGHT + PADDING);
+        // How many visitor rows fit between the search bar and the Done button
+        int contentH = panelH - HEADER_HEIGHT - PADDING - SEARCH_HEIGHT - PADDING
+                - (BUTTON_HEIGHT + PADDING);
         maxVisibleRows = Math.max(1, contentH / (BUTTON_HEIGHT + PADDING));
 
         int maxScroll = Math.max(0, numRows - maxVisibleRows);
@@ -107,22 +133,38 @@ public class VisitorBlacklistScreen extends Screen {
         int bw = (totalBW - (COLUMNS - 1) * colGap) / COLUMNS;
         int bh = BUTTON_HEIGHT;
         int wx = panelX + PADDING + 2;
-        int y  = panelY + HEADER_HEIGHT + PADDING;
+
+        // ── Search bar ────────────────────────────────────────────────────────
+        int searchY = panelY + HEADER_HEIGHT + PADDING;
+        TextFieldWidget searchField = new TextFieldWidget(
+                this.textRenderer, wx, searchY, totalBW, SEARCH_HEIGHT, Text.empty());
+        searchField.setMaxLength(64);
+        searchField.setText(searchQuery);
+        searchField.setPlaceholder(Text.literal("Search visitors...").withColor(COL_TEXT_MUTED));
+        searchField.setChangedListener(text -> {
+            searchQuery = text;
+            scrollOffset = 0;
+            this.clearAndInit();
+        });
+        this.addDrawableChild(searchField);
+
+        // ── Visitor buttons ───────────────────────────────────────────────────
+        int y = panelY + HEADER_HEIGHT + PADDING + SEARCH_HEIGHT + PADDING;
 
         if (config.visitorBlacklist == null) {
             config.visitorBlacklist = new ArrayList<>();
         }
 
-        for (int i = 0; i < ALL_VISITORS.length; i++) {
-            final String visitor = ALL_VISITORS[i];
+        for (int i = 0; i < filteredVisitors.length; i++) {
+            final String visitor = filteredVisitors[i];
             int row        = i / COLUMNS;
             int col        = i % COLUMNS;
             int visibleRow = row - scrollOffset;
             int bx = wx + col * (bw + colGap);
-            visitorButtons[i] = new FlatButtonWidget(
+            FlatButtonWidget btn = new FlatButtonWidget(
                     bx, y + visibleRow * (bh + PADDING), bw, bh,
                     getButtonText(visitor),
-                    btn -> {
+                    b -> {
                         // Toggle blacklist membership
                         if (config.visitorBlacklist.contains(visitor)) {
                             config.visitorBlacklist.remove(visitor);
@@ -130,14 +172,19 @@ public class VisitorBlacklistScreen extends Screen {
                             config.visitorBlacklist.add(visitor);
                         }
                         config.save();
-                        btn.setMessage(getButtonText(visitor));
+                        b.setMessage(getButtonText(visitor));
                     });
+            // Store in array only if position matches ALL_VISITORS index
+            int origIdx = java.util.Arrays.asList(ALL_VISITORS).indexOf(visitor);
+            if (origIdx >= 0 && origIdx < visitorButtons.length) {
+                visitorButtons[origIdx] = btn;
+            }
             if (visibleRow >= 0 && visibleRow < maxVisibleRows) {
-                this.addDrawableChild(visitorButtons[i]);
+                this.addDrawableChild(btn);
             }
         }
 
-        // Close/Done button pinned to the bottom of the panel
+        // ── Done button pinned to the bottom ──────────────────────────────────
         this.addDrawableChild(new FlatButtonWidget(
                 wx, panelY + panelH - bh - PADDING, totalBW, bh,
                 Text.literal("Done"),
@@ -154,7 +201,7 @@ public class VisitorBlacklistScreen extends Screen {
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY,
                                   double horizontalAmount, double verticalAmount) {
-        int numRows   = (ALL_VISITORS.length + COLUMNS - 1) / COLUMNS;
+        int numRows   = (filteredVisitors.length + COLUMNS - 1) / COLUMNS;
         int maxScroll = Math.max(0, numRows - maxVisibleRows);
         int delta = verticalAmount > 0 ? -1 : 1;
         int newOffset = Math.max(0, Math.min(maxScroll, scrollOffset + delta));
@@ -188,16 +235,19 @@ public class VisitorBlacklistScreen extends Screen {
                 this.title.copy().withColor(COL_TEXT),
                 panelX + 10, panelY + (HEADER_HEIGHT - 8) / 2, COL_TEXT);
 
-        // Highlight blacklisted visitors
+        // Highlight blacklisted visitors (only for visible filtered rows)
         if (config.visitorBlacklist != null) {
-            for (int i = 0; i < ALL_VISITORS.length; i++) {
+            for (int i = 0; i < filteredVisitors.length; i++) {
                 int visibleRow = (i / COLUMNS) - scrollOffset;
                 if (visibleRow < 0 || visibleRow >= maxVisibleRows) continue;
-                if (config.visitorBlacklist.contains(ALL_VISITORS[i])) {
-                    FlatButtonWidget b = visitorButtons[i];
-                    context.fill(b.getX() - 1, b.getY() - 1,
-                            b.getX() + b.getWidth() + 1, b.getY() + b.getHeight() + 1,
-                            COL_BLACKLISTED_HIGHLIGHT);
+                if (config.visitorBlacklist.contains(filteredVisitors[i])) {
+                    int origIdx = java.util.Arrays.asList(ALL_VISITORS).indexOf(filteredVisitors[i]);
+                    if (origIdx >= 0 && origIdx < visitorButtons.length && visitorButtons[origIdx] != null) {
+                        FlatButtonWidget b = visitorButtons[origIdx];
+                        context.fill(b.getX() - 1, b.getY() - 1,
+                                b.getX() + b.getWidth() + 1, b.getY() + b.getHeight() + 1,
+                                COL_BLACKLISTED_HIGHLIGHT);
+                    }
                 }
             }
         }
@@ -205,10 +255,10 @@ public class VisitorBlacklistScreen extends Screen {
         super.render(context, mouseX, mouseY, delta);
 
         // Scroll indicators
-        int numRows   = (ALL_VISITORS.length + COLUMNS - 1) / COLUMNS;
+        int numRows   = (filteredVisitors.length + COLUMNS - 1) / COLUMNS;
         int maxScroll = Math.max(0, numRows - maxVisibleRows);
         int indicatorX = panelX + panelW - PADDING - 2;
-        int contentTopY = panelY + HEADER_HEIGHT + PADDING;
+        int contentTopY = panelY + HEADER_HEIGHT + PADDING + SEARCH_HEIGHT + PADDING;
         if (scrollOffset > 0) {
             context.drawTextWithShadow(this.textRenderer,
                     Text.literal("▲"), indicatorX, contentTopY, COL_TEXT_MUTED);
