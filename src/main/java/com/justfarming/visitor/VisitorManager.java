@@ -1010,18 +1010,27 @@ public class VisitorManager {
     }
 
     /**
+     * Maximum number of blocks below the probe position to scan when checking for a
+     * floor ahead.  Allows the pathfinder to walk off ledges and fall down to a
+     * surface up to this many blocks below without treating the drop as a wall.
+     * SkyBlock's barn and garden areas have solid floors and no true voids, so a
+     * generous depth is safe here.  Falls of any height inside the barn are safe in
+     * practice because Hypixel SkyBlock effectively disables fall damage on the
+     * Garden island, and visitors are never placed over open voids.
+     */
+    private static final int FLOOR_SCAN_DEPTH = 10;
+
+    /**
      * Returns {@code true} if the path one {@code probeStep} ahead in the given
-     * {@code yawDeg} direction is passable: there must be a solid floor below and
-     * no wall block at feet or head level.
+     * {@code yawDeg} direction is passable: there must be a solid floor within
+     * {@link #FLOOR_SCAN_DEPTH} blocks below and no wall block at feet or head level.
      *
      * <p>Stair and slab blocks at feet level are treated as step-up surfaces that
      * Minecraft traverses automatically (≤ 0.5 block step), not as walls.
-     * The floor check spans up to 2 blocks below to allow descending stairs and
-     * stepping off ledges up to 2 blocks high.  A 2-block fall causes no damage in
-     * vanilla Minecraft (damage starts at falls greater than 3 blocks), so this is
-     * safe for normal garden terrain.  A stair or slab at the probe's feet level
-     * also counts as its own floor (e.g. a stair step-up or step-down with open
-     * space beneath it).
+     * The floor check scans up to {@link #FLOOR_SCAN_DEPTH} blocks below to allow
+     * descending stairs and stepping off ledges of any height (within the depth
+     * limit).  A stair or slab at the probe's feet level also counts as its own
+     * floor (e.g. a stair step-up or step-down with open space beneath it).
      *
      * <p>When stepping DOWN (probe's foot block is air), the head check at
      * {@code feetY+1} is skipped.  After descending, the player's head sits within
@@ -1036,7 +1045,8 @@ public class VisitorManager {
         int    bx     = (int) Math.floor(nextX);
         int    bz     = (int) Math.floor(nextZ);
         // A block is a wall only if it is non-air and is not a stair/slab step-over.
-        BlockState feetState = client.world.getBlockState(new BlockPos(bx, feetY,     bz));
+        BlockPos.Mutable probe = new BlockPos.Mutable(bx, feetY, bz);
+        BlockState feetState = client.world.getBlockState(probe);
         // Head-level check: when the probe's foot space is clear (feetState is air)
         // the player is stepping DOWN.  After descending, the player's head sits
         // within the feetY block (which is already air) and does NOT reach feetY+1,
@@ -1046,15 +1056,19 @@ public class VisitorManager {
         if (feetState.isAir()) {
             headBlocked = false; // step-down: head after descent is within the air at feetY
         } else {
-            headBlocked = !client.world.getBlockState(new BlockPos(bx, feetY + 1, bz)).isAir();
+            headBlocked = !client.world.getBlockState(probe.set(bx, feetY + 1, bz)).isAir();
         }
         boolean wallAhead = (!feetState.isAir() && !isStepBlock(feetState)) || headBlocked;
-        // Allow stepping down up to 2 blocks (covers descending stairs and shallow drops).
+        // Allow stepping down up to FLOOR_SCAN_DEPTH blocks (covers descending stairs,
+        // multi-block drops, and platform-to-platform navigation in the barn).
         // Also treat a stair/slab at feet level as its own floor so step-up and
         // step-down stairs with open space beneath are correctly marked passable.
-        boolean floorAhead = !client.world.getBlockState(new BlockPos(bx, feetY - 1, bz)).isAir()
-                          || !client.world.getBlockState(new BlockPos(bx, feetY - 2, bz)).isAir()
-                          || isStepBlock(feetState);
+        // A single mutable BlockPos is reused for all floor-scan iterations to
+        // avoid allocating a new object on every tick.
+        boolean floorAhead = isStepBlock(feetState);
+        for (int dy = 1; dy <= FLOOR_SCAN_DEPTH && !floorAhead; dy++) {
+            floorAhead = !client.world.getBlockState(probe.set(bx, feetY - dy, bz)).isAir();
+        }
         return floorAhead && !wallAhead;
     }
 
