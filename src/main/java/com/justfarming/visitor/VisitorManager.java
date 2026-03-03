@@ -214,6 +214,15 @@ public class VisitorManager {
     private long  currentActionDelay = ACTION_DELAY_DEFAULT_MS;
     /** Cached teleport wait (base + random extra), set when entering TELEPORTING. */
     private long  teleportWaitMs = TELEPORT_WAIT_DEFAULT_MS;
+    /**
+     * Per-state random extra (0–150 ms) added to non-configurable timing
+     * constants so hardcoded delays vary slightly on each state entry.
+     */
+    private int   randomExtra150 = 0;
+    /** Computed delay (rewarpDelayMin + random) to wait before sending /warp garden. */
+    private long  returnWarpDelay = 0;
+    /** Timestamp (ms) when /warp garden was sent in RETURNING_TO_FARM; 0 = not yet sent. */
+    private long  returnWarpSentAt = 0;
 
     private final MinecraftClient client;
     private FarmingConfig config;
@@ -348,7 +357,9 @@ public class VisitorManager {
         releaseMovementKeys();
         postAccept = false;
         postPurchase = false;
-        enterState(State.DONE);
+        returnWarpDelay = 0;
+        returnWarpSentAt = 0;
+        enterState(State.IDLE);
     }
 
 
@@ -365,9 +376,12 @@ public class VisitorManager {
         walkJitter        = 0f;
         walkJitterNextUpdate = 0;
         lastSmoothLookTime = 0;
+        returnWarpDelay   = 0;
+        returnWarpSentAt  = 0;
         long base = config.visitorsTeleportDelay > 0
                 ? config.visitorsTeleportDelay : TELEPORT_WAIT_DEFAULT_MS;
-        teleportWaitMs = base + random.nextInt((int) TELEPORT_EXTRA_RANDOM_MS + 1);
+        teleportWaitMs = base + random.nextInt((int) TELEPORT_EXTRA_RANDOM_MS + 1)
+                + random.nextInt(151);
         enterState(State.TELEPORTING);
         sendCommand("tptoplot barn");
     }
@@ -438,7 +452,7 @@ public class VisitorManager {
                     if (now >= interactCooldownUntil) {
                         lookAt(player, visitorPos);
                         interactWithEntity(player, currentVisitor);
-                        interactCooldownUntil = now + INTERACT_COOLDOWN_MS;
+                        interactCooldownUntil = now + INTERACT_COOLDOWN_MS + randomExtra150;
                         enterState(State.INTERACTING);
                     }
                 } else {
@@ -622,7 +636,7 @@ public class VisitorManager {
             }
 
             case ACCEPTING_OFFER -> {
-                if (now - stateEnteredAt < POST_BAZAAR_WALK_DELAY_MS) return;
+                if (now - stateEnteredAt < POST_BAZAAR_WALK_DELAY_MS + randomExtra150) return;
                 if (currentVisitor == null || !currentVisitor.isAlive()) {
                     nextVisitor();
                     return;
@@ -634,7 +648,7 @@ public class VisitorManager {
                     if (now >= interactCooldownUntil) {
                         lookAt(player, visitorPos);
                         interactWithEntity(player, currentVisitor);
-                        interactCooldownUntil = now + INTERACT_COOLDOWN_MS;
+                        interactCooldownUntil = now + INTERACT_COOLDOWN_MS + randomExtra150;
                         enterState(State.WAITING_FOR_ACCEPT);
                     }
                 } else {
@@ -672,8 +686,14 @@ public class VisitorManager {
             }
 
             case RETURNING_TO_FARM -> {
-                // Allow a small pause so the warp command registers
-                if (now - stateEnteredAt >= WARP_COMMAND_WAIT_MS) {
+                if (returnWarpSentAt == 0) {
+                    // Wait the rewarp delay (from farming config) before sending /warp garden
+                    if (now - stateEnteredAt >= returnWarpDelay) {
+                        sendCommand("warp garden");
+                        returnWarpSentAt = now;
+                        LOGGER.info("[JustFarming-Visitors] Sent /warp garden after rewarp delay.");
+                    }
+                } else if (now - returnWarpSentAt >= WARP_COMMAND_WAIT_MS + randomExtra150) {
                     enterState(State.DONE);
                 }
             }
@@ -688,6 +708,7 @@ public class VisitorManager {
         state          = next;
         stateEnteredAt = System.currentTimeMillis();
         currentActionDelay = rollActionDelay();
+        randomExtra150 = random.nextInt(151);
         LOGGER.info("[JustFarming-Visitors] -> {}", next);
     }
 
@@ -1075,7 +1096,11 @@ public class VisitorManager {
     }
 
     private void returnToFarm() {
-        sendCommand("warp garden");
+        // Compute the rewarp delay from farming config (base + random extra)
+        long base = Math.max(0, config.rewarpDelayMin);
+        long extra = config.rewarpDelayRandom > 0 ? random.nextInt(config.rewarpDelayRandom + 1) : 0;
+        returnWarpDelay = base + extra;
+        returnWarpSentAt = 0;
         enterState(State.RETURNING_TO_FARM);
     }
 

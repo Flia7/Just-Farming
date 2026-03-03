@@ -103,6 +103,12 @@ public class MacroManager {
 
     private MacroState state = MacroState.IDLE;
     private boolean running = false;
+    /**
+     * {@code true} when the visitor routine is running and the farming macro
+     * has been paused.  The macro will automatically restart once the visitor
+     * routine completes (reaches {@link VisitorManager.State#DONE}).
+     */
+    private boolean waitingForVisitors = false;
     private boolean freelookEnabled = false;
     private double freelookZoom = DEFAULT_ZOOM;
 
@@ -264,6 +270,7 @@ public class MacroManager {
             LOGGER.info("[JustFarming] Cannot start farming macro while visitor routine is active.");
             return;
         }
+        waitingForVisitors = false;
         running = true;
         boolean skipMousemat = false;
         if (config.squeakyMousematEnabled && client.player != null) {
@@ -296,8 +303,9 @@ public class MacroManager {
 
     /** Stop the macro and release all held keys. */
     public void stop() {
-        if (!running) return;
+        if (!running && !waitingForVisitors) return;
         running = false;
+        waitingForVisitors = false;
         state = MacroState.IDLE;
         lastRotationTime = 0;
         releaseKeys();
@@ -312,7 +320,7 @@ public class MacroManager {
 
     /** Toggle start / stop. */
     public void toggle() {
-        if (running) stop();
+        if (running || waitingForVisitors) stop();
         else start();
     }
 
@@ -361,6 +369,15 @@ public class MacroManager {
 
     /** Called every client tick. Executes one step of the macro if active. */
     public void onTick() {
+        // If paused waiting for the visitor routine to finish, restart farming when done.
+        if (waitingForVisitors) {
+            if (visitorManager != null && visitorManager.isDone()) {
+                waitingForVisitors = false;
+                start();
+            }
+            return;
+        }
+
         if (!running) return;
 
         ClientPlayerEntity player = client.player;
@@ -418,10 +435,17 @@ public class MacroManager {
                     break;
                 }
                 if (config.visitorsEnabled && visitorManager != null) {
-                    // Hand off to the visitor routine instead of warping to garden.
+                    // Stop the farming macro and hand off to the visitor routine.
+                    // The macro will automatically restart once visitors are done.
+                    running = false;
+                    state = MacroState.IDLE;
+                    lastRotationTime = 0;
+                    waitingForVisitors = true;
+                    if (config.unlockedMouseEnabled && client.currentScreen == null) {
+                        client.mouse.lockCursor();
+                    }
                     visitorManager.start();
-                    state = MacroState.VISITING;
-                    LOGGER.info("[JustFarming] Visitor mode enabled – starting visitor routine.");
+                    LOGGER.info("[JustFarming] Visitor mode enabled – stopping farming macro, starting visitor routine.");
                 } else {
                     triggerRewarp();
                     // Begin a fresh detection cycle after warping back to garden
@@ -431,19 +455,6 @@ public class MacroManager {
                     detectStartPos = new Vec3d(player.getX(), player.getY(), player.getZ());
                     lastPos = null;
                     stuckTicks = 0;
-                }
-            }
-            case VISITING          -> {
-                // VisitorManager controls movement; we just wait for it to finish.
-                releaseKeys();
-                if (visitorManager != null && visitorManager.isDone()) {
-                    state = MacroState.DETECTING;
-                    detectTicks = 0;
-                    startDetectTime = 0;
-                    detectStartPos = new Vec3d(player.getX(), player.getY(), player.getZ());
-                    lastPos = null;
-                    stuckTicks = 0;
-                    LOGGER.info("[JustFarming] Visitor routine complete – resuming farming.");
                 }
             }
             case LANE_SWAP_WAITING -> {
