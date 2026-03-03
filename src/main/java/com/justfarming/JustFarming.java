@@ -49,6 +49,7 @@ public class JustFarming implements ClientModInitializer {
     private static KeyBinding toggleMacroKey;
     private static KeyBinding openGuiKey;
     private static KeyBinding freelookKey;
+    private static KeyBinding alternateDirectionKey;
     private static final KeyBinding.Category KEY_CATEGORY = KeyBinding.Category.create(Identifier.of("just-farming", "categories"));
 
     @Override
@@ -84,6 +85,13 @@ public class JustFarming implements ClientModInitializer {
                 "key.just-farming.freelook",
                 InputUtil.Type.KEYSYM,
                 GLFW.GLFW_KEY_L,
+                KEY_CATEGORY
+        ));
+
+        alternateDirectionKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.just-farming.alternate_direction",
+                InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_N,
                 KEY_CATEGORY
         ));
 
@@ -172,6 +180,11 @@ public class JustFarming implements ClientModInitializer {
                 }
             }
 
+            // Process alternate-direction keybind: instantly swap movement direction
+            while (alternateDirectionKey.wasPressed()) {
+                macroManager.triggerInstantAlternate();
+            }
+
             // Run macro tick
             macroManager.onTick();
 
@@ -227,7 +240,7 @@ public class JustFarming implements ClientModInitializer {
             macroManager.onRenderTick();
         });
 
-        LOGGER.info("[JustFarming] Ready. Toggle macro: R | Open GUI: I | Freelook: L | Commands: /just rewarp, /just rewarp clear, /just visitor");
+        LOGGER.info("[JustFarming] Ready. Toggle macro: R | Open GUI: I | Freelook: L | Alternate direction: N | Commands: /just rewarp, /just rewarp clear, /just visitor");
     }
 
     /** Returns the shared config instance. */
