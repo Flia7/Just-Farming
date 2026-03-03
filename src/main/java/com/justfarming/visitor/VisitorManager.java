@@ -473,10 +473,16 @@ public class VisitorManager {
 
             case READING_VISITOR_MENU -> {
                 if (client.currentScreen instanceof HandledScreen<?> screen) {
-                    parseVisitorMenu(screen);
-                    // Close the screen before opening the bazaar (or accepting)
-                    player.closeHandledScreen();
-                    enterState(State.CLOSING_MENU);
+                    // Wait the action delay before parsing so that all slot-data packets
+                    // sent by the server after the screen-open packet have time to arrive.
+                    // Without this guard the parse can run while slots are still empty,
+                    // producing zero requirements and causing the macro to skip bazaar.
+                    if (now - stateEnteredAt >= currentActionDelay) {
+                        parseVisitorMenu(screen);
+                        // Close the screen before opening the bazaar (or accepting)
+                        player.closeHandledScreen();
+                        enterState(State.CLOSING_MENU);
+                    }
                 } else {
                     enterState(State.NAVIGATING);
                 }
