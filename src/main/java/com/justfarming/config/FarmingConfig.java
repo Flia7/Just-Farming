@@ -138,6 +138,13 @@ public class FarmingConfig {
     public int rewarpDelayRandom = 0;
 
     /**
+     * Upper bound (exclusive) of the global random jitter (in milliseconds)
+     * added on top of every configurable delay throughout the macro.
+     * The actual extra per action is {@code random(0, globalRandomizationMs)}.
+     */
+    public int globalRandomizationMs = 150;
+
+    /**
      * Minimum delay in milliseconds between detecting the end of a farming row
      * and actually flipping direction (i.e. the lane-swap delay).
      */

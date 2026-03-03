@@ -99,12 +99,6 @@ public class VisitorManager {
     private static final long POST_BAZAAR_WALK_DELAY_MS = 1000;
 
     /**
-     * Upper bound (exclusive) of the non-configurable random jitter added on top
-     * of every hardcoded delay.  Gives 0–149 ms of extra variation per action.
-     */
-    private static final int RANDOM_JITTER_MS = 150;
-
-    /**
      * Camera rotation speed (degrees per second) for smooth look-at movement.
      * At 20 TPS this yields ~1.5° per tick – small increments that feel natural
      * while still covering 30° in one second (fast enough to track moving visitors).
@@ -387,7 +381,7 @@ public class VisitorManager {
         long base = config.visitorsTeleportDelay > 0
                 ? config.visitorsTeleportDelay : TELEPORT_WAIT_DEFAULT_MS;
         teleportWaitMs = base + random.nextInt((int) TELEPORT_EXTRA_RANDOM_MS + 1)
-                + random.nextInt(RANDOM_JITTER_MS);
+                + random.nextInt(Math.max(1, config.globalRandomizationMs));
         enterState(State.TELEPORTING);
         sendCommand("tptoplot barn");
     }
@@ -714,7 +708,7 @@ public class VisitorManager {
         state          = next;
         stateEnteredAt = System.currentTimeMillis();
         currentActionDelay = rollActionDelay();
-        randomExtra150 = random.nextInt(RANDOM_JITTER_MS);
+        randomExtra150 = random.nextInt(Math.max(1, config.globalRandomizationMs));
         LOGGER.info("[JustFarming-Visitors] -> {}", next);
     }
 
