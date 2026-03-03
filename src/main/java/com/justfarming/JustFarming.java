@@ -219,10 +219,13 @@ public class JustFarming implements ClientModInitializer {
             renderer.render(ctx);
         });
 
-        // Drive visitor smooth-camera rotation every render frame so steps are
-        // ~0.5° at 60 FPS (vs 1.5°/tick at 20 TPS), keeping total angular speed
-        // the same while producing much finer per-step increments.
-        WorldRenderEvents.BEFORE_ENTITIES.register(ctx -> visitorManager.onRenderTick());
+        // Drive visitor and macro smooth-camera rotation every render frame so
+        // steps are ~3° at 60 FPS (vs ~18°/tick at 20 TPS), keeping total
+        // angular speed the same while producing much finer per-step increments.
+        WorldRenderEvents.BEFORE_ENTITIES.register(ctx -> {
+            visitorManager.onRenderTick();
+            macroManager.onRenderTick();
+        });
 
         LOGGER.info("[JustFarming] Ready. Toggle macro: R | Open GUI: I | Freelook: L | Commands: /just rewarp, /just rewarp clear, /just visitor");
     }

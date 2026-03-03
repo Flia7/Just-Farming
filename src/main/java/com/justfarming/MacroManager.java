@@ -75,20 +75,31 @@ public class MacroManager {
     private static final double MAX_ZOOM = 20.0;
 
     /**
-     * Convergence speed for smooth camera rotation (per second).
-     * With exponential decay the formula is {@code t = 1 - e^(-speed * dt)}.
-     * A value of 10 means ~99 % of the remaining angle is covered within 0.5 s
-     * at normal 20 TPS; larger lag spikes catch up automatically because the
-     * interpolation is time-based.
+     * Camera rotation speed (degrees per second) used when aligning to the
+     * crop-specific yaw/pitch.  Running at render frequency (~60 FPS) produces
+     * steps of ~3°/frame, giving a total travel time of ~0.5 s for a 90° turn –
+     * smooth and natural without being sluggish.
      */
-    private static final float ROTATION_SPEED = 10.0f;
+    private static final float ROTATION_DEGREES_PER_SECOND = 180.0f;
 
     /**
      * Maximum delta-time (ms) used for the rotation interpolation.
-     * Caps the "catch-up" during a severe lag spike so the camera does not
+     * Caps the step during a severe lag spike so the camera does not
      * teleport to the target after a multi-second freeze.
      */
     private static final float ROTATION_MAX_DELTA_MS = 250.0f;
+
+    /**
+     * Amplitude (degrees) of the random tremor added to each camera rotation
+     * step, replicating the micro-vibration of a real mouse player.
+     */
+    private static final float ROTATION_TREMOR_AMPLITUDE = 0.12f;
+
+    /**
+     * Scale factor for the pitch component of the camera tremor.
+     * Humans produce less vertical hand shake than horizontal.
+     */
+    private static final float ROTATION_TREMOR_PITCH_SCALE = 0.5f;
 
     private final MinecraftClient client;
     private FarmingConfig config;
@@ -401,6 +412,54 @@ public class MacroManager {
     // Tick logic
     // -----------------------------------------------------------------------
 
+    /**
+     * Called every render frame to smoothly rotate the camera toward the
+     * crop-specific yaw/pitch target.
+     *
+     * <p>Running at render frequency (typically 60+ FPS) produces steps of
+     * roughly 3° per frame at 180°/s, well within the range of genuine mouse
+     * input.  This avoids the discrete 18°-per-tick jumps that occur when
+     * rotation is applied only on game ticks (20 TPS).
+     *
+     * <p>Skipped during {@link MacroState#MOUSEMAT_CLICK} so the Squeaky
+     * Mousemat ability's server-side camera adjustment is not immediately
+     * overridden.
+     */
+    public void onRenderTick() {
+        if (!running || state == MacroState.MOUSEMAT_CLICK) return;
+        ClientPlayerEntity player = client.player;
+        if (player == null) return;
+
+        long now = System.currentTimeMillis();
+        float deltaMs = (lastRotationTime == 0)
+                ? 50.0f
+                : Math.min(ROTATION_MAX_DELTA_MS, (float)(now - lastRotationTime));
+        lastRotationTime = now;
+
+        float step = ROTATION_DEGREES_PER_SECOND * deltaMs / 1000.0f;
+
+        float targetPitch = config.getEffectivePitch(config.selectedCrop);
+        float targetYaw   = config.getEffectiveYaw(config.selectedCrop);
+
+        float currentYaw   = player.getYaw();
+        float currentPitch = player.getPitch();
+
+        float yawDiff   = normalizeAngleDiff(targetYaw   - currentYaw);
+        float pitchDiff = normalizeAngleDiff(targetPitch - currentPitch);
+
+        if (Math.abs(yawDiff) < 0.1f && Math.abs(pitchDiff) < 0.1f) return;
+
+        float newYaw   = currentYaw   + Math.max(-step, Math.min(step, yawDiff));
+        float newPitch = currentPitch + Math.max(-step, Math.min(step, pitchDiff));
+        newPitch = Math.max(-90f, Math.min(90f, newPitch));
+
+        float tremorYaw   = (random.nextFloat() * 2f - 1f) * ROTATION_TREMOR_AMPLITUDE;
+        float tremorPitch = (random.nextFloat() * 2f - 1f) * ROTATION_TREMOR_AMPLITUDE * ROTATION_TREMOR_PITCH_SCALE;
+
+        player.setYaw(newYaw + tremorYaw);
+        player.setPitch(newPitch + tremorPitch);
+    }
+
     /** Called every client tick. Executes one step of the macro if active. */
     public void onTick() {
         // If paused waiting for the visitor routine to finish, restart farming when done.
@@ -420,36 +479,8 @@ public class MacroManager {
             return;
         }
 
-        // Smoothly interpolate pitch and yaw toward the crop-specific target
-        // every active tick.  Uses time-based exponential decay so the camera
-        // glides to the correct angle at a consistent real-time rate even when
-        // the server or client is lagging (lag-safe).
-        // Skipped during MOUSEMAT_CLICK so the ability's server-side camera
-        // adjustment (if any) is not immediately overridden.
-        if (state != MacroState.MOUSEMAT_CLICK) {
-            long now = System.currentTimeMillis();
-            float deltaMs = (lastRotationTime == 0)
-                    ? 50.0f
-                    : Math.min(ROTATION_MAX_DELTA_MS, (float)(now - lastRotationTime));
-            lastRotationTime = now;
-
-            // Exponential-decay blend factor – scales with actual elapsed time
-            // so lag spikes do not cause the camera to stutter or jump.
-            float t = 1.0f - (float) Math.exp(-ROTATION_SPEED * deltaMs / 1000.0f);
-
-            float targetPitch = config.getEffectivePitch(config.selectedCrop);
-            float targetYaw   = config.getEffectiveYaw(config.selectedCrop);
-            // normalizeAngleDiff wraps the raw difference into [-180, 180] so the
-            // camera always takes the shortest arc (e.g. -170° instead of +190°).
-            float pitchDiff   = normalizeAngleDiff(targetPitch - player.getPitch());
-            float yawDiff     = normalizeAngleDiff(targetYaw   - player.getYaw());
-
-            // Always apply a delta step (like real mouse input) rather than
-            // snapping to the target absolutely.  The exponential decay naturally
-            // converges to the correct yaw and pitch without discrete jumps.
-            player.setPitch(Math.max(-90f, Math.min(90f, player.getPitch() + pitchDiff * t)));
-            player.setYaw(player.getYaw() + yawDiff * t);
-        }
+        // Camera rotation is handled by onRenderTick() at render frequency
+        // (60+ FPS) for smooth, linear steps.  Nothing to do here.
 
         switch (state) {
             case MOUSEMAT_CLICK     -> tickMousematClick(player);
