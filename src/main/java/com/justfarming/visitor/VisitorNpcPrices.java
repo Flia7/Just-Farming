@@ -25,7 +25,7 @@ public final class VisitorNpcPrices {
         NPC_PRICES.put("carrot",             3.0);
         NPC_PRICES.put("potato",             3.0);
         NPC_PRICES.put("pumpkin",           10.0);
-        NPC_PRICES.put("melon",              2.0);
+        NPC_PRICES.put("melon",              18.0);
         NPC_PRICES.put("melon slice",        2.0);
         NPC_PRICES.put("sugar cane",         4.0);
         NPC_PRICES.put("nether wart",        4.0);
@@ -36,7 +36,6 @@ public final class VisitorNpcPrices {
         NPC_PRICES.put("wild rose",          4.0);
         NPC_PRICES.put("sunflower",          4.0);
         NPC_PRICES.put("moonflower",         4.0);
-        NPC_PRICES.put("ink sac",            2.0);
         NPC_PRICES.put("seeds",              3.0);
         NPC_PRICES.put("wheat seeds",        3.0);
 
@@ -44,7 +43,7 @@ public final class VisitorNpcPrices {
         NPC_PRICES.put("enchanted wheat",           960.0);
         NPC_PRICES.put("enchanted bread",            60.0);
         NPC_PRICES.put("enchanted carrot",          480.0);
-        NPC_PRICES.put("enchanted golden carrot",  61440.0);
+        NPC_PRICES.put("enchanted golden carrot",  76800.0);
         NPC_PRICES.put("enchanted potato",          480.0);
         NPC_PRICES.put("enchanted baked potato",  76800.0);
         NPC_PRICES.put("enchanted pumpkin",        1600.0);
@@ -56,11 +55,10 @@ public final class VisitorNpcPrices {
         NPC_PRICES.put("enchanted red mushroom",   1600.0);
         NPC_PRICES.put("enchanted brown mushroom", 1600.0);
         NPC_PRICES.put("enchanted cocoa beans",     480.0);
-        NPC_PRICES.put("enchanted cookie",        61500.0);
+        NPC_PRICES.put("enchanted cookie",        76800.0);
         NPC_PRICES.put("enchanted wild rose",       640.0);
         NPC_PRICES.put("enchanted sunflower",       640.0);
         NPC_PRICES.put("enchanted moonflower",      640.0);
-        NPC_PRICES.put("enchanted ink sac",         176.0);
         NPC_PRICES.put("enchanted seeds",           480.0);
 
         // ── Super-enchanted / block-tier crops ───────────────────────────────
