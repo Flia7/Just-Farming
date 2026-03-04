@@ -158,6 +158,15 @@ public class VisitorManager {
     private static final double INTERACT_RADIUS = 3.5;
 
     /**
+     * Maximum angular error (degrees) between the player's current yaw/pitch and
+     * the visitor's direction before the macro will send the interact packet.
+     * Requiring the camera to be aimed within this threshold ensures the player
+     * visibly looks at the visitor before right-clicking, preventing the
+     * "magically interacting at a distance" appearance.
+     */
+    private static final float INTERACT_AIM_THRESHOLD_DEGREES = 10.0f;
+
+    /**
      * Minimum distance (blocks) the player maintains from non-target visitor NPCs
      * while navigating.  When the chosen path would pass within this radius of
      * another visitor, the pathfinder steers around them.
@@ -313,15 +322,9 @@ public class VisitorManager {
      */
     private final Set<Integer> completedVisitorIds = new HashSet<>();
     /**
-     * Number of visitors whose offer has been accepted so far in this run.
-     * Used to trigger the mid-run rescan for a 6th visitor after the second
-     * visitor (the farthest one) has been processed.
-     */
-    private int visitorsAccepted = 0;
-    /**
-     * {@code true} once the mid-run rescan (triggered after the 2nd visitor)
-     * has been performed this run.  Prevents the end-of-queue rescan from
-     * scanning a second time when the initial scan had only 2 visitors.
+     * {@code true} once the end-of-queue rescan has been performed this run.
+     * Prevents a second scan if the queue runs out immediately after the first
+     * rescan finds no additional visitors.
      */
     private boolean midRunRescanPerformed = false;
     /**
@@ -446,7 +449,6 @@ public class VisitorManager {
         behindPointStartTime = 0;
         returnWarpDelay = 0;
         returnWarpSentAt = 0;
-        visitorsAccepted = 0;
         midRunRescanPerformed = false;
         enterState(State.IDLE);
     }
@@ -469,7 +471,6 @@ public class VisitorManager {
         lastSmoothLookTime = 0;
         returnWarpDelay   = 0;
         returnWarpSentAt  = 0;
-        visitorsAccepted  = 0;
         midRunRescanPerformed = false;
         long base = config.visitorsTeleportDelay > 0
                 ? config.visitorsTeleportDelay : TELEPORT_WAIT_DEFAULT_MS;
@@ -567,8 +568,10 @@ public class VisitorManager {
                 double dist = new Vec3d(player.getX(), player.getY(), player.getZ()).distanceTo(visitorPos);
                 if (dist <= INTERACT_RADIUS) {
                     releaseMovementKeys();
-                    if (now >= interactCooldownUntil) {
-                        lookAt(player, visitorPos);
+                    // Always update the camera target so the player visibly turns
+                    // toward the visitor before the interact packet is sent.
+                    lookAt(player, visitorPos);
+                    if (isAimedAtTarget(player) && now >= interactCooldownUntil) {
                         interactWithEntity(player, currentVisitor);
                         interactCooldownUntil = now + INTERACT_COOLDOWN_MS + randomExtra150;
                         enterState(State.INTERACTING);
@@ -769,8 +772,10 @@ public class VisitorManager {
                 double dist = new Vec3d(player.getX(), player.getY(), player.getZ()).distanceTo(visitorPos);
                 if (dist <= INTERACT_RADIUS) {
                     releaseMovementKeys();
-                    if (now >= interactCooldownUntil) {
-                        lookAt(player, visitorPos);
+                    // Always update the camera target so the player visibly turns
+                    // toward the visitor before the interact packet is sent.
+                    lookAt(player, visitorPos);
+                    if (isAimedAtTarget(player) && now >= interactCooldownUntil) {
                         interactWithEntity(player, currentVisitor);
                         interactCooldownUntil = now + INTERACT_COOLDOWN_MS + randomExtra150;
                         enterState(State.WAITING_FOR_ACCEPT);
@@ -849,9 +854,10 @@ public class VisitorManager {
 
     /** Populate {@link #pendingVisitors} with NPC entities in range.
      *
-     * <p>Visitors are sorted farthest-first so the acceptance sequence is
-     * 5 → 4 → [6 if present] → 3 → 2 → 1 when combined with the mid-run
-     * rescan that fires after the second visitor (V4) is accepted.
+     * <p>Visitors are sorted farthest-first so the initial acceptance sequence
+     * is V5 → V4 → V3 → V2 → V1.  After all initial visitors are processed a
+     * single end-of-queue rescan is performed; any 6th visitor found at that
+     * point is visited last (V6).
      */
     private void scanForVisitors(ClientPlayerEntity player) {
         pendingVisitors.clear();
@@ -1353,6 +1359,22 @@ public class VisitorManager {
         return text.replaceAll("§.", "").trim();
     }
 
+    /**
+     * Returns {@code true} when the player's camera is aimed within
+     * {@link #INTERACT_AIM_THRESHOLD_DEGREES} of the current
+     * {@link #targetYaw}/{@link #targetPitch} aim point.
+     * Used before sending interact packets so that the player visibly turns
+     * toward a visitor NPC rather than interacting "magically" at a distance.
+     */
+    private boolean isAimedAtTarget(ClientPlayerEntity player) {
+        float yawDiff = targetYaw - player.getYaw();
+        while (yawDiff >  180f) yawDiff -= 360f;
+        while (yawDiff < -180f) yawDiff += 360f;
+        float pitchDiff = targetPitch - player.getPitch();
+        return Math.abs(yawDiff)   <= INTERACT_AIM_THRESHOLD_DEGREES
+                && Math.abs(pitchDiff) <= INTERACT_AIM_THRESHOLD_DEGREES;
+    }
+
     private void openBazaarForCurrentRequirement() {
         if (requirementIndex >= pendingRequirements.size()) {
             startAcceptingOffer();
@@ -1384,25 +1406,16 @@ public class VisitorManager {
         behindPoint = null; // behind-point only applies to the first (farthest) visitor
         behindPointStartTime = 0;
         currentVisitor = null;
-        visitorsAccepted++;
-
-        // Mid-run rescan: after accepting the 2nd visitor (V4), scan again so
-        // that any 6th visitor who spawned at the far end of the line is detected.
-        // The farthest-first sort inside scanForVisitors puts the new visitor
-        // before the remaining closer ones: [V6, V3, V2, V1].
-        if (visitorsAccepted == 2 && !midRunRescanPerformed && client.player != null) {
-            midRunRescanPerformed = true;
-            scanForVisitors(client.player);
-            LOGGER.info("[JustFarming-Visitors] Mid-run rescan after 2nd visitor; {} visitor(s) found.", pendingVisitors.size());
-        }
 
         if (!pendingVisitors.isEmpty()) {
             currentVisitor = pendingVisitors.remove(0);
             LOGGER.info("[JustFarming-Visitors] Moving to next visitor.");
             enterState(State.NAVIGATING);
         } else {
-            // End-of-queue rescan: check for a late-arriving visitor when the
-            // mid-run rescan was not triggered (fewer than 2 visitors initially).
+            // End-of-queue rescan: after all initially-found visitors are processed,
+            // scan once more for any 6th visitor who spawned late at the far end of
+            // the line.  This keeps the visit order V5 → V4 → V3 → V2 → V1 → V6
+            // (V6 is handled last, after the player has walked back toward the queue).
             if (!midRunRescanPerformed && client.player != null) {
                 midRunRescanPerformed = true;
                 scanForVisitors(client.player);

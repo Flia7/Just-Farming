@@ -919,28 +919,27 @@ public class MacroManager {
         // user-configured keys (swapped when customFlipped is true).
         applyCustomKeyOverrides();
 
-        // Call directBreakBlock() only when a GUI screen is open, because vanilla
-        // handleBlockBreaking() is suppressed by Minecraft whenever a screen is
-        // visible.  When no screen is open, vanilla handles block breaking naturally
-        // via the held attack key, avoiding any double-call that would reset break
-        // progress and cause the "shows animation but doesn't break" symptom.
-        if (client.options != null && client.options.attackKey.isPressed()
-                && client.currentScreen != null) {
-            directBreakBlock();
-        }
+        // Always drive block breaking directly so the macro works identically
+        // regardless of whether a GUI screen is open or closed.  Vanilla's
+        // handleBlockBreaking() is suppressed by MinecraftClientMixin when the
+        // macro is active, so this is the sole break driver for all states.
+        directBreakBlock();
     }
 
     /**
      * Directly attacks the block at the crosshair target via the interaction
-     * manager, substituting for the vanilla {@code handleBlockBreaking()} call
-     * that Minecraft suppresses whenever a GUI screen is open.
+     * manager.
      *
-     * <p>Only invoked when {@link FarmingConfig#macroEnabledInGui} is active
-     * and a screen is currently open.  In all other cases vanilla handles
-     * block breaking via the held attack key, which avoids the double-call
-     * that would reset cocoa-bean break progress every tick.</p>
+     * <p>This is the sole block-break driver when the macro is active.
+     * {@code MinecraftClientMixin} suppresses vanilla's
+     * {@code handleBlockBreaking()} call entirely while {@link #shouldBreak()}
+     * is {@code true}, so there is no risk of a double-call resetting break
+     * progress.  Calling {@link net.minecraft.client.network.ClientPlayerInteractionManager#attackBlock}
+     * on the same block position every tick is idempotent: the first call sends
+     * {@code START_DESTROY_BLOCK}; subsequent calls for the same block are
+     * no-ops until the block changes.</p>
      */
-    private void directBreakBlock() {
+    public void directBreakBlock() {
         if (client.interactionManager == null || client.world == null) return;
         if (!(client.crosshairTarget instanceof BlockHitResult blockHit)) return;
         BlockPos pos = blockHit.getBlockPos();
