@@ -1,0 +1,107 @@
+package com.justfarming.visitor;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * NPC sell prices (coins per item) for Hypixel SkyBlock items that garden
+ * visitors may request.
+ *
+ * <p>Prices are based on the current Hypixel SkyBlock NPC sell menu values.
+ * All lookup is case-insensitive so that the display names returned by visitor
+ * GUI parsing are matched regardless of capitalisation differences.
+ */
+public final class VisitorNpcPrices {
+
+    private VisitorNpcPrices() {}
+
+    // ── NPC sell prices (coins per item) ────────────────────────────────────
+    private static final Map<String, Double> NPC_PRICES = new HashMap<>();
+
+    static {
+        // ── Base crops ───────────────────────────────────────────────────────
+        NPC_PRICES.put("wheat",              6.0);
+        NPC_PRICES.put("carrot",             3.0);
+        NPC_PRICES.put("potato",             3.0);
+        NPC_PRICES.put("pumpkin",           10.0);
+        NPC_PRICES.put("melon",              2.0);
+        NPC_PRICES.put("melon slice",        2.0);
+        NPC_PRICES.put("sugar cane",         4.0);
+        NPC_PRICES.put("nether wart",        4.0);
+        NPC_PRICES.put("cactus",             4.0);
+        NPC_PRICES.put("red mushroom",      10.0);
+        NPC_PRICES.put("brown mushroom",     6.0);
+        NPC_PRICES.put("cocoa beans",        3.0);
+        NPC_PRICES.put("wild rose",          4.0);
+        NPC_PRICES.put("sunflower",          0.4);
+        NPC_PRICES.put("moonflower",         0.7);
+        NPC_PRICES.put("glowshroom",         4.0);
+        NPC_PRICES.put("ink sac",            1.1);
+        NPC_PRICES.put("seeds",              1.1);
+        NPC_PRICES.put("wheat seeds",        1.1);
+
+        // ── Enchanted crops ──────────────────────────────────────────────────
+        NPC_PRICES.put("enchanted wheat",          960.0);
+        NPC_PRICES.put("enchanted carrot",         480.0);
+        NPC_PRICES.put("enchanted potato",         480.0);
+        NPC_PRICES.put("enchanted pumpkin",       1600.0);
+        NPC_PRICES.put("enchanted melon",          320.0);
+        NPC_PRICES.put("enchanted sugar cane",     640.0);
+        NPC_PRICES.put("enchanted nether wart",    640.0);
+        NPC_PRICES.put("enchanted cactus",         640.0);
+        NPC_PRICES.put("enchanted red mushroom",  1600.0);
+        NPC_PRICES.put("enchanted brown mushroom", 960.0);
+        NPC_PRICES.put("enchanted cocoa beans",    480.0);
+        NPC_PRICES.put("enchanted wild rose",      640.0);
+        NPC_PRICES.put("enchanted sunflower",       64.0);
+        NPC_PRICES.put("enchanted moonflower",     112.0);
+        NPC_PRICES.put("enchanted glowshroom",     640.0);
+        NPC_PRICES.put("enchanted ink sac",        176.0);
+
+        // ── Super-enchanted / block-tier crops ───────────────────────────────
+        NPC_PRICES.put("hay bale",                 8640.0);
+        NPC_PRICES.put("enchanted hay bale",     153600.0);
+        NPC_PRICES.put("enchanted nether wart block", 102400.0);
+        NPC_PRICES.put("enchanted mushroom block",  51200.0);
+        NPC_PRICES.put("enchanted cactus green",  102400.0);
+        NPC_PRICES.put("enchanted melon block",    51200.0);
+        NPC_PRICES.put("enchanted pumpkin block", 256000.0);
+        NPC_PRICES.put("enchanted sugar cane block", 102400.0);
+
+        // ── Compacted / bulk variants ────────────────────────────────────────
+        NPC_PRICES.put("compacted wild rose",     102400.0);
+        NPC_PRICES.put("compacted nether wart",   102400.0);
+    }
+
+    /**
+     * Returns the NPC sell price (coins per item) for the given item name, or
+     * {@code 0.0} if the item is not known.  Lookup is case-insensitive.
+     *
+     * @param itemName display name of the item as reported by the visitor GUI
+     * @return NPC sell price in coins, or {@code 0.0} if unknown
+     */
+    public static double getPrice(String itemName) {
+        if (itemName == null) return 0.0;
+        return NPC_PRICES.getOrDefault(itemName.toLowerCase().trim(), 0.0);
+    }
+
+    /**
+     * Calculates the total NPC sell value for all items in the given
+     * requirement list.
+     *
+     * <p>Each requirement's contribution is {@code amount × NPC price per item}.
+     * Requirements for unknown items contribute {@code 0} so the total is a
+     * lower-bound estimate when some items are not in the price table.
+     *
+     * @param requirements the list of item requirements extracted from a visitor
+     * @return total NPC sell value in coins
+     */
+    public static double getTotalNpcValue(List<VisitorRequirement> requirements) {
+        double total = 0.0;
+        for (VisitorRequirement req : requirements) {
+            total += req.amount * getPrice(req.itemName);
+        }
+        return total;
+    }
+}

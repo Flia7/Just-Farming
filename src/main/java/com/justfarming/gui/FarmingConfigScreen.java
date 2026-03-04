@@ -105,6 +105,8 @@ public class FarmingConfigScreen extends Screen {
     private VisitorsRandomSlider          visitorsRandomSlider;
     private VisitorTeleportDelaySlider    visitorsTeleportDelaySlider;
     private BazaarSearchDelaySlider       bazaarSearchDelaySlider;
+    private VisitorMinCountSlider         visitorsMinCountSlider;
+    private VisitorMaxPriceSlider         visitorsMaxPriceSlider;
 
 
     // ── Always-visible widget ─────────────────────────────────────────────────
@@ -115,6 +117,7 @@ public class FarmingConfigScreen extends Screen {
     private int sectionPestsY, sectionMiscY, miscSeparatorY;
     private int sectionGlobalRandomY, sectionLaneSwapY, sectionRewarpDelayY, sectionMousematDelayY, sectionVisitorDelaysY;
     private int sectionVisitorsY;
+    private int sectionVisitorFiltersY;
     private int visitorStatusY;
 
     // ── Scroll state (persists across clearAndInit) ───────────────────────────
@@ -431,6 +434,24 @@ public class FarmingConfigScreen extends Screen {
         visitorsBlacklistButton.setTooltip(Tooltip.of(Text.literal(
                 "Choose which visitors to automatically skip, regardless of their required items.")));
         y += bh + pad + gap;
+
+        sectionVisitorFiltersY = y;
+        y += sLH;
+
+        visitorsMinCountSlider = new VisitorMinCountSlider(widgetX, y, bw, bh, config.visitorsMinCount);
+        this.addDrawableChild(visitorsMinCountSlider);
+        visitorsMinCountSlider.setTooltip(Tooltip.of(Text.literal(
+                "Minimum number of visitors that must be present at the barn for the visitor routine to run.\n" +
+                "If fewer visitors are found the macro skips the barn and warps back to the Garden directly.")));
+        y += bh + pad;
+
+        visitorsMaxPriceSlider = new VisitorMaxPriceSlider(widgetX, y, bw, bh, config.visitorsMaxPrice);
+        this.addDrawableChild(visitorsMaxPriceSlider);
+        visitorsMaxPriceSlider.setTooltip(Tooltip.of(Text.literal(
+                "Maximum total NPC sell value (coins) of a visitor's required items.\n" +
+                "If the visitor's request exceeds this amount the offer is declined.\n" +
+                "Set to 0 (Disabled) to accept all visitors regardless of cost.")));
+        y += bh + pad + gap;
         visitorStatusY = y;
         tabContentHeights[4] = y - contentAreaTopY + tabScrollOffsets[4];
 
@@ -496,6 +517,8 @@ public class FarmingConfigScreen extends Screen {
         visitorsEnabledButton.visible         = t4 && inContentBounds(visitorsEnabledButton);
         visitorsBuyFromBazaarButton.visible   = t4 && inContentBounds(visitorsBuyFromBazaarButton);
         visitorsBlacklistButton.visible       = t4 && inContentBounds(visitorsBlacklistButton);
+        visitorsMinCountSlider.visible        = t4 && inContentBounds(visitorsMinCountSlider);
+        visitorsMaxPriceSlider.visible        = t4 && inContentBounds(visitorsMaxPriceSlider);
     }
 
     @Override
@@ -572,6 +595,8 @@ public class FarmingConfigScreen extends Screen {
         } else if (activeTab == 4) {
             if (yInContentBounds(sectionVisitorsY))
                 drawSectionLabel(context, "Visitor's macro", sectionVisitorsY);
+            if (yInContentBounds(sectionVisitorFiltersY))
+                drawSectionLabel(context, "Visitor Filters", sectionVisitorFiltersY);
             // Show current visitor routine status below the buttons when active
             if (visitorManager != null && visitorManager.isActive() && yInContentBounds(visitorStatusY)) {
                 String stateText = "State: " + visitorManager.getState().name();
@@ -668,6 +693,8 @@ public class FarmingConfigScreen extends Screen {
         config.visitorsActionDelayRandom = visitorsRandomSlider.getRandomValue();
         config.visitorsTeleportDelay    = visitorsTeleportDelaySlider.getDelayValue();
         config.bazaarSearchDelay        = bazaarSearchDelaySlider.getDelayValue();
+        config.visitorsMinCount         = visitorsMinCountSlider.getCountValue();
+        config.visitorsMaxPrice         = visitorsMaxPriceSlider.getPriceValue();
         macroManager.setConfig(config);
         if (visitorManager != null) visitorManager.setConfig(config);
     }
@@ -1122,6 +1149,137 @@ public class FarmingConfigScreen extends Screen {
         @Override
         protected void updateMessage() {
             setMessage(Text.literal(String.format("Bazaar Open Delay: %d ms", getIntValue())));
+        }
+    }
+
+    /**
+     * Slider for the minimum visitor count (1–6, step 1).
+     * Displays the selected count and "Disabled" hint at 1 (i.e. always run).
+     */
+    private static class VisitorMinCountSlider extends SliderWidget {
+
+        private static final int MIN = 1;
+        private static final int MAX = 6;
+        private static final int GLFW_KEY_LEFT  = 263;
+        private static final int GLFW_KEY_RIGHT = 262;
+
+        VisitorMinCountSlider(int x, int y, int width, int height, int initialValue) {
+            super(x, y, width, height, Text.empty(),
+                    (double)(Math.max(MIN, Math.min(MAX, initialValue)) - MIN) / (MAX - MIN));
+            updateMessage();
+        }
+
+        int getCountValue() {
+            return MIN + (int) Math.round(value * (MAX - MIN));
+        }
+
+        @Override
+        protected void applyValue() {
+            // Snap to nearest integer step.
+            int steps = MAX - MIN;
+            int rawInt = MIN + (int) Math.round(this.value * steps);
+            rawInt = Math.max(MIN, Math.min(MAX, rawInt));
+            this.value = (double)(rawInt - MIN) / steps;
+        }
+
+        @Override
+        public boolean keyPressed(net.minecraft.client.input.KeyInput input) {
+            if (input.key() == GLFW_KEY_LEFT || input.key() == GLFW_KEY_RIGHT) {
+                double step = 1.0 / (MAX - MIN);
+                this.value = (input.key() == GLFW_KEY_LEFT)
+                        ? Math.max(0.0, this.value - step)
+                        : Math.min(1.0, this.value + step);
+                applyValue();
+                updateMessage();
+                return true;
+            }
+            return super.keyPressed(input);
+        }
+
+        @Override
+        protected void updateMessage() {
+            int v = getCountValue();
+            String label = (v == 1)
+                    ? "Min. Visitors: 1 (always run)"
+                    : String.format("Min. Visitors: %d", v);
+            setMessage(Text.literal(label));
+        }
+
+        @Override
+        public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
+            FlatButtonWidget.renderFlatSlider(context, getX(), getY(), getWidth(), getHeight(), value, getMessage());
+        }
+    }
+
+    /**
+     * Slider for the maximum visitor NPC price (0 = disabled, 50,000–5,000,000
+     * in steps of 50,000).
+     *
+     * <p>The slider has 101 integer positions:
+     * <ul>
+     *   <li>Position 0 → 0 coins (feature disabled)</li>
+     *   <li>Position N → N × 50,000 coins (1 ≤ N ≤ 100)</li>
+     * </ul>
+     */
+    private static class VisitorMaxPriceSlider extends SliderWidget {
+
+        private static final int STEP     = 50_000;
+        /** Number of steps of size {@link #STEP}; slider has STEPS+1 positions (0–STEPS). */
+        private static final int STEPS    = 100;  // positions 0..100 → 0 or 50k..5M
+        private static final int GLFW_KEY_LEFT  = 263;
+        private static final int GLFW_KEY_RIGHT = 262;
+
+        VisitorMaxPriceSlider(int x, int y, int width, int height, int initialValue) {
+            super(x, y, width, height, Text.empty(),
+                    (double) Math.max(0, Math.min(STEPS, initialValue / STEP)) / STEPS);
+            updateMessage();
+        }
+
+        /** Returns the configured price limit in coins, or {@code 0} if disabled. */
+        int getPriceValue() {
+            int position = (int) Math.round(value * STEPS);
+            return position * STEP;
+        }
+
+        @Override
+        protected void applyValue() {
+            // Snap to nearest step.
+            int pos = (int) Math.round(this.value * STEPS);
+            pos = Math.max(0, Math.min(STEPS, pos));
+            this.value = (double) pos / STEPS;
+        }
+
+        @Override
+        public boolean keyPressed(net.minecraft.client.input.KeyInput input) {
+            if (input.key() == GLFW_KEY_LEFT || input.key() == GLFW_KEY_RIGHT) {
+                double step = 1.0 / STEPS;
+                this.value = (input.key() == GLFW_KEY_LEFT)
+                        ? Math.max(0.0, this.value - step)
+                        : Math.min(1.0, this.value + step);
+                applyValue();
+                updateMessage();
+                return true;
+            }
+            return super.keyPressed(input);
+        }
+
+        @Override
+        protected void updateMessage() {
+            int coins = getPriceValue();
+            String label;
+            if (coins == 0) {
+                label = "Max Visitor Price: Disabled";
+            } else if (coins >= 1_000_000) {
+                label = String.format("Max Visitor Price: %.1fM coins", coins / 1_000_000.0);
+            } else {
+                label = String.format("Max Visitor Price: %,d coins", coins);
+            }
+            setMessage(Text.literal(label));
+        }
+
+        @Override
+        public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
+            FlatButtonWidget.renderFlatSlider(context, getX(), getY(), getWidth(), getHeight(), value, getMessage());
         }
     }
 }

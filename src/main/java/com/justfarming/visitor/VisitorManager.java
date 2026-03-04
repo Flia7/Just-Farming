@@ -365,6 +365,15 @@ public class VisitorManager {
      */
     private boolean postPurchase = false;
 
+    /**
+     * When {@code true}, the current visitor's offer was declined because its
+     * total NPC sell value exceeded {@link com.justfarming.config.FarmingConfig#visitorsMaxPrice}.
+     * The next {@link State#CLOSING_MENU} transition will call {@link #nextVisitor()}
+     * instead of proceeding to bazaar or accept.
+     * Reset by {@link #start()} and {@link #stop()}.
+     */
+    private boolean skipCurrentVisitorDueToPrice = false;
+
     // Regex patterns for requirement lines like "64x Wheat", "Wheat ×32", "64 Wheat"
     private static final Pattern PAT_AMOUNT_FIRST =
             Pattern.compile("(\\d[\\d,]*)\\s*[xX×]?\\s+(.+)");
@@ -445,6 +454,7 @@ public class VisitorManager {
         releaseMovementKeys();
         postAccept = false;
         postPurchase = false;
+        skipCurrentVisitorDueToPrice = false;
         behindPoint = null;
         behindPointStartTime = 0;
         returnWarpDelay = 0;
@@ -466,6 +476,7 @@ public class VisitorManager {
         interactCooldownUntil = 0;
         postAccept        = false;
         postPurchase      = false;
+        skipCurrentVisitorDueToPrice = false;
         walkJitter        = 0f;
         walkJitterNextUpdate = 0;
         lastSmoothLookTime = 0;
@@ -523,12 +534,21 @@ public class VisitorManager {
             case SCANNING -> {
                 scanForVisitors(player);
                 if (!pendingVisitors.isEmpty()) {
-                    currentVisitor = pendingVisitors.remove(0);
-                    behindPoint = null;
-                    behindPointStartTime = 0;
-                    LOGGER.info("[JustFarming-Visitors] Found {} visitor(s). Navigating farthest first.",
-                            pendingVisitors.size() + 1);
-                    enterState(State.NAVIGATING);
+                    int found = pendingVisitors.size();
+                    int minCount = Math.max(1, config.visitorsMinCount);
+                    if (found < minCount) {
+                        LOGGER.info("[JustFarming-Visitors] Found {} visitor(s), fewer than minimum {}; returning to farm.",
+                                found, minCount);
+                        pendingVisitors.clear();
+                        returnToFarm();
+                    } else {
+                        currentVisitor = pendingVisitors.remove(0);
+                        behindPoint = null;
+                        behindPointStartTime = 0;
+                        LOGGER.info("[JustFarming-Visitors] Found {} visitor(s). Navigating farthest first.",
+                                pendingVisitors.size() + 1);
+                        enterState(State.NAVIGATING);
+                    }
                 } else if (now - stateEnteredAt >= SCAN_TIMEOUT_MS) {
                     // Waited 3 s and still no visitors – go back to farming
                     LOGGER.info("[JustFarming-Visitors] No visitors found; returning to farm.");
@@ -614,6 +634,10 @@ public class VisitorManager {
                     if (postAccept) {
                         // Offer was accepted – move on to the next visitor.
                         postAccept = false;
+                        nextVisitor();
+                    } else if (skipCurrentVisitorDueToPrice) {
+                        // Visitor declined due to price limit – skip to the next one.
+                        skipCurrentVisitorDueToPrice = false;
                         nextVisitor();
                     } else if (postPurchase) {
                         // A bazaar purchase was just confirmed – advance to the
@@ -1301,6 +1325,17 @@ public class VisitorManager {
         }
         if (!pendingRequirements.isEmpty()) {
             LOGGER.info("[JustFarming-Visitors] Visitor requires: {}", pendingRequirements);
+            // Check max-visitor-price limit.
+            // visitorsMaxPrice == 0 means "no limit" (feature disabled).
+            if (config.visitorsMaxPrice > 0) {
+                double totalValue = VisitorNpcPrices.getTotalNpcValue(pendingRequirements);
+                if (totalValue > config.visitorsMaxPrice) {
+                    LOGGER.info("[JustFarming-Visitors] Visitor NPC value ({} coins) exceeds max ({} coins); declining.",
+                            (long) totalValue, config.visitorsMaxPrice);
+                    pendingRequirements.clear();
+                    skipCurrentVisitorDueToPrice = true;
+                }
+            }
         } else {
             LOGGER.info("[JustFarming-Visitors] Could not parse any requirements from visitor menu.");
         }
