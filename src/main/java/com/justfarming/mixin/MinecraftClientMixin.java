@@ -3,10 +3,13 @@ package com.justfarming.mixin;
 import com.justfarming.JustFarming;
 import com.justfarming.MacroManager;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.screen.Screen;
 import org.spongepowered.asm.mixin.Mixin;
 import net.minecraft.client.option.KeyBinding;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(MinecraftClient.class)
 public class MinecraftClientMixin {
@@ -45,5 +48,29 @@ public class MinecraftClientMixin {
             return; // skip unpressAll whenever the macro is active
         }
         KeyBinding.unpressAll();
+    }
+
+    /**
+     * When a GUI screen closes (setScreen called with null) and the macro is
+     * actively breaking blocks, immediately re-press the attack key so that
+     * {@code handleBlockBreaking()} fires on the same tick the screen closes.
+     *
+     * <p>Without this, there is a one-tick window where the attack key is released
+     * (because {@code tickMoving/releaseKeys} ran while the GUI was open) and
+     * {@code handleBlockBreaking()} has already checked the key state before
+     * {@code END_CLIENT_TICK} gives {@code tickMoving} a chance to re-press it.
+     * The result is that block-break progress resets every time a GUI is closed
+     * while the macro is running.
+     */
+    @Inject(method = "setScreen", at = @At("TAIL"))
+    private void onSetScreen(Screen screen, CallbackInfo ci) {
+        if (screen != null) return; // only act when a screen is being closed
+        MacroManager mm = JustFarming.getMacroManager();
+        if (mm != null && mm.shouldBreak()) {
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (mc != null && mc.options != null) {
+                mc.options.attackKey.setPressed(true);
+            }
+        }
     }
 }

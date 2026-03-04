@@ -206,16 +206,6 @@ public class JustFarming implements ClientModInitializer {
                             "§c[JustFarming] Not in Garden – macro stopped."), false);
                 }
             }
-
-            // Notify the player when pests appear in new plots (Garden only)
-            if (client.player != null && pestDetector.isInGarden()) {
-                for (String plot : pestDetector.getNewlyInfestedPlots()) {
-                    int count = pestDetector.getPestCounts().getOrDefault(plot, 0);
-                    String suffix = count > 0 ? " " + PestDetector.formatPestCount(count) : "";
-                    client.player.sendMessage(net.minecraft.text.Text.literal(
-                            "§c[JustFarming] Pests detected in Plot " + plot + suffix), false);
-                }
-            }
         });
 
         // Register world render event for pest plot overlay.
