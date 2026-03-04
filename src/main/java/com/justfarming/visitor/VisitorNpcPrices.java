@@ -31,47 +31,50 @@ public final class VisitorNpcPrices {
         NPC_PRICES.put("nether wart",        4.0);
         NPC_PRICES.put("cactus",             4.0);
         NPC_PRICES.put("red mushroom",      10.0);
-        NPC_PRICES.put("brown mushroom",     6.0);
+        NPC_PRICES.put("brown mushroom",    10.0);
         NPC_PRICES.put("cocoa beans",        3.0);
         NPC_PRICES.put("wild rose",          4.0);
-        NPC_PRICES.put("sunflower",          0.4);
-        NPC_PRICES.put("moonflower",         0.7);
-        NPC_PRICES.put("glowshroom",         4.0);
-        NPC_PRICES.put("ink sac",            1.1);
-        NPC_PRICES.put("seeds",              1.1);
-        NPC_PRICES.put("wheat seeds",        1.1);
+        NPC_PRICES.put("sunflower",          4.0);
+        NPC_PRICES.put("moonflower",         4.0);
+        NPC_PRICES.put("ink sac",            2.0);
+        NPC_PRICES.put("seeds",              3.0);
+        NPC_PRICES.put("wheat seeds",        3.0);
 
         // ── Enchanted crops ──────────────────────────────────────────────────
-        NPC_PRICES.put("enchanted wheat",          960.0);
-        NPC_PRICES.put("enchanted carrot",         480.0);
-        NPC_PRICES.put("enchanted potato",         480.0);
-        NPC_PRICES.put("enchanted pumpkin",       1600.0);
-        NPC_PRICES.put("enchanted melon",          320.0);
-        NPC_PRICES.put("enchanted sugar cane",     640.0);
-        NPC_PRICES.put("enchanted nether wart",    640.0);
-        NPC_PRICES.put("enchanted cactus",         640.0);
-        NPC_PRICES.put("enchanted red mushroom",  1600.0);
-        NPC_PRICES.put("enchanted brown mushroom", 960.0);
-        NPC_PRICES.put("enchanted cocoa beans",    480.0);
-        NPC_PRICES.put("enchanted wild rose",      640.0);
-        NPC_PRICES.put("enchanted sunflower",       64.0);
-        NPC_PRICES.put("enchanted moonflower",     112.0);
-        NPC_PRICES.put("enchanted glowshroom",     640.0);
-        NPC_PRICES.put("enchanted ink sac",        176.0);
+        NPC_PRICES.put("enchanted wheat",           960.0);
+        NPC_PRICES.put("enchanted bread",            60.0);
+        NPC_PRICES.put("enchanted carrot",          480.0);
+        NPC_PRICES.put("enchanted golden carrot",  61440.0);
+        NPC_PRICES.put("enchanted potato",          480.0);
+        NPC_PRICES.put("enchanted baked potato",  76800.0);
+        NPC_PRICES.put("enchanted pumpkin",        1600.0);
+        NPC_PRICES.put("enchanted melon slice",     320.0);
+        NPC_PRICES.put("enchanted melon",         51200.0);
+        NPC_PRICES.put("enchanted sugar",           640.0);
+        NPC_PRICES.put("enchanted nether wart",     640.0);
+        NPC_PRICES.put("enchanted cactus green",    640.0);
+        NPC_PRICES.put("enchanted red mushroom",   1600.0);
+        NPC_PRICES.put("enchanted brown mushroom", 1600.0);
+        NPC_PRICES.put("enchanted cocoa beans",     480.0);
+        NPC_PRICES.put("enchanted cookie",        61500.0);
+        NPC_PRICES.put("enchanted wild rose",       640.0);
+        NPC_PRICES.put("enchanted sunflower",       640.0);
+        NPC_PRICES.put("enchanted moonflower",      640.0);
+        NPC_PRICES.put("enchanted ink sac",         176.0);
+        NPC_PRICES.put("enchanted seeds",           480.0);
 
         // ── Super-enchanted / block-tier crops ───────────────────────────────
-        NPC_PRICES.put("hay bale",                 8640.0);
-        NPC_PRICES.put("enchanted hay bale",     153600.0);
-        NPC_PRICES.put("enchanted nether wart block", 102400.0);
-        NPC_PRICES.put("enchanted mushroom block",  51200.0);
-        NPC_PRICES.put("enchanted cactus green",  102400.0);
-        NPC_PRICES.put("enchanted melon block",    51200.0);
-        NPC_PRICES.put("enchanted pumpkin block", 256000.0);
-        NPC_PRICES.put("enchanted sugar cane block", 102400.0);
+        NPC_PRICES.put("hay bale",                   54.0);
+        NPC_PRICES.put("enchanted hay bale",      153600.0);
+        NPC_PRICES.put("mutant nether wart",      102400.0);
+        NPC_PRICES.put("enchanted red mushroom block",   51200.0);
+        NPC_PRICES.put("enchanted brown mushroom block", 51200.0);
+        NPC_PRICES.put("enchanted cactus",        102400.0);
+        NPC_PRICES.put("enchanted sugar cane",    102400.0);
+        NPC_PRICES.put("polished pumpkin",        256000.0);
 
         // ── Compacted / bulk variants ────────────────────────────────────────
         NPC_PRICES.put("compacted wild rose",     102400.0);
-        NPC_PRICES.put("compacted nether wart",   102400.0);
     }
 
     /**
