@@ -219,6 +219,31 @@ public class FarmingConfig {
      */
     public List<String> visitorBlacklist = new ArrayList<>();
 
+    /**
+     * Minimum number of visitors that must be present at the barn for the
+     * visitor routine to proceed.  If fewer visitors are found after the
+     * teleport wait, the routine skips the barn visit and warps directly back
+     * to the Garden.
+     *
+     * <p>Range: 1–6 (Hypixel SkyBlock allows up to 5 concurrent visitors, with
+     * a possible 6th appearing late).  Default {@code 1} means the routine
+     * always runs when at least one visitor is present.
+     */
+    public int visitorsMinCount = 1;
+
+    /**
+     * Maximum total NPC sell value (in coins) of all items a visitor requests
+     * before the visitor is automatically skipped.  Set to {@code 0} to disable
+     * this check (no limit).
+     *
+     * <p>The value is compared against the sum of {@code amount × NPC sell price}
+     * for every item the visitor requires.  If the total exceeds this threshold
+     * the visitor's offer is declined without buying or accepting anything.
+     *
+     * <p>Range: 0–5,000,000.  Steps of 50,000 in the GUI slider.
+     */
+    public int visitorsMaxPrice = 0;
+
     // --- Per-Crop Settings ---
 
     /**
