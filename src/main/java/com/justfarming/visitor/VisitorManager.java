@@ -951,6 +951,14 @@ public class VisitorManager {
                     break;
                 }
             }
+            // All path checks failed – force forward movement anyway so the pathfinder
+            // does not stand still indefinitely.  The player nudging forward helps
+            // escape edge cases where isPassable is overly conservative (e.g. standing
+            // just short of a stair step) and gets the player closer to visitors.
+            if (!shouldWalk) {
+                shouldWalk = true;
+                chosenYaw  = baseTargetYaw;
+            }
         }
 
         // Aim camera toward the chosen direction with a single smooth step.

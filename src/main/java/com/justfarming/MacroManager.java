@@ -336,7 +336,7 @@ public class MacroManager {
 
     /** Stop the macro and release all held keys. */
     public void stop() {
-        if (!running && !waitingForVisitors) return;
+        if (!running && !waitingForVisitors && (visitorManager == null || !visitorManager.isActive())) return;
         running = false;
         waitingForVisitors = false;
         state = MacroState.IDLE;
@@ -353,7 +353,7 @@ public class MacroManager {
 
     /** Toggle start / stop. */
     public void toggle() {
-        if (running || waitingForVisitors) stop();
+        if (running || waitingForVisitors || (visitorManager != null && visitorManager.isActive())) stop();
         else start();
     }
 
