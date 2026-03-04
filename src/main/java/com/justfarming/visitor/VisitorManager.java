@@ -620,6 +620,11 @@ public class VisitorManager {
                     // producing zero requirements and causing the macro to skip bazaar.
                     if (now - stateEnteredAt >= currentActionDelay) {
                         parseVisitorMenu(screen);
+                        if (skipCurrentVisitorDueToPrice) {
+                            // Price limit exceeded – click "Decline Offer" in the GUI
+                            // before closing the menu so the server records the decline.
+                            tryClickDeclineOffer(screen);
+                        }
                         // Close the screen before opening the bazaar (or accepting)
                         player.closeHandledScreen();
                         enterState(State.CLOSING_MENU);
@@ -951,11 +956,16 @@ public class VisitorManager {
         // Compute the direct yaw toward the target (pitch is unchanged by jitter).
         Vec3d eye = player.getEyePos();
         double dx = target.x - eye.x;
-        double dy = (target.y + 1.0) - eye.y; // aim at roughly head height
         double dz = target.z - eye.z;
         double distXZ = Math.sqrt(dx * dx + dz * dz);
         float baseTargetYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
-        targetPitch = (float) -Math.toDegrees(Math.atan2(dy, distXZ));
+        // Keep the camera looking straight ahead (pitch 0) while pathfinding.
+        // Computing pitch from the vertical angle to the visitor causes the camera
+        // to tilt up and down continuously when the player descends stairs, because
+        // the player's eye height changes rapidly relative to the (fixed) visitor
+        // position.  Pitch is set precisely by lookAt() when the player is close
+        // enough to interact, so a neutral pitch during navigation is correct.
+        targetPitch = 0f;
 
         // Compute how many times faster the player is moving compared to vanilla.
         // This covers Speed-effect buffs, armour bonuses, and other SkyBlock modifiers
@@ -1551,6 +1561,18 @@ public class VisitorManager {
      */
     private boolean tryClickAcceptOffer(HandledScreen<?> screen) {
         return tryClickSlotWithName(screen, "Accept Offer", "Accept", "Confirm Offer");
+    }
+
+    /**
+     * Scan the open screen for the visitor "Decline Offer" button and click it.
+     * Called when the visitor's requested items exceed the configured max price
+     * so that the server records the decline rather than just silently closing
+     * the menu.
+     *
+     * @return {@code true} if a matching button was found and clicked.
+     */
+    private boolean tryClickDeclineOffer(HandledScreen<?> screen) {
+        return tryClickSlotWithName(screen, "Decline Offer", "Decline");
     }
 
     /**
