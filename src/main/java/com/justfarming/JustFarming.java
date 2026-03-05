@@ -20,6 +20,8 @@ import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+
 import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.literal;
 
 /**
@@ -136,13 +138,11 @@ public class JustFarming implements ClientModInitializer {
                                 .then(literal("pest")
                                         .executes(ctx -> {
                                             if (!pestKillerManager.isActive()) {
-                                                String plotName = pestDetector.getPestPlots().isEmpty()
-                                                        ? null : pestDetector.getPestPlots().iterator().next();
                                                 pestKillerShouldResumeMacro = macroManager.isRunning();
                                                 if (macroManager.isRunning()) {
                                                     macroManager.stop();
                                                 }
-                                                pestKillerManager.start(plotName);
+                                                pestKillerManager.start(new ArrayList<>(pestDetector.getPestPlots()));
                                                 if (ctx.getSource().getPlayer() != null) {
                                                     ctx.getSource().getPlayer().sendMessage(
                                                             net.minecraft.text.Text.literal("§a[JustFarming] Pest killer started."), true);
@@ -260,13 +260,11 @@ public class JustFarming implements ClientModInitializer {
                 if (!pestKillerManager.isActive() && !visitorManager.isActive()
                         && pestDetector.getTotalPests() > 0
                         && !pestEntityDetector.getDetectedPests().isEmpty()) {
-                    String plotName = pestDetector.getPestPlots().isEmpty()
-                            ? null : pestDetector.getPestPlots().iterator().next();
                     pestKillerShouldResumeMacro = macroManager.isRunning();
                     if (macroManager.isRunning()) {
                         macroManager.stop();
                     }
-                    pestKillerManager.start(plotName);
+                    pestKillerManager.start(new ArrayList<>(pestDetector.getPestPlots()));
                     if (client.player != null) {
                         client.player.sendMessage(net.minecraft.text.Text.literal(
                                 "§e[JustFarming] Pests detected – starting pest killer."), true);
