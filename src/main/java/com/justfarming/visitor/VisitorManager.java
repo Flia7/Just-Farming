@@ -220,13 +220,6 @@ public class VisitorManager {
     private static final double BEHIND_POINT_REACH_DIST = 1.5;
 
     /**
-     * How close (blocks) the player must get to each user-configured navigation
-     * waypoint before it is considered reached and the pathfinder advances to the
-     * next waypoint (or to the visitor, when all waypoints are done).
-     */
-    private static final double WAYPOINT_REACH_DIST = 2.0;
-
-    /**
      * Maximum time (ms) to spend navigating toward the behind-point before
      * giving up and proceeding directly to the first visitor.  Guards against
      * a behind-point that is technically passable but effectively unreachable
@@ -399,21 +392,6 @@ public class VisitorManager {
     /** Wall-clock time (ms) when navigation toward {@link #behindPoint} began; 0 = not started. */
     private long  behindPointStartTime = 0;
 
-    /**
-     * Index of the next waypoint in {@link com.justfarming.config.FarmingConfig#visitorWaypoints}
-     * that the pathfinder must navigate to.  Incremented each time a waypoint is
-     * reached.  Reset to {@code 0} by {@link #start()} and {@link #stop()}.
-     */
-    private int waypointIndex = 0;
-
-    /**
-     * {@code true} once all user-configured waypoints have been reached for this
-     * run.  After this flag is set, the pathfinder proceeds directly to each
-     * visitor without re-traversing the waypoints.  Reset by {@link #start()} and
-     * {@link #stop()}.
-     */
-    private boolean waypointsTraversed = false;
-
     // Item requirements extracted from the current visitor's menu
     private final List<VisitorRequirement> pendingRequirements = new ArrayList<>();
     private int requirementIndex = 0;
@@ -541,8 +519,6 @@ public class VisitorManager {
         walkRecoveryDirection = 0;
         walkRecoveryBackupEndTime = 0;
         walkRecoveryEndTime = 0;
-        waypointIndex = 0;
-        waypointsTraversed = false;
         enterState(State.IDLE);
     }
 
@@ -566,8 +542,6 @@ public class VisitorManager {
         returnWarpDelay   = 0;
         returnWarpSentAt  = 0;
         midRunRescanPerformed = false;
-        waypointIndex     = 0;
-        waypointsTraversed = false;
         long base = config.visitorsTeleportDelay > 0
                 ? config.visitorsTeleportDelay : TELEPORT_WAIT_DEFAULT_MS;
         teleportWaitMs = base + random.nextInt((int) TELEPORT_EXTRA_RANDOM_MS + 1)
@@ -628,8 +602,12 @@ public class VisitorManager {
                         returnToFarm();
                     } else {
                         currentVisitor = pendingVisitors.remove(0);
-                        behindPoint = null;
+                        behindPoint = computeBehindPoint(player, currentVisitor);
                         behindPointStartTime = 0;
+                        if (behindPoint != null) {
+                            LOGGER.info("[JustFarming-Visitors] Auto-computed behind-point at {}.",
+                                    String.format("%.1f, %.1f, %.1f", behindPoint.x, behindPoint.y, behindPoint.z));
+                        }
                         LOGGER.info("[JustFarming-Visitors] Found {} visitor(s). Navigating farthest first.",
                                 pendingVisitors.size() + 1);
                         enterState(State.NAVIGATING);
@@ -645,36 +623,6 @@ public class VisitorManager {
                 if (currentVisitor == null || !currentVisitor.isAlive()) {
                     nextVisitor();
                     return;
-                }
-
-                // Navigate through user-configured waypoints before the first visitor approach.
-                // Waypoints define a safe corridor through the barn (e.g. the entrance) that
-                // avoids walls the direct-path planner would otherwise crash into.
-                // They are traversed once per start() call; after all are reached the flag
-                // waypointsTraversed is set and normal visitor navigation begins.
-                if (!waypointsTraversed) {
-                    java.util.List<double[]> wps = config.visitorWaypoints;
-                    if (wps != null && !wps.isEmpty()) {
-                        Vec3d playerPos = new Vec3d(player.getX(), player.getY(), player.getZ());
-                        // Skip any waypoints already reached (loop handles multiple reached in one tick).
-                        while (waypointIndex < wps.size()) {
-                            double[] wp = wps.get(waypointIndex);
-                            Vec3d waypointPos = new Vec3d(wp[0], wp[1], wp[2]);
-                            double wpDist = playerPos.distanceTo(waypointPos);
-                            if (wpDist > WAYPOINT_REACH_DIST) {
-                                // Not yet at this waypoint – walk toward it and wait.
-                                walkToward(player, waypointPos, false);
-                                return;
-                            }
-                            // Reached this waypoint; advance to the next.
-                            LOGGER.info("[JustFarming-Visitors] Reached waypoint {}/{}.",
-                                    waypointIndex + 1, wps.size());
-                            waypointIndex++;
-                        }
-                    }
-                    // All configured waypoints (if any) have been reached.
-                    waypointsTraversed = true;
-                    LOGGER.info("[JustFarming-Visitors] Waypoints traversed; proceeding to visitors.");
                 }
 
                 Vec3d visitorPos = new Vec3d(currentVisitor.getX(), currentVisitor.getY(), currentVisitor.getZ());
@@ -1318,6 +1266,46 @@ public class VisitorManager {
             floorAhead = !client.world.getBlockState(probe.set(bx, feetY - dy, bz)).isAir();
         }
         return floorAhead && !wallAhead;
+    }
+
+    /**
+     * Compute an auto-pathfinding behind-point just past {@code visitor}, on the
+     * far side from the player, so the pathfinder approaches the visitor queue
+     * from the rear before rotating to interact.
+     *
+     * <p>The point is placed {@link #BEHIND_VISITOR_DIST} blocks past the visitor
+     * along the player→visitor axis.  If that position is inside a wall the
+     * method tries the fallback distances in {@link #BEHIND_VISITOR_DIST_FALLBACKS}
+     * before giving up and returning {@code null}.
+     *
+     * @param player  the local player (used for the player position)
+     * @param visitor the target visitor NPC entity
+     * @return a passable behind-point, or {@code null} if none could be found
+     */
+    private Vec3d computeBehindPoint(ClientPlayerEntity player, Entity visitor) {
+        if (client.world == null) return null;
+        double px = player.getX(), py = player.getY(), pz = player.getZ();
+        double vx = visitor.getX(), vy = visitor.getY(), vz = visitor.getZ();
+        double dx = vx - px;
+        double dz = vz - pz;
+        double len = Math.sqrt(dx * dx + dz * dz);
+        if (len < 0.001) return null; // visitor on top of player – skip behind-point
+        // Normalised direction from player toward visitor
+        double nx = dx / len;
+        double nz = dz / len;
+        // Try the primary distance then each fallback
+        double[] distances = new double[1 + BEHIND_VISITOR_DIST_FALLBACKS.length];
+        distances[0] = BEHIND_VISITOR_DIST;
+        for (int i = 0; i < BEHIND_VISITOR_DIST_FALLBACKS.length; i++) {
+            distances[i + 1] = BEHIND_VISITOR_DIST_FALLBACKS[i];
+        }
+        for (double dist : distances) {
+            Vec3d candidate = new Vec3d(vx + nx * dist, vy, vz + nz * dist);
+            if (isBehindPointPassable(candidate)) {
+                return candidate;
+            }
+        }
+        return null; // no passable behind-point found; proceed directly to visitor
     }
 
     /**
