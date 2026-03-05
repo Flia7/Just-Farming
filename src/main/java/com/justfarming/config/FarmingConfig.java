@@ -242,6 +242,28 @@ public class FarmingConfig {
     public int pestKillerTeleportDelay = 4000;
 
     /**
+     * Minimum delay (in milliseconds) between killing a pest and starting to
+     * search for the next one.  A short pause here makes the behaviour look
+     * more human-like and gives the server time to despawn the killed mob.
+     */
+    public int pestKillerGoToNextPestDelay = 0;
+
+    /**
+     * Preferred hotbar slot (0–8) for the farming tool that is active while
+     * the pest-killer routine is not running.  Set to {@code -1} (the default)
+     * to have the mod auto-detect the farming tool as the first non-vacuum,
+     * non-empty hotbar slot.
+     *
+     * <p>When the player has multiple farming tools in the hotbar (e.g. one per
+     * crop type) this setting lets them pin a specific slot so the pest killer
+     * always returns to the correct tool after killing pests, regardless of
+     * which slot was last selected.
+     *
+     * <p>Range: -1 (Auto) … 8 (Slot 9).  Default {@code -1}.
+     */
+    public int farmingToolHotbarSlot = -1;
+
+    /**
      * Maximum distance (in blocks) from which the vacuum item is used to kill a pest.
      * This value is used as a fallback when the vacuum type cannot be auto-detected.
      *

@@ -2,6 +2,8 @@ package com.justfarming.visitor;
 
 import com.justfarming.config.FarmingConfig;
 import net.minecraft.block.BlockState;
+import net.minecraft.block.CarpetBlock;
+import net.minecraft.block.AbstractPressurePlateBlock;
 import net.minecraft.block.SlabBlock;
 import net.minecraft.block.StairsBlock;
 import net.minecraft.client.MinecraftClient;
@@ -1361,15 +1363,20 @@ public class VisitorManager {
     }
 
     /**
-     * Returns {@code true} if {@code state} is a stair or slab block.
+     * Returns {@code true} if {@code state} is a stair, slab, carpet, or
+     * pressure-plate block.
      *
-     * <p>Stair and slab blocks occupy only part of their block space and can be
+     * <p>These partial blocks occupy only part of their block space and can be
      * stepped onto automatically by Minecraft's movement code, so the pathfinder
-     * should treat them as walkable surfaces rather than walls.
+     * treats them as walkable surfaces rather than walls.  Carpets (1/16 block
+     * height) and pressure plates are common decorative elements in the Hypixel
+     * SkyBlock barn that would otherwise be misidentified as impassable walls.
      */
     private static boolean isStepBlock(BlockState state) {
         return state.getBlock() instanceof StairsBlock
-                || state.getBlock() instanceof SlabBlock;
+                || state.getBlock() instanceof SlabBlock
+                || state.getBlock() instanceof CarpetBlock
+                || state.getBlock() instanceof AbstractPressurePlateBlock;
     }
 
     /**
