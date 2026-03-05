@@ -1085,6 +1085,15 @@ public class VisitorManager {
         // giving enough reaction distance to stop before hitting a wall.
         double probeStep = Math.min(PROBE_STEP * speedMult, 5.0);
 
+        // Shorter, fixed probe used exclusively for steer-angle decisions.
+        // Using the speed-scaled probe for rotation caused the camera to start
+        // turning before the player reached the obstacle (e.g. a barn entrance
+        // wall detected 4–5 blocks away), leading to over-rotation and the player
+        // heading in the wrong direction.  The near probe is deliberately kept at
+        // PROBE_STEP so steering only triggers when the obstacle is immediately
+        // ahead, while the larger probeStep is still used for braking/NPC avoidance.
+        double steerProbeStep = PROBE_STEP;
+
         // Detect whether the player is currently standing on a stair or slab block.
         // On step surfaces, skipping the walk-direction jitter prevents the camera
         // from rotating left and right unnecessarily while traversing a staircase.
@@ -1092,15 +1101,29 @@ public class VisitorManager {
 
         // Try the direct path first; if clear, apply jitter for humanlike variation.
         // Jitter is suppressed on stair/slab surfaces to avoid useless rotations.
-        // If blocked (wall or nearby visitor NPC), try steering angles to navigate around.
+        // If the far probe detects a wall but the near probe is still clear, keep
+        // walking straight – the obstacle is not yet close enough to require a turn,
+        // and rotating early would send the player the wrong way before they reach
+        // it (the "rotates before passing the wall" bug).
+        // Only apply steer angles when the near path is also blocked so rotation
+        // happens at the last moment, preventing over-rotation on corners.
         boolean shouldWalk = false;
         float chosenYaw = baseTargetYaw;
         if (isPathClear(player, baseTargetYaw, probeStep, avoidNpcs)) {
+            // Far path is clear – walk with jitter.
             shouldWalk = true;
             chosenYaw  = onStepSurface ? baseTargetYaw : baseTargetYaw + walkJitter; // skip jitter on stairs
+        } else if (isPathClear(player, baseTargetYaw, steerProbeStep, avoidNpcs)) {
+            // Far probe blocked but near path is clear: obstacle is not yet close.
+            // Continue straight without rotating; crash recovery will handle the
+            // case where the far obstacle is a genuine imminent wall rather than
+            // a temporary read (e.g. entrance-gap wall detected at a bad angle).
+            shouldWalk = true;
+            chosenYaw  = onStepSurface ? baseTargetYaw : baseTargetYaw + walkJitter;
         } else {
+            // Near path is blocked – steer around the immediate obstacle.
             for (float steer : WALL_STEER_ANGLES) {
-                if (isPathClear(player, baseTargetYaw + steer, probeStep, avoidNpcs)) {
+                if (isPathClear(player, baseTargetYaw + steer, steerProbeStep, avoidNpcs)) {
                     shouldWalk = true;
                     chosenYaw  = baseTargetYaw + steer; // steer around the wall (no jitter)
                     break;

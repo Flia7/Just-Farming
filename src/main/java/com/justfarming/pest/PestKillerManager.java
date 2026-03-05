@@ -523,9 +523,10 @@ public class PestKillerManager {
      * Skyblock Garden, players have creative-style flight so forward + pitch causes
      * genuine 3D movement.
      *
-     * <p>The jump key is held when the target is above the player and the sneak
-     * key is held when the target is below – both are standard creative-flight
-     * controls for ascending and descending respectively.
+     * <p>The jump key is held when the target is above the player.  The sneak key
+     * is never pressed so the player always remains airborne; the camera pitches
+     * downward when the target is below, and the resulting forward + pitch-down
+     * motion carries the player diagonally toward the pest without risking a landing.
      *
      * <p>When the player stops making progress toward the target (stuck detection),
      * a brief left/right strafe manoeuvre is triggered to help navigate around any
@@ -583,10 +584,14 @@ public class PestKillerManager {
             shouldFly = (ticks % pulseStride == 0);
         }
 
-        // Vertical movement: jump to ascend, sneak to descend (creative-flight controls)
+        // Vertical movement: jump to ascend when the pest is above.
+        // The sneak key is intentionally never pressed so the player always stays
+        // airborne.  When the pest is below, the camera pitches downward (set by
+        // lookAt above) and the forward + pitch-down motion carries the player
+        // diagonally toward the pest without risking a landing.
         double dy = target.y - eye.y;
         boolean shouldJump  = dy >  1.5;
-        boolean shouldSneak = dy < -1.5;
+        boolean shouldSneak = false; // never descend; camera pitch handles vertical direction
 
         // ── Stuck detection ─────────────────────────────────────────────────
         if (lastProgressPos == null) {
