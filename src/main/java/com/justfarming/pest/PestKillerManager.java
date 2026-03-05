@@ -15,7 +15,6 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
 import java.util.Random;
-
 /**
  * Manages the auto pest killer routine for Just Farming.
  *
@@ -25,15 +24,19 @@ import java.util.Random;
  *   <li>Teleports to the first infested plot (via {@code /tptoplot <plot>}) or to
  *       the garden (via {@code /warp garden}), depending on
  *       {@link FarmingConfig#pestKillerWarpToPlot}.</li>
- *   <li>After the teleport delay, scans for pest entities via
- *       {@link PestEntityDetector}.</li>
- *   <li>Flies toward each pest by pointing the camera at it and pressing the
- *       forward key.</li>
+ *   <li>After the teleport delay, flies to the centre of the plot to maximise
+ *       entity-scan radius.</li>
+ *   <li>Scans for pest entities via {@link PestEntityDetector}.  If any are
+ *       found it flies directly to the nearest one.</li>
+ *   <li>If no pests are detected at the plot centre, it left-clicks with the
+ *       vacuum item to fire a "vacuum shot".  The shot emits a line of
+ *       ANGRY_VILLAGER particles toward the nearest pest.  The mod follows
+ *       that line to reach the pest.</li>
  *   <li>Switches to a vacuum item in the hotbar (any item whose name contains
- *       "Vacuum", case-insensitive) and right-clicks while aiming at the pest
- *       for {@link FarmingConfig#pestKillerKillDuration} ms to kill it.</li>
+ *       "Vacuum", case-insensitive) and right-clicks while aiming at the pest.
+ *       Right-clicking continues until the pest disappears from the entity list.</li>
  *   <li>When no pests remain on the current plot, teleports to the next infested
- *       plot (if any) and repeats steps 2–4 until all plots have been cleared.</li>
+ *       plot (if any) and repeats steps 2–5 until all plots have been cleared.</li>
  *   <li>Sends {@code /warp garden} when all detected pests have been killed
  *       and marks itself {@link State#DONE}.</li>
  * </ol>
@@ -93,6 +96,43 @@ public class PestKillerManager {
     /** Pause after {@code /warp garden} to allow the command to register (ms). */
     private static final long WARP_COMMAND_WAIT_MS = 3000;
 
+    /**
+     * Y coordinate (blocks) to target when flying to a plot centre.
+     * 80 is a comfortable height above most crops while still being within
+     * entity-scan range of ground-level pests.
+     */
+    private static final double PLOT_CENTRE_Y = 80.0;
+
+    /**
+     * Horizontal distance (blocks) from the computed plot centre at which the
+     * {@link State#GOING_TO_PLOT_CENTER} state is considered complete.
+     */
+    private static final double PLOT_CENTRE_ARRIVE_RADIUS = 8.0;
+
+    /**
+     * Maximum time (ms) to spend flying to the plot centre before giving up
+     * and falling back to a direct scan.
+     */
+    private static final long GOING_TO_PLOT_CENTRE_TIMEOUT_MS = 12_000;
+
+    /**
+     * How long (ms) to hold the attack key when firing the vacuum shot.
+     * Minecraft registers a single click within this window.
+     */
+    private static final long VACUUM_SHOT_FIRE_MS = 100L;
+
+    /**
+     * Maximum time (ms) to wait for ANGRY_VILLAGER particle data after firing
+     * the vacuum shot before giving up and moving to the next plot.
+     */
+    private static final long VACUUM_SHOT_WAIT_MS = 4_000;
+
+    /**
+     * Maximum time (ms) to spend following the particle trail before
+     * re-scanning for pest entities.
+     */
+    private static final long FOLLOWING_PARTICLES_TIMEOUT_MS = 8_000;
+
     // ── State machine ────────────────────────────────────────────────────────
 
     /** Internal states of the pest killer routine. */
@@ -101,8 +141,14 @@ public class PestKillerManager {
         IDLE,
         /** Waiting for the server to teleport the player. */
         TELEPORTING,
+        /** Flying to the centre of the current infested plot. */
+        GOING_TO_PLOT_CENTER,
         /** Looking for pest entities near the player. */
         SCANNING,
+        /** Left-clicked vacuum; waiting for particle-trail data. */
+        VACUUM_SHOT,
+        /** Following the particle trail direction toward the pest. */
+        FOLLOWING_PARTICLES,
         /** Flying toward the current target pest. */
         FLYING_TO_PEST,
         /** Close enough to pest; right-clicking with the vacuum to kill it. */
@@ -222,6 +268,42 @@ public class PestKillerManager {
     /** Hotbar slot active before the vacuum switch; -1 if unknown. */
     private int preVacuumSlot = -1;
 
+    // ── Plot-centre navigation ───────────────────────────────────────────────
+
+    /** Name of the plot currently being visited (e.g. "4"), or {@code null}. */
+    private String currentPlotName = null;
+
+    /**
+     * World-space target for {@link State#GOING_TO_PLOT_CENTER}: the centre of
+     * {@link #currentPlotName} at {@link #PLOT_CENTRE_Y}.  {@code null} when
+     * the plot name is unknown or has no registered centre.
+     */
+    private Vec3d plotCentreTarget = null;
+
+    // ── Vacuum-shot particle tracking ────────────────────────────────────────
+
+    /**
+     * Waypoint computed from the particle trail after a vacuum shot; the mod
+     * flies toward this point in {@link State#FOLLOWING_PARTICLES}.
+     * {@code null} when no valid trail has been captured.
+     */
+    private Vec3d particleWaypoint = null;
+
+    /**
+     * {@code true} once the vacuum shot (attack-key press) has been fired in
+     * the current {@link State#VACUUM_SHOT} run so we don't fire twice.
+     */
+    private boolean vacuumShotFired = false;
+
+    /**
+     * {@code true} after one full vacuum-shot attempt has already been made for
+     * the current plot.  Prevents an infinite SCANNING → VACUUM_SHOT loop.
+     */
+    private boolean vacuumShotAttempted = false;
+
+    /** Shared particle tracker singleton used for vacuum-shot guidance. */
+    private final VacuumParticleTracker vacuumParticleTracker = VacuumParticleTracker.getInstance();
+
     private final MinecraftClient client;
     private FarmingConfig config;
     private final PestEntityDetector pestEntityDetector;
@@ -270,6 +352,7 @@ public class PestKillerManager {
         ceilingAvoidPhase = 0;
         ceilingAvoidStartTime = 0;
         remainingPlots.clear();
+        resetPlotState();
     }
 
     /**
@@ -281,10 +364,12 @@ public class PestKillerManager {
         LOGGER.info("[JustFarming-PestKiller] Stopped.");
         releaseMovementKeys();
         restoreHotbarSlot();
+        vacuumParticleTracker.stopTracking();
         doubleJumpStartTime = 0;
         ceilingAvoidPhase = 0;
         ceilingAvoidStartTime = 0;
         remainingPlots.clear();
+        resetPlotState();
         enterState(State.IDLE);
     }
 
@@ -325,6 +410,7 @@ public class PestKillerManager {
         preVacuumSlot = -1;
         lastSmoothLookTime = 0;
         returnWarpSentAt = 0;
+        resetPlotState();
 
         remainingPlots.clear();
         if (pestPlots != null) {
@@ -342,6 +428,7 @@ public class PestKillerManager {
         enterState(State.TELEPORTING);
 
         String firstPlot = remainingPlots.poll(); // remove and use the first plot
+        currentPlotName = firstPlot;
         if (config.pestKillerWarpToPlot && firstPlot != null) {
             sendCommand("tptoplot " + firstPlot);
             LOGGER.info("[JustFarming-PestKiller] Sent /tptoplot {} to reach infested plot.", firstPlot);
@@ -356,7 +443,10 @@ public class PestKillerManager {
      * {@link #targetYaw}/{@link #targetPitch} while actively flying or killing.
      */
     public void onRenderTick() {
-        if (state != State.FLYING_TO_PEST && state != State.KILLING_PEST) return;
+        if (state != State.FLYING_TO_PEST
+                && state != State.KILLING_PEST
+                && state != State.GOING_TO_PLOT_CENTER
+                && state != State.FOLLOWING_PARTICLES) return;
         ClientPlayerEntity player = client.player;
         if (player == null) return;
         smoothRotateCamera(player);
@@ -375,9 +465,66 @@ public class PestKillerManager {
 
             case TELEPORTING -> {
                 if (now - stateEnteredAt >= teleportWaitMs) {
+                    // After teleporting, fly to the plot centre to maximise the scan
+                    // radius before looking for pest entities.
+                    if (currentPlotName != null) {
+                        double cx = GardenPlot.getCentreX(currentPlotName);
+                        double cz = GardenPlot.getCentreZ(currentPlotName);
+                        if (!Double.isNaN(cx) && !Double.isNaN(cz)) {
+                            plotCentreTarget = new Vec3d(cx, PLOT_CENTRE_Y, cz);
+                            LOGGER.info("[JustFarming-PestKiller] Teleport wait elapsed; "
+                                    + "flying to plot {} centre ({}, {}, {}).",
+                                    currentPlotName, (int) cx, (int) PLOT_CENTRE_Y, (int) cz);
+                            enterState(State.GOING_TO_PLOT_CENTER);
+                            return;
+                        }
+                    }
+                    // No plot name or unknown plot; fall back to scanning in place.
                     LOGGER.info("[JustFarming-PestKiller] Teleport wait elapsed; scanning for pests.");
                     enterState(State.SCANNING);
                 }
+            }
+
+            case GOING_TO_PLOT_CENTER -> {
+                // If pests are already visible, skip flying to the centre.
+                List<PestEntityDetector.PestEntity> pestsAtCentre = pestEntityDetector.getDetectedPests();
+                if (!pestsAtCentre.isEmpty()) {
+                    currentPest = pickNearestPest(player, pestsAtCentre);
+                    if (currentPest != null) {
+                        LOGGER.info("[JustFarming-PestKiller] Pest detected while flying to centre; "
+                                + "targeting directly.");
+                        releaseMovementKeys();
+                        enterState(State.FLYING_TO_PEST);
+                        return;
+                    }
+                }
+
+                if (plotCentreTarget == null) {
+                    enterState(State.SCANNING);
+                    return;
+                }
+
+                // Check horizontal distance only (ignore Y) so we don't overshoot
+                // vertically into a ceiling.
+                double dx = player.getX() - plotCentreTarget.x;
+                double dz = player.getZ() - plotCentreTarget.z;
+                double horizDist = Math.sqrt(dx * dx + dz * dz);
+                if (horizDist <= PLOT_CENTRE_ARRIVE_RADIUS) {
+                    LOGGER.info("[JustFarming-PestKiller] Arrived at plot centre; scanning.");
+                    releaseMovementKeys();
+                    enterState(State.SCANNING);
+                    return;
+                }
+
+                // Timeout – give up flying and scan from wherever we are.
+                if (now - stateEnteredAt >= GOING_TO_PLOT_CENTRE_TIMEOUT_MS) {
+                    LOGGER.info("[JustFarming-PestKiller] Timed out flying to plot centre; scanning.");
+                    releaseMovementKeys();
+                    enterState(State.SCANNING);
+                    return;
+                }
+
+                flyToward(player, plotCentreTarget);
             }
 
             case SCANNING -> {
@@ -390,29 +537,136 @@ public class PestKillerManager {
                         enterState(State.FLYING_TO_PEST);
                     }
                 } else if (now - stateEnteredAt >= SCAN_TIMEOUT_MS) {
-                    if (!remainingPlots.isEmpty()) {
+                    // No pests found at centre; try a vacuum shot to locate them via
+                    // the particle trail (only one attempt per plot).
+                    if (!vacuumShotAttempted && currentPlotName != null) {
+                        LOGGER.info("[JustFarming-PestKiller] No pests at plot centre; "
+                                + "firing vacuum shot to locate them.");
+                        vacuumShotAttempted = true;
+                        vacuumShotFired = false;
+                        vacuumParticleTracker.stopTracking();
+                        vacuumParticleTracker.reset();
+                        vacuumParticleTracker.startTracking(player.getEyePos());
+                        enterState(State.VACUUM_SHOT);
+                    } else if (!remainingPlots.isEmpty()) {
                         // Pests on this plot have been cleared; move on to the next
                         // infested plot rather than returning to the farm immediately.
-                        String nextPlot = remainingPlots.poll();
-                        LOGGER.info("[JustFarming-PestKiller] No pests found on this plot; "
-                                + "teleporting to next infested plot: {}.", nextPlot);
-                        long base = config != null && config.pestKillerTeleportDelay > 0
-                                ? config.pestKillerTeleportDelay : TELEPORT_WAIT_DEFAULT_MS;
-                        int globalRandom = (config != null) ? config.globalRandomizationMs : 0;
-                        teleportWaitMs = base + random.nextInt((int) TELEPORT_EXTRA_RANDOM_MS + 1)
-                                + random.nextInt(Math.max(1, globalRandom));
-                        if (config.pestKillerWarpToPlot) {
-                            sendCommand("tptoplot " + nextPlot);
-                        } else {
-                            sendCommand("warp garden");
-                        }
-                        enterState(State.TELEPORTING);
+                        teleportToNextPlot(remainingPlots.poll());
                     } else {
                         LOGGER.info("[JustFarming-PestKiller] No pests found after scanning all plots; "
                                 + "returning to farm.");
                         returnToFarm();
                     }
                 }
+            }
+
+            case VACUUM_SHOT -> {
+                // Check if a pest has become visible while we wait for particles.
+                List<PestEntityDetector.PestEntity> pestsVS = pestEntityDetector.getDetectedPests();
+                if (!pestsVS.isEmpty()) {
+                    currentPest = pickNearestPest(player, pestsVS);
+                    if (currentPest != null) {
+                        LOGGER.info("[JustFarming-PestKiller] Pest detected after vacuum shot; targeting.");
+                        client.options.attackKey.setPressed(false);
+                        vacuumParticleTracker.stopTracking();
+                        enterState(State.FLYING_TO_PEST);
+                        return;
+                    }
+                }
+
+                long elapsed = now - stateEnteredAt;
+
+                // Equip the vacuum and fire a single left-click during the first
+                // VACUUM_SHOT_FIRE_MS window.
+                if (!vacuumShotFired) {
+                    findAndEquipVacuum(player);
+                    if (vacuumSlot < 0) {
+                        LOGGER.warn("[JustFarming-PestKiller] No vacuum in hotbar; skipping vacuum shot.");
+                        vacuumParticleTracker.stopTracking();
+                        // Try next plot or return.
+                        if (!remainingPlots.isEmpty()) {
+                            teleportToNextPlot(remainingPlots.poll());
+                        } else {
+                            returnToFarm();
+                        }
+                        return;
+                    }
+                    if (player.getInventory().getSelectedSlot() != vacuumSlot) {
+                        player.getInventory().setSelectedSlot(vacuumSlot);
+                    }
+                    client.options.attackKey.setPressed(true);
+                    vacuumShotFired = true;
+                    LOGGER.info("[JustFarming-PestKiller] Fired vacuum shot to locate pest.");
+                } else if (elapsed >= VACUUM_SHOT_FIRE_MS) {
+                    // Release the attack key after the brief hold.
+                    client.options.attackKey.setPressed(false);
+                }
+
+                // Wait for the particle trail to accumulate, then follow it.
+                if (elapsed >= VACUUM_SHOT_WAIT_MS) {
+                    client.options.attackKey.setPressed(false);
+                    vacuumParticleTracker.stopTracking();
+                    Vec3d waypoint = vacuumParticleTracker.getWaypoint();
+                    if (waypoint != null) {
+                        LOGGER.info("[JustFarming-PestKiller] Particle trail detected; "
+                                + "following to ({}, {}, {}).",
+                                String.format("%.1f", waypoint.x),
+                                String.format("%.1f", waypoint.y),
+                                String.format("%.1f", waypoint.z));
+                        particleWaypoint = waypoint;
+                        enterState(State.FOLLOWING_PARTICLES);
+                    } else {
+                        LOGGER.info("[JustFarming-PestKiller] No particle trail; trying next plot.");
+                        if (!remainingPlots.isEmpty()) {
+                            teleportToNextPlot(remainingPlots.poll());
+                        } else {
+                            returnToFarm();
+                        }
+                    }
+                }
+            }
+
+            case FOLLOWING_PARTICLES -> {
+                // Check whether any pest is now visible.
+                List<PestEntityDetector.PestEntity> pestsFP = pestEntityDetector.getDetectedPests();
+                if (!pestsFP.isEmpty()) {
+                    currentPest = pickNearestPest(player, pestsFP);
+                    if (currentPest != null) {
+                        LOGGER.info("[JustFarming-PestKiller] Pest detected while following particles; "
+                                + "targeting directly.");
+                        releaseMovementKeys();
+                        enterState(State.FLYING_TO_PEST);
+                        return;
+                    }
+                }
+
+                if (particleWaypoint == null) {
+                    releaseMovementKeys();
+                    enterState(State.SCANNING);
+                    return;
+                }
+
+                double distWP = new Vec3d(player.getX(), player.getY(), player.getZ()).distanceTo(particleWaypoint);
+                if (distWP <= getEffectiveKillRadius()) {
+                    // Arrived near the waypoint; switch to scanning to find the pest.
+                    LOGGER.info("[JustFarming-PestKiller] Reached particle-trail waypoint; re-scanning.");
+                    releaseMovementKeys();
+                    enterState(State.SCANNING);
+                    return;
+                }
+
+                if (now - stateEnteredAt >= FOLLOWING_PARTICLES_TIMEOUT_MS) {
+                    LOGGER.info("[JustFarming-PestKiller] Particle-trail follow timed out.");
+                    releaseMovementKeys();
+                    if (!remainingPlots.isEmpty()) {
+                        teleportToNextPlot(remainingPlots.poll());
+                    } else {
+                        returnToFarm();
+                    }
+                    return;
+                }
+
+                flyToward(player, particleWaypoint);
             }
 
             case FLYING_TO_PEST -> {
@@ -443,10 +697,11 @@ public class PestKillerManager {
                 // Keep targeting the nearest pest
                 currentPest = pickNearestPest(player, pests);
                 if (currentPest == null) {
-                    // This pest was killed; scan for more
+                    // Pest was killed; scan for more
                     LOGGER.info("[JustFarming-PestKiller] Pest killed; scanning for remaining pests.");
                     restoreHotbarSlot();
                     releaseMovementKeys();
+                    vacuumShotAttempted = false; // reset so we can try vacuum shot on the next plot
                     enterState(State.SCANNING);
                     return;
                 }
@@ -467,18 +722,11 @@ public class PestKillerManager {
                     player.getInventory().setSelectedSlot(vacuumSlot);
                 }
 
-                // Right-click (use vacuum) while aimed at pest
+                // Right-click (use vacuum) while aimed at pest.
+                // Continue until the pest disappears from the entity list – no fixed
+                // kill-duration timer.
                 if (client.interactionManager != null) {
                     client.interactionManager.interactItem(player, Hand.MAIN_HAND);
-                }
-
-                // Check if kill duration elapsed – move to next pest
-                long killDuration = config.pestKillerKillDuration > 0
-                        ? config.pestKillerKillDuration : 2000;
-                if (now - stateEnteredAt >= killDuration) {
-                    LOGGER.info("[JustFarming-PestKiller] Kill duration elapsed; moving to next pest.");
-                    restoreHotbarSlot();
-                    enterState(State.SCANNING);
                 }
             }
 
@@ -503,7 +751,8 @@ public class PestKillerManager {
         stateEnteredAt = System.currentTimeMillis();
         int globalRandom = (config != null) ? config.globalRandomizationMs : 0;
         randomExtra = random.nextInt(Math.max(1, globalRandom));
-        if (next == State.FLYING_TO_PEST) {
+        if (next == State.FLYING_TO_PEST || next == State.GOING_TO_PLOT_CENTER
+                || next == State.FOLLOWING_PARTICLES) {
             // Reset stuck detection so each new flight attempt starts fresh
             lastProgressPos      = null;
             lastProgressCheckTime = 0;
@@ -516,6 +765,44 @@ public class PestKillerManager {
         if (next != State.IDLE && next != State.DONE) {
             LOGGER.info("[JustFarming-PestKiller] -> {}", next);
         }
+    }
+
+    /**
+     * Resets per-plot state (plot name, centre target, particle data, and
+     * vacuum-shot flags).  Called when starting a new plot or resetting the
+     * manager entirely.
+     */
+    private void resetPlotState() {
+        currentPlotName = null;
+        plotCentreTarget = null;
+        particleWaypoint = null;
+        vacuumShotFired = false;
+        vacuumShotAttempted = false;
+        vacuumParticleTracker.stopTracking();
+        vacuumParticleTracker.reset();
+    }
+
+    /**
+     * Teleports to {@code nextPlot} (or warps to the garden if
+     * {@link FarmingConfig#pestKillerWarpToPlot} is false), resets per-plot
+     * state, and enters {@link State#TELEPORTING}.
+     */
+    private void teleportToNextPlot(String nextPlot) {
+        LOGGER.info("[JustFarming-PestKiller] No pests found on this plot; "
+                + "teleporting to next infested plot: {}.", nextPlot);
+        long base = config != null && config.pestKillerTeleportDelay > 0
+                ? config.pestKillerTeleportDelay : TELEPORT_WAIT_DEFAULT_MS;
+        int globalRandom = (config != null) ? config.globalRandomizationMs : 0;
+        teleportWaitMs = base + random.nextInt((int) TELEPORT_EXTRA_RANDOM_MS + 1)
+                + random.nextInt(Math.max(1, globalRandom));
+        resetPlotState();
+        currentPlotName = nextPlot;
+        if (config != null && config.pestKillerWarpToPlot) {
+            sendCommand("tptoplot " + nextPlot);
+        } else {
+            sendCommand("warp garden");
+        }
+        enterState(State.TELEPORTING);
     }
 
     /** Returns the pest entity closest to the player's eye position, or {@code null} if none. */

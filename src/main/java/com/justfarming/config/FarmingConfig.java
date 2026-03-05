@@ -242,12 +242,6 @@ public class FarmingConfig {
     public int pestKillerTeleportDelay = 4000;
 
     /**
-     * How long (in milliseconds) to hold the right-click (vacuum) on each pest
-     * before moving on to the next one.
-     */
-    public int pestKillerKillDuration = 2000;
-
-    /**
      * Maximum distance (in blocks) from which the vacuum item is used to kill a pest.
      * The Vacuum can reach up to 15 blocks; set higher values to kill pests from a
      * distance without flying all the way up to them.

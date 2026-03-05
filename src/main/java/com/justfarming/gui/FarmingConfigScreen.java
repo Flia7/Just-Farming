@@ -114,7 +114,6 @@ public class FarmingConfigScreen extends Screen {
     private FlatBoolToggleWidget          pestKillerEnabledButton;
     private FlatBoolToggleWidget          pestKillerWarpToPlotButton;
     private PestKillerTeleportDelaySlider pestKillerTeleportDelaySlider;
-    private PestKillerKillDurationSlider  pestKillerKillDurationSlider;
     private PestKillerVacuumRangeSlider   pestKillerVacuumRangeSlider;
 
 
@@ -497,13 +496,6 @@ public class FarmingConfigScreen extends Screen {
                 "How long to wait after the teleport command before scanning for pest entities. (ms)")));
         y += bh + pad;
 
-        pestKillerKillDurationSlider = new PestKillerKillDurationSlider(widgetX, y, bw, bh,
-                        config.pestKillerKillDuration);
-        this.addDrawableChild(pestKillerKillDurationSlider);
-        pestKillerKillDurationSlider.setTooltip(Tooltip.of(Text.literal(
-                "How long to hold right-click on each pest to kill it. (ms)")));
-        y += bh + pad;
-
         pestKillerVacuumRangeSlider = new PestKillerVacuumRangeSlider(widgetX, y, bw, bh,
                         config.pestKillerVacuumRange);
         this.addDrawableChild(pestKillerVacuumRangeSlider);
@@ -584,7 +576,6 @@ public class FarmingConfigScreen extends Screen {
         pestKillerEnabledButton.visible         = t5 && inContentBounds(pestKillerEnabledButton);
         pestKillerWarpToPlotButton.visible      = t5 && inContentBounds(pestKillerWarpToPlotButton);
         pestKillerTeleportDelaySlider.visible   = t5 && inContentBounds(pestKillerTeleportDelaySlider);
-        pestKillerKillDurationSlider.visible    = t5 && inContentBounds(pestKillerKillDurationSlider);
         pestKillerVacuumRangeSlider.visible     = t5 && inContentBounds(pestKillerVacuumRangeSlider);
     }
 
@@ -776,7 +767,6 @@ public class FarmingConfigScreen extends Screen {
         config.autoPestKillerEnabled    = pestKillerEnabledButton.getValue();
         config.pestKillerWarpToPlot     = pestKillerWarpToPlotButton.getValue();
         config.pestKillerTeleportDelay  = pestKillerTeleportDelaySlider.getDelayValue();
-        config.pestKillerKillDuration   = pestKillerKillDurationSlider.getDelayValue();
         config.pestKillerVacuumRange    = pestKillerVacuumRangeSlider.getRangeValue();
         macroManager.setConfig(config);
         if (visitorManager != null) visitorManager.setConfig(config);
@@ -1379,21 +1369,6 @@ public class FarmingConfigScreen extends Screen {
         @Override
         protected void updateMessage() {
             setMessage(Text.literal(String.format("Teleport Delay: %d ms", getIntValue())));
-        }
-    }
-
-    /** Slider for the pest killer kill duration (500–5000 ms). */
-    private static class PestKillerKillDurationSlider extends IntStepSlider {
-
-        PestKillerKillDurationSlider(int x, int y, int width, int height, int initialValue) {
-            super(x, y, width, height, 500, 5000, initialValue);
-        }
-
-        int getDelayValue() { return getIntValue(); }
-
-        @Override
-        protected void updateMessage() {
-            setMessage(Text.literal(String.format("Kill Duration: %d ms", getIntValue())));
         }
     }
 
