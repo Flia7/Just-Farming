@@ -136,8 +136,12 @@ public class VisitorManager {
      */
     private static final long WALK_JITTER_INTERVAL_MS = 800;
 
-    /** Steer-angle offsets (degrees) tried in order when the direct path is blocked by a wall. */
-    private static final float[] WALL_STEER_ANGLES = { 15f, -15f, 30f, -30f };
+    /**
+     * Steer-angle offsets (degrees) tried in order when the direct path is blocked by a wall.
+     * Covers small nudges first (likely NPC avoidance) through wide detours (±90°) so the
+     * pathfinder can navigate around corners before resorting to a forced-forward fallback.
+     */
+    private static final float[] WALL_STEER_ANGLES = { 15f, -15f, 30f, -30f, 45f, -45f, 60f, -60f, 90f, -90f };
 
     // ── Sign-editor key constants ────────────────────────────────────────────
 
@@ -976,13 +980,19 @@ public class VisitorManager {
         // giving enough reaction distance to stop before hitting a wall.
         double probeStep = Math.min(PROBE_STEP * speedMult, 5.0);
 
+        // Detect whether the player is currently standing on a stair or slab block.
+        // On step surfaces, skipping the walk-direction jitter prevents the camera
+        // from rotating left and right unnecessarily while traversing a staircase.
+        boolean onStepSurface = isStepBlock(client.world.getBlockState(playerFeetBlockPos(player)));
+
         // Try the direct path first; if clear, apply jitter for humanlike variation.
+        // Jitter is suppressed on stair/slab surfaces to avoid useless rotations.
         // If blocked (wall or nearby visitor NPC), try steering angles to navigate around.
         boolean shouldWalk = false;
         float chosenYaw = baseTargetYaw;
         if (isPathClear(player, baseTargetYaw, probeStep, avoidNpcs)) {
             shouldWalk = true;
-            chosenYaw  = baseTargetYaw + walkJitter; // jitter for varied paths when clear
+            chosenYaw  = onStepSurface ? baseTargetYaw : baseTargetYaw + walkJitter; // skip jitter on stairs
         } else {
             for (float steer : WALL_STEER_ANGLES) {
                 if (isPathClear(player, baseTargetYaw + steer, probeStep, avoidNpcs)) {
@@ -1564,15 +1574,18 @@ public class VisitorManager {
     }
 
     /**
-     * Scan the open screen for the visitor "Decline Offer" button and click it.
-     * Called when the visitor's requested items exceed the configured max price
-     * so that the server records the decline rather than just silently closing
-     * the menu.
+     * Scan the open screen for the visitor "Refuse Offer" / "Decline Offer" button
+     * and click it.  Called when the visitor's requested items exceed the configured
+     * max price so that the server records the decline rather than just silently
+     * closing the menu.
+     *
+     * <p>Hypixel SkyBlock uses "Refuse Offer" as the button label; "Decline Offer"
+     * and plain "Decline" / "Refuse" are kept as fallbacks for any variant spellings.
      *
      * @return {@code true} if a matching button was found and clicked.
      */
     private boolean tryClickDeclineOffer(HandledScreen<?> screen) {
-        return tryClickSlotWithName(screen, "Decline Offer", "Decline");
+        return tryClickSlotWithName(screen, "Refuse Offer", "Decline Offer", "Refuse", "Decline");
     }
 
     /**
@@ -1605,5 +1618,16 @@ public class VisitorManager {
         if (client.player != null && client.player.networkHandler != null) {
             client.player.networkHandler.sendChatCommand(command);
         }
+    }
+
+    /**
+     * Returns the {@link BlockPos} at the player's feet level
+     * (i.e. {@code floor(x), floor(y), floor(z)}).
+     */
+    private static BlockPos playerFeetBlockPos(ClientPlayerEntity player) {
+        return new BlockPos(
+                (int) Math.floor(player.getX()),
+                (int) Math.floor(player.getY()),
+                (int) Math.floor(player.getZ()));
     }
 }

@@ -101,7 +101,7 @@ public class JustFarming implements ClientModInitializer {
                 KEY_CATEGORY
         ));
 
-        // Register /just rewarp client commands
+        // Register /just <sub-command> client commands
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) ->
                 dispatcher.register(
                         literal("just")
@@ -129,6 +129,44 @@ public class JustFarming implements ClientModInitializer {
                                             if (ctx.getSource().getPlayer() != null) {
                                                 ctx.getSource().getPlayer().sendMessage(
                                                         net.minecraft.text.Text.literal("§a[JustFarming] Visitor routine started. Teleporting to barn..."), true);
+                                            }
+                                            return 1;
+                                        }))
+                                .then(literal("pest")
+                                        .executes(ctx -> {
+                                            if (!pestKillerManager.isActive()) {
+                                                String plotName = pestDetector.getPestPlots().isEmpty()
+                                                        ? null : pestDetector.getPestPlots().iterator().next();
+                                                pestKillerShouldResumeMacro = macroManager.isRunning();
+                                                if (macroManager.isRunning()) {
+                                                    macroManager.stop();
+                                                }
+                                                pestKillerManager.start(plotName);
+                                                if (ctx.getSource().getPlayer() != null) {
+                                                    ctx.getSource().getPlayer().sendMessage(
+                                                            net.minecraft.text.Text.literal("§a[JustFarming] Pest killer started."), true);
+                                                }
+                                            } else {
+                                                if (ctx.getSource().getPlayer() != null) {
+                                                    ctx.getSource().getPlayer().sendMessage(
+                                                            net.minecraft.text.Text.literal("§e[JustFarming] Pest killer is already running."), true);
+                                                }
+                                            }
+                                            return 1;
+                                        }))
+                                .then(literal("farm")
+                                        .executes(ctx -> {
+                                            // Send /warp garden first, then start the macro.
+                                            // The macro's first action is camera alignment (not movement),
+                                            // so by the time it begins walking the warp has completed.
+                                            if (ctx.getSource().getPlayer() != null
+                                                    && ctx.getSource().getPlayer().networkHandler != null) {
+                                                ctx.getSource().getPlayer().networkHandler.sendChatCommand("warp garden");
+                                            }
+                                            macroManager.start();
+                                            if (ctx.getSource().getPlayer() != null) {
+                                                ctx.getSource().getPlayer().sendMessage(
+                                                        net.minecraft.text.Text.literal("§a[JustFarming] Warping to garden and starting farming..."), true);
                                             }
                                             return 1;
                                         }))));
@@ -277,7 +315,7 @@ public class JustFarming implements ClientModInitializer {
             }
         });
 
-        LOGGER.info("[JustFarming] Ready. Toggle macro: R | Open GUI: I | Freelook: L | Alternate direction: N | Commands: /just rewarp, /just rewarp clear, /just visitor");
+        LOGGER.info("[JustFarming] Ready. Toggle macro: R | Open GUI: I | Freelook: L | Alternate direction: N | Commands: /just rewarp, /just rewarp clear, /just visitor, /just pest, /just farm");
     }
 
     /** Returns the shared config instance. */
