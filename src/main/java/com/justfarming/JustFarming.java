@@ -186,8 +186,9 @@ public class JustFarming implements ClientModInitializer {
         // Register client tick callback
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (toggleMacroKey.wasPressed()) {
-                // macroManager.toggle() handles all states including visitor-wait
-                boolean wasActive = macroManager.isRunning() || visitorManager.isActive();
+                // macroManager.toggle() handles all states including visitor-wait and pest killer
+                boolean wasActive = macroManager.isRunning() || visitorManager.isActive()
+                        || pestKillerManager.isActive();
                 if (!wasActive && config.gardenOnlyEnabled && !pestDetector.isInGarden()) {
                     // Prevent starting the macro outside the Garden.
                     if (client.player != null) {

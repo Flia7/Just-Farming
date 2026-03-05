@@ -24,6 +24,7 @@
   "gui.just-farming.start_macro": "Start Macro",
   "gui.just-farming.stop_macro": "Stop Macro",
   "gui.just-farming.stop_visitor": "Stop Visitor",
+  "gui.just-farming.stop_pest": "Stop Pest Macro",
   "gui.just-farming.visitors_enabled_label": "Visitor's macro:",
   "gui.just-farming.visitors_buy_bazaar_label": "Auto-Buy from Bazaar:",
   "gui.just-farming.visitors_blacklist_label": "Blacklist Visitors...",

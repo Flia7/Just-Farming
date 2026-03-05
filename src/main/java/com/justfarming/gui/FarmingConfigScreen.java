@@ -245,6 +245,16 @@ public class FarmingConfigScreen extends Screen {
                         });
         this.addDrawableChild(toggleMacroButton);
         toggleMacroButton.setTooltip(Tooltip.of(Text.literal("Start or stop the farming macro")));
+        y += bh + pad;
+
+        farmingToolSlotSlider = new FarmingToolSlotSlider(widgetX, y, bw, bh,
+                        config.farmingToolHotbarSlot);
+        this.addDrawableChild(farmingToolSlotSlider);
+        farmingToolSlotSlider.setTooltip(Tooltip.of(Text.literal(
+                "Hotbar slot that holds your farming tool.\n" +
+                "Auto: the mod detects it automatically (first non-vacuum slot).\n" +
+                "Slot 1–9: pin a specific slot so the macro always switches to the\n" +
+                "correct tool when farming starts and after killing pests.")));
         tabContentHeights[0] = y + bh - contentAreaTopY + tabScrollOffsets[0];
 
         // ── Tab 1 – Pests ─────────────────────────────────────────────────────
@@ -515,16 +525,6 @@ public class FarmingConfigScreen extends Screen {
                 "Maximum distance (blocks) from which the vacuum item activates.\n" +
                 "The Vacuum can reach up to 15 blocks – set higher to kill pests\n" +
                 "from a distance without flying all the way up to them.")));
-        y += bh + pad;
-
-        farmingToolSlotSlider = new FarmingToolSlotSlider(widgetX, y, bw, bh,
-                        config.farmingToolHotbarSlot);
-        this.addDrawableChild(farmingToolSlotSlider);
-        farmingToolSlotSlider.setTooltip(Tooltip.of(Text.literal(
-                "Hotbar slot that holds your farming tool.\n" +
-                "Auto: the pest killer detects it automatically (first non-vacuum slot).\n" +
-                "Slot 1–9: pin a specific slot so the mod always returns to the correct\n" +
-                "tool after killing pests (useful when you have multiple farming tools).")));
         y += bh + pad + gap;
         pestKillerStatusY = y;
         tabContentHeights[5] = y - contentAreaTopY + tabScrollOffsets[5];
@@ -557,6 +557,7 @@ public class FarmingConfigScreen extends Screen {
         cropSettingsButton.visible = t0 && inContentBounds(cropSettingsButton);
         setRewarpButton.visible    = t0 && inContentBounds(setRewarpButton);
         toggleMacroButton.visible  = t0 && inContentBounds(toggleMacroButton);
+        farmingToolSlotSlider.visible = t0 && inContentBounds(farmingToolSlotSlider);
 
         boolean t1 = activeTab == 1;
         pestHighlightButton.visible = t1 && inContentBounds(pestHighlightButton);
@@ -600,7 +601,6 @@ public class FarmingConfigScreen extends Screen {
         pestKillerEnabledButton.visible         = t5 && inContentBounds(pestKillerEnabledButton);
         pestKillerWarpToPlotButton.visible      = t5 && inContentBounds(pestKillerWarpToPlotButton);
         pestKillerVacuumRangeSlider.visible     = t5 && inContentBounds(pestKillerVacuumRangeSlider);
-        farmingToolSlotSlider.visible           = t5 && inContentBounds(farmingToolSlotSlider);
     }
 
     @Override
@@ -813,10 +813,15 @@ public class FarmingConfigScreen extends Screen {
 
     private Text getMacroToggleText() {
         boolean visitorActive = visitorManager != null && visitorManager.isActive();
+        boolean pestKillerIndependent = pestKillerManager != null && pestKillerManager.isActive()
+                && !macroManager.isRunning() && !macroManager.isWaitingForPestKiller();
         if (!macroManager.isRunning() && visitorActive) {
             return Text.translatable("gui.just-farming.stop_visitor");
         }
-        return macroManager.isRunning() || visitorActive
+        if (pestKillerIndependent) {
+            return Text.translatable("gui.just-farming.stop_pest");
+        }
+        return macroManager.isRunning() || visitorActive || macroManager.isWaitingForPestKiller()
                 ? Text.translatable("gui.just-farming.stop_macro")
                 : Text.translatable("gui.just-farming.start_macro");
     }

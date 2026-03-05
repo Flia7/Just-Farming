@@ -475,6 +475,13 @@ public class VisitorManager {
      */
     private boolean midRunRescanPerformed = false;
     /**
+     * When {@code true}, the routine is in the first {@link State#NAVIGATING}
+     * leg of this visitor visit.  A 300 ms pause is applied at the start of
+     * navigation so the camera rotation begins slightly later, matching the
+     * timing the server expects before the player starts moving.
+     */
+    private boolean firstNavigationInRoutine = false;
+    /**
      * Intermediate waypoint placed {@link #BEHIND_VISITOR_DIST} blocks past the
      * farthest visitor (away from the player's starting position).  The routine
      * navigates here before turning to accept the first visitor so it approaches
@@ -607,6 +614,7 @@ public class VisitorManager {
         returnWarpDelay = 0;
         returnWarpSentAt = 0;
         midRunRescanPerformed = false;
+        firstNavigationInRoutine = false;
         walkLastProgressPos = null;
         walkLastProgressCheckTime = 0;
         walkRecoveryDirection = 0;
@@ -637,6 +645,7 @@ public class VisitorManager {
         returnWarpDelay   = 0;
         returnWarpSentAt  = 0;
         midRunRescanPerformed = false;
+        firstNavigationInRoutine = true;
         cachedStairEntry = null;
         cachedStairEntryTime = 0;
         long base = config.visitorsTeleportDelay > 0
@@ -720,6 +729,16 @@ public class VisitorManager {
                 if (currentVisitor == null || !currentVisitor.isAlive()) {
                     nextVisitor();
                     return;
+                }
+
+                // Apply a 300 ms hold at the very start of the first navigation leg so
+                // the camera rotation begins slightly later, matching server-side timing.
+                if (firstNavigationInRoutine) {
+                    if (now - stateEnteredAt < 300) {
+                        releaseMovementKeys();
+                        return;
+                    }
+                    firstNavigationInRoutine = false;
                 }
 
                 Vec3d visitorPos = new Vec3d(currentVisitor.getX(), currentVisitor.getY(), currentVisitor.getZ());
