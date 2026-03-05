@@ -243,6 +243,34 @@ public class VisitorManager {
      */
     private static final double BASE_WALK_SPEED = 0.1;
 
+    // ── Wall-crash / stuck recovery ──────────────────────────────────────────
+
+    /**
+     * Interval (ms) between position-progress checks used to detect when the
+     * player is stuck against a wall.  Shorter than {@code WALK_JITTER_INTERVAL_MS}
+     * so a crash is detected before the jitter re-randomises.
+     */
+    private static final long   WALK_STUCK_CHECK_INTERVAL_MS    = 1000L;
+
+    /**
+     * Minimum distance (blocks) the player must have travelled since the last
+     * progress check to be considered "not stuck".  Very small to allow for
+     * low-speed braking near the visitor target.
+     */
+    private static final double WALK_MIN_PROGRESS_PER_INTERVAL  = 0.3;
+
+    /**
+     * How long (ms) to hold the back key during the initial phase of wall-crash
+     * recovery, briefly separating the player from the wall before strafing.
+     */
+    private static final long   WALK_RECOVERY_BACKUP_MS         = 400L;
+
+    /**
+     * How long (ms) to hold the strafe key after the backup phase, steering the
+     * player around the obstacle that caused the crash.
+     */
+    private static final long   WALK_RECOVERY_STRAFE_MS         = 600L;
+
     // ── State machine ────────────────────────────────────────────────────────
 
     /** Internal states of the visitor routine. */
@@ -315,6 +343,28 @@ public class VisitorManager {
     private float walkJitter = 0f;
     /** Timestamp (ms) when the walk jitter should next be re-randomised. */
     private long  walkJitterNextUpdate = 0;
+
+    // Wall-crash / stuck-detection state for walkToward
+    /** Player's position at the last stuck-detection progress check; {@code null} = not yet set. */
+    private Vec3d walkLastProgressPos         = null;
+    /** Timestamp (ms) of the last stuck-detection progress check. */
+    private long  walkLastProgressCheckTime   = 0;
+    /**
+     * Direction of the active recovery-strafe: {@code +1} = right, {@code -1} = left,
+     * {@code 0} = no active recovery.  Alternates on each successive crash so the
+     * player tries both sides over time.
+     */
+    private int   walkRecoveryDirection       = 0;
+    /**
+     * Wall-clock time (ms) at which the back-up phase of wall-crash recovery ends.
+     * {@code 0} means no backup is active.
+     */
+    private long  walkRecoveryBackupEndTime   = 0;
+    /**
+     * Wall-clock time (ms) at which the strafe phase of wall-crash recovery ends.
+     * {@code 0} means no strafe recovery is active.
+     */
+    private long  walkRecoveryEndTime         = 0;
 
     // Visitor tracking
     private Entity       currentVisitor  = null;
@@ -464,6 +514,11 @@ public class VisitorManager {
         returnWarpDelay = 0;
         returnWarpSentAt = 0;
         midRunRescanPerformed = false;
+        walkLastProgressPos = null;
+        walkLastProgressCheckTime = 0;
+        walkRecoveryDirection = 0;
+        walkRecoveryBackupEndTime = 0;
+        walkRecoveryEndTime = 0;
         enterState(State.IDLE);
     }
 
@@ -871,6 +926,14 @@ public class VisitorManager {
         stateEnteredAt = System.currentTimeMillis();
         currentActionDelay = rollActionDelay();
         randomExtra150 = random.nextInt(Math.max(1, config.globalRandomizationMs));
+        if (next == State.NAVIGATING || next == State.ACCEPTING_OFFER) {
+            // Reset stuck / wall-crash detection so each new navigation leg starts fresh.
+            walkLastProgressPos       = null;
+            walkLastProgressCheckTime = 0;
+            walkRecoveryDirection     = 0;
+            walkRecoveryBackupEndTime = 0;
+            walkRecoveryEndTime       = 0;
+        }
         LOGGER.info("[JustFarming-Visitors] -> {}", next);
     }
 
@@ -976,6 +1039,48 @@ public class VisitorManager {
         // that all ultimately manifest as a higher MOVEMENT_SPEED attribute value.
         double speedMult = getSpeedMultiplier(player);
 
+        // ── Stuck / wall-crash detection ──────────────────────────────────────
+        Vec3d playerPos = new Vec3d(player.getX(), player.getY(), player.getZ());
+        if (walkLastProgressPos == null) {
+            walkLastProgressPos       = playerPos;
+            walkLastProgressCheckTime = now;
+        }
+        if (now - walkLastProgressCheckTime >= WALK_STUCK_CHECK_INTERVAL_MS) {
+            double progress    = walkLastProgressPos.distanceTo(playerPos);
+            double distToTarget = playerPos.distanceTo(target);
+            if (progress < WALK_MIN_PROGRESS_PER_INTERVAL && distToTarget > INTERACT_RADIUS + 0.5) {
+                // Not making progress: start a crash-recovery sequence (back up, then strafe).
+                // Alternate strafe direction between crashes so we try both sides over time.
+                // Starting from 0 (no previous recovery), the first crash goes right (+1),
+                // subsequent crashes alternate: +1 → -1 → +1 → ...
+                walkRecoveryDirection     = (walkRecoveryDirection == 1) ? -1 : 1;
+                walkRecoveryBackupEndTime = now + WALK_RECOVERY_BACKUP_MS;
+                walkRecoveryEndTime       = now + WALK_RECOVERY_BACKUP_MS + WALK_RECOVERY_STRAFE_MS;
+                LOGGER.debug("[JustFarming-Visitors] Stuck (progress={} blocks); backing up then strafing {}.",
+                        String.format("%.2f", progress),
+                        walkRecoveryDirection > 0 ? "right" : "left");
+            }
+            walkLastProgressPos       = playerPos;
+            walkLastProgressCheckTime = now;
+        }
+
+        // Phase 1 of crash-recovery: back up briefly so the player detaches from the wall.
+        if (now < walkRecoveryBackupEndTime) {
+            targetYaw = baseTargetYaw;
+            // Scale rotation speed by movement speed so the camera catches up quickly
+            // even at high SkyBlock movement speeds.
+            smoothRotateCamera(player, SMOOTH_LOOK_DEGREES_PER_SECOND * (float) Math.max(1.0, speedMult));
+            client.options.forwardKey.setPressed(false);
+            client.options.backKey.setPressed(true);
+            client.options.leftKey.setPressed(false);
+            client.options.rightKey.setPressed(false);
+            client.options.jumpKey.setPressed(false);
+            return;
+        }
+
+        // Whether the strafe phase of crash-recovery is still active.
+        boolean isRecoveryActive = now < walkRecoveryEndTime && walkRecoveryDirection != 0;
+
         // Scale the probe-step with speed so we look further ahead when moving fast,
         // giving enough reaction distance to stop before hitting a wall.
         double probeStep = Math.min(PROBE_STEP * speedMult, 5.0);
@@ -1011,9 +1116,12 @@ public class VisitorManager {
             }
         }
 
-        // Aim camera toward the chosen direction with a single smooth step.
+        // Aim camera toward the chosen direction using a speed-scaled rotation rate.
+        // At high SkyBlock movement speeds the player can overshoot a turn before a
+        // slow camera has finished rotating, so the rate scales with speedMult so the
+        // camera always keeps up with the player's momentum.
         targetYaw = chosenYaw;
-        smoothRotateCamera(player);
+        smoothRotateCamera(player, SMOOTH_LOOK_DEGREES_PER_SECOND * (float) Math.max(1.0, speedMult));
 
         if (shouldWalk) {
             // Speed-aware pulsed walking near the target.
@@ -1022,7 +1130,7 @@ public class VisitorManager {
             // in a single tick.  Once inside the "braking zone" we only press the
             // forward key every pulseStride ticks (proportional to speed), reducing
             // the average forward velocity enough to stop precisely at INTERACT_RADIUS.
-            double dist = new Vec3d(player.getX(), player.getY(), player.getZ()).distanceTo(target);
+            double dist = playerPos.distanceTo(target);
             double brakingRadius = INTERACT_RADIUS + speedMult * 2.0;
             if (dist < brakingRadius) {
                 int pulseStride = Math.max(1, (int) Math.ceil(speedMult));
@@ -1051,8 +1159,10 @@ public class VisitorManager {
         client.options.forwardKey.setPressed(shouldWalk);
         client.options.jumpKey.setPressed(false);
         client.options.backKey.setPressed(false);
-        client.options.leftKey.setPressed(false);
-        client.options.rightKey.setPressed(false);
+        // During the strafe phase of crash-recovery, press the appropriate strafe key
+        // alongside forward movement so the player slides around the obstacle.
+        client.options.leftKey.setPressed(isRecoveryActive && walkRecoveryDirection < 0);
+        client.options.rightKey.setPressed(isRecoveryActive && walkRecoveryDirection > 0);
     }
 
     /**
@@ -1226,6 +1336,16 @@ public class VisitorManager {
      * glides smoothly regardless of frame rate or server lag spikes.
      */
     private void smoothRotateCamera(ClientPlayerEntity player) {
+        smoothRotateCamera(player, SMOOTH_LOOK_DEGREES_PER_SECOND);
+    }
+
+    /**
+     * Move the player's yaw and pitch one step closer to
+     * {@link #targetYaw}/{@link #targetPitch} at the given {@code degreesPerSecond}
+     * rate.  Higher values produce faster camera tracking which is required at
+     * elevated SkyBlock movement speeds to maintain accurate directional control.
+     */
+    private void smoothRotateCamera(ClientPlayerEntity player, float degreesPerSecond) {
         long now = System.currentTimeMillis();
         // Cap the delta to SMOOTH_LOOK_MAX_DELTA_MS so a severe lag spike doesn't teleport the camera.
         float deltaMs = (lastSmoothLookTime == 0)
@@ -1235,7 +1355,7 @@ public class VisitorManager {
         lastSmoothLookTime = now;
 
         // Scale the maximum step by actual elapsed time for frame-rate independence.
-        float step = SMOOTH_LOOK_DEGREES_PER_SECOND * deltaMs / 1000.0f;
+        float step = degreesPerSecond * deltaMs / 1000.0f;
 
         float currentYaw   = player.getYaw();
         float currentPitch = player.getPitch();
