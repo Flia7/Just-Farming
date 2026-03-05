@@ -115,6 +115,7 @@ public class FarmingConfigScreen extends Screen {
     private FlatBoolToggleWidget          pestKillerWarpToPlotButton;
     private PestKillerTeleportDelaySlider pestKillerTeleportDelaySlider;
     private PestKillerKillDurationSlider  pestKillerKillDurationSlider;
+    private PestKillerVacuumRangeSlider   pestKillerVacuumRangeSlider;
 
 
     // ── Always-visible widget ─────────────────────────────────────────────────
@@ -501,6 +502,15 @@ public class FarmingConfigScreen extends Screen {
         this.addDrawableChild(pestKillerKillDurationSlider);
         pestKillerKillDurationSlider.setTooltip(Tooltip.of(Text.literal(
                 "How long to hold right-click on each pest to kill it. (ms)")));
+        y += bh + pad;
+
+        pestKillerVacuumRangeSlider = new PestKillerVacuumRangeSlider(widgetX, y, bw, bh,
+                        config.pestKillerVacuumRange);
+        this.addDrawableChild(pestKillerVacuumRangeSlider);
+        pestKillerVacuumRangeSlider.setTooltip(Tooltip.of(Text.literal(
+                "Maximum distance (blocks) from which the vacuum item activates.\n" +
+                "The Vacuum can reach up to 15 blocks – set higher to kill pests\n" +
+                "from a distance without flying all the way up to them.")));
         y += bh + pad + gap;
         pestKillerStatusY = y;
         tabContentHeights[5] = y - contentAreaTopY + tabScrollOffsets[5];
@@ -575,6 +585,7 @@ public class FarmingConfigScreen extends Screen {
         pestKillerWarpToPlotButton.visible      = t5 && inContentBounds(pestKillerWarpToPlotButton);
         pestKillerTeleportDelaySlider.visible   = t5 && inContentBounds(pestKillerTeleportDelaySlider);
         pestKillerKillDurationSlider.visible    = t5 && inContentBounds(pestKillerKillDurationSlider);
+        pestKillerVacuumRangeSlider.visible     = t5 && inContentBounds(pestKillerVacuumRangeSlider);
     }
 
     @Override
@@ -766,6 +777,7 @@ public class FarmingConfigScreen extends Screen {
         config.pestKillerWarpToPlot     = pestKillerWarpToPlotButton.getValue();
         config.pestKillerTeleportDelay  = pestKillerTeleportDelaySlider.getDelayValue();
         config.pestKillerKillDuration   = pestKillerKillDurationSlider.getDelayValue();
+        config.pestKillerVacuumRange    = pestKillerVacuumRangeSlider.getRangeValue();
         macroManager.setConfig(config);
         if (visitorManager != null) visitorManager.setConfig(config);
         if (pestKillerManager != null) pestKillerManager.setConfig(config);
@@ -1382,6 +1394,60 @@ public class FarmingConfigScreen extends Screen {
         @Override
         protected void updateMessage() {
             setMessage(Text.literal(String.format("Kill Duration: %d ms", getIntValue())));
+        }
+    }
+
+    /**
+     * Slider for the pest killer vacuum activation range (1–15 blocks, step 1).
+     * Higher values allow the vacuum to be used from further away.
+     */
+    private static class PestKillerVacuumRangeSlider extends SliderWidget {
+
+        private static final int MIN = 1;
+        private static final int MAX = 15;
+        private static final int GLFW_KEY_LEFT  = 263;
+        private static final int GLFW_KEY_RIGHT = 262;
+
+        PestKillerVacuumRangeSlider(int x, int y, int width, int height, int initialValue) {
+            super(x, y, width, height, Text.empty(),
+                    (double)(Math.max(MIN, Math.min(MAX, initialValue)) - MIN) / (MAX - MIN));
+            updateMessage();
+        }
+
+        int getRangeValue() {
+            return MIN + (int) Math.round(value * (MAX - MIN));
+        }
+
+        @Override
+        protected void applyValue() {
+            int steps = MAX - MIN;
+            int rawInt = MIN + (int) Math.round(this.value * steps);
+            rawInt = Math.max(MIN, Math.min(MAX, rawInt));
+            this.value = (double)(rawInt - MIN) / steps;
+        }
+
+        @Override
+        public boolean keyPressed(net.minecraft.client.input.KeyInput input) {
+            if (input.key() == GLFW_KEY_LEFT || input.key() == GLFW_KEY_RIGHT) {
+                double step = 1.0 / (MAX - MIN);
+                this.value = (input.key() == GLFW_KEY_LEFT)
+                        ? Math.max(0.0, this.value - step)
+                        : Math.min(1.0, this.value + step);
+                applyValue();
+                updateMessage();
+                return true;
+            }
+            return super.keyPressed(input);
+        }
+
+        @Override
+        protected void updateMessage() {
+            setMessage(Text.literal(String.format("Vacuum Range: %d blocks", getRangeValue())));
+        }
+
+        @Override
+        public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
+            FlatButtonWidget.renderFlatSlider(context, getX(), getY(), getWidth(), getHeight(), value, getMessage());
         }
     }
 }
