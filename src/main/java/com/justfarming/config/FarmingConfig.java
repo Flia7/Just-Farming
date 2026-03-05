@@ -219,6 +219,34 @@ public class FarmingConfig {
      */
     public List<String> visitorBlacklist = new ArrayList<>();
 
+    // --- Auto Pest Killer Settings ---
+
+    /**
+     * When {@code true}, the mod will automatically kill pests when they are
+     * detected in the Garden by flying toward them and using a vacuum item.
+     */
+    public boolean autoPestKillerEnabled = false;
+
+    /**
+     * When {@code true} (and {@link #autoPestKillerEnabled} is also {@code true}),
+     * the pest killer will run {@code /tptoplot <plot>} to warp directly to the
+     * infested plot.  When {@code false}, it runs {@code /warp garden} instead.
+     */
+    public boolean pestKillerWarpToPlot = true;
+
+    /**
+     * How long (in milliseconds) to wait after sending the teleport command
+     * before scanning for pest entities.  Increase if the server is slow to
+     * load the destination area.
+     */
+    public int pestKillerTeleportDelay = 4000;
+
+    /**
+     * How long (in milliseconds) to hold the right-click (vacuum) on each pest
+     * before moving on to the next one.
+     */
+    public int pestKillerKillDuration = 2000;
+
     /**
      * Minimum number of visitors that must be present at the barn for the
      * visitor routine to proceed.  If fewer visitors are found after the

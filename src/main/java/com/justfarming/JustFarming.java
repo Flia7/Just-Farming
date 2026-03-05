@@ -4,6 +4,7 @@ import com.justfarming.config.FarmingConfig;
 import com.justfarming.gui.FarmingConfigScreen;
 import com.justfarming.pest.PestDetector;
 import com.justfarming.pest.PestEntityDetector;
+import com.justfarming.pest.PestKillerManager;
 import com.justfarming.render.OverlayRenderer;
 import com.justfarming.visitor.VisitorManager;
 import net.fabricmc.api.ClientModInitializer;
@@ -44,6 +45,9 @@ public class JustFarming implements ClientModInitializer {
     private static PestDetector pestDetector;
     private static PestEntityDetector pestEntityDetector;
     private static VisitorManager visitorManager;
+    private static PestKillerManager pestKillerManager;
+    /** {@code true} when the farming macro was running before the pest killer started. */
+    private static boolean pestKillerShouldResumeMacro = false;
 
     // Keybindings
     private static KeyBinding toggleMacroKey;
@@ -64,6 +68,8 @@ public class JustFarming implements ClientModInitializer {
         pestDetector = new PestDetector();
         pestEntityDetector = new PestEntityDetector();
         visitorManager = new VisitorManager(net.minecraft.client.MinecraftClient.getInstance(), config);
+        pestKillerManager = new PestKillerManager(
+                net.minecraft.client.MinecraftClient.getInstance(), config, pestEntityDetector);
         macroManager.setVisitorManager(visitorManager);
 
         // Register keybindings
@@ -191,6 +197,44 @@ public class JustFarming implements ClientModInitializer {
             // Run visitor manager tick (active only when visitor routine is running)
             visitorManager.onTick();
 
+            // Run pest killer tick
+            if (config.autoPestKillerEnabled) {
+                pestKillerManager.onTick();
+
+                // When pest killer finishes, optionally restart the farming macro.
+                // The macro is guaranteed not to be running here because it was explicitly
+                // stopped (by pest killer trigger below) before the pest killer started.
+                if (pestKillerManager.isDone()) {
+                    if (pestKillerShouldResumeMacro && !macroManager.isRunning()
+                            && !visitorManager.isActive()) {
+                        macroManager.start();
+                        if (client.player != null) {
+                            client.player.sendMessage(net.minecraft.text.Text.literal(
+                                    "§a[JustFarming] Pest killer done – resuming macro."), true);
+                        }
+                    }
+                    pestKillerShouldResumeMacro = false;
+                    pestKillerManager.reset();
+                }
+
+                // Trigger pest killer when new pests appear and it is not already running
+                if (!pestKillerManager.isActive() && !visitorManager.isActive()
+                        && pestDetector.getTotalPests() > 0
+                        && !pestEntityDetector.getDetectedPests().isEmpty()) {
+                    String plotName = pestDetector.getPestPlots().isEmpty()
+                            ? null : pestDetector.getPestPlots().iterator().next();
+                    pestKillerShouldResumeMacro = macroManager.isRunning();
+                    if (macroManager.isRunning()) {
+                        macroManager.stop();
+                    }
+                    pestKillerManager.start(plotName);
+                    if (client.player != null) {
+                        client.player.sendMessage(net.minecraft.text.Text.literal(
+                                "§e[JustFarming] Pests detected – starting pest killer."), true);
+                    }
+                }
+            }
+
             // Update pest detection every tick
             pestDetector.update(client);
             pestEntityDetector.update(client);
@@ -228,6 +272,9 @@ public class JustFarming implements ClientModInitializer {
         WorldRenderEvents.BEFORE_ENTITIES.register(ctx -> {
             visitorManager.onRenderTick();
             macroManager.onRenderTick();
+            if (config.autoPestKillerEnabled) {
+                pestKillerManager.onRenderTick();
+            }
         });
 
         LOGGER.info("[JustFarming] Ready. Toggle macro: R | Open GUI: I | Freelook: L | Alternate direction: N | Commands: /just rewarp, /just rewarp clear, /just visitor");
@@ -251,5 +298,10 @@ public class JustFarming implements ClientModInitializer {
     /** Returns the shared visitor manager instance. */
     public static VisitorManager getVisitorManager() {
         return visitorManager;
+    }
+
+    /** Returns the shared pest killer manager instance. */
+    public static PestKillerManager getPestKillerManager() {
+        return pestKillerManager;
     }
 }

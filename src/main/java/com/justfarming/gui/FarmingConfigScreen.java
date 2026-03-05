@@ -2,6 +2,7 @@ package com.justfarming.gui;
 
 import com.justfarming.MacroManager;
 import com.justfarming.config.FarmingConfig;
+import com.justfarming.pest.PestKillerManager;
 import com.justfarming.visitor.VisitorManager;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
@@ -47,7 +48,7 @@ public class FarmingConfigScreen extends Screen {
     private static final int COL_SHADOW      = 0x60000000; // drop shadow
 
     // ── Tabs ──────────────────────────────────────────────────────────────────
-    private static final String[] TAB_NAMES = { "Farming", "Pests", "Misc", "Delays", "Visitor's macro" };
+    private static final String[] TAB_NAMES = { "Farming", "Pests", "Misc", "Delays", "Visitor's macro", "Pest Killer" };
     private int activeTab = 0;
 
     // ── Dynamic layout (computed in init) ─────────────────────────────────────
@@ -62,6 +63,7 @@ public class FarmingConfigScreen extends Screen {
     private final FarmingConfig config;
     private final MacroManager macroManager;
     private final VisitorManager visitorManager;
+    private final PestKillerManager pestKillerManager;
 
     // ── Tab selector buttons (in left nav panel) ──────────────────────────────
     private TabButton[] tabButtons;
@@ -108,6 +110,12 @@ public class FarmingConfigScreen extends Screen {
     private VisitorMinCountSlider         visitorsMinCountSlider;
     private VisitorMaxPriceSlider         visitorsMaxPriceSlider;
 
+    // ── Tab 5 – Pest Killer widgets ───────────────────────────────────────────
+    private FlatBoolToggleWidget          pestKillerEnabledButton;
+    private FlatBoolToggleWidget          pestKillerWarpToPlotButton;
+    private PestKillerTeleportDelaySlider pestKillerTeleportDelaySlider;
+    private PestKillerKillDurationSlider  pestKillerKillDurationSlider;
+
 
     // ── Always-visible widget ─────────────────────────────────────────────────
     private FlatButtonWidget saveCloseButton;
@@ -119,6 +127,8 @@ public class FarmingConfigScreen extends Screen {
     private int sectionVisitorsY;
     private int sectionVisitorFiltersY;
     private int visitorStatusY;
+    private int sectionPestKillerY;
+    private int pestKillerStatusY;
 
     // ── Scroll state (persists across clearAndInit) ───────────────────────────
     private final int[] tabScrollOffsets  = new int[TAB_NAMES.length];
@@ -132,6 +142,7 @@ public class FarmingConfigScreen extends Screen {
         this.config         = config;
         this.macroManager   = macroManager;
         this.visitorManager = com.justfarming.JustFarming.getVisitorManager();
+        this.pestKillerManager = com.justfarming.JustFarming.getPestKillerManager();
     }
 
     @Override
@@ -455,6 +466,45 @@ public class FarmingConfigScreen extends Screen {
         visitorStatusY = y;
         tabContentHeights[4] = y - contentAreaTopY + tabScrollOffsets[4];
 
+        // ── Tab 5 – Pest Killer ───────────────────────────────────────────────
+        y = contentAreaTopY - tabScrollOffsets[5];
+        sectionPestKillerY = y;
+        y += sLH;
+
+        pestKillerEnabledButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
+                        Text.translatable("gui.just-farming.pest_killer_enabled_label"),
+                        config.autoPestKillerEnabled);
+        this.addDrawableChild(pestKillerEnabledButton);
+        pestKillerEnabledButton.setTooltip(Tooltip.of(Text.literal(
+                "When enabled, the mod automatically flies toward pests and\n" +
+                "kills them with a vacuum item when they are detected in the Garden.")));
+        y += bh + pad;
+
+        pestKillerWarpToPlotButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
+                        Text.translatable("gui.just-farming.pest_killer_warp_to_plot_label"),
+                        config.pestKillerWarpToPlot);
+        this.addDrawableChild(pestKillerWarpToPlotButton);
+        pestKillerWarpToPlotButton.setTooltip(Tooltip.of(Text.literal(
+                "Enable Warping to Plot: if ON, runs /tptoplot <plot> to warp directly\n" +
+                "to the infested plot. If OFF, runs /warp garden instead.")));
+        y += bh + pad;
+
+        pestKillerTeleportDelaySlider = new PestKillerTeleportDelaySlider(widgetX, y, bw, bh,
+                        config.pestKillerTeleportDelay);
+        this.addDrawableChild(pestKillerTeleportDelaySlider);
+        pestKillerTeleportDelaySlider.setTooltip(Tooltip.of(Text.literal(
+                "How long to wait after the teleport command before scanning for pest entities. (ms)")));
+        y += bh + pad;
+
+        pestKillerKillDurationSlider = new PestKillerKillDurationSlider(widgetX, y, bw, bh,
+                        config.pestKillerKillDuration);
+        this.addDrawableChild(pestKillerKillDurationSlider);
+        pestKillerKillDurationSlider.setTooltip(Tooltip.of(Text.literal(
+                "How long to hold right-click on each pest to kill it. (ms)")));
+        y += bh + pad + gap;
+        pestKillerStatusY = y;
+        tabContentHeights[5] = y - contentAreaTopY + tabScrollOffsets[5];
+
         // ── Always-visible: Close button anchored to the bottom ───────────────
         int closeBtnY = winY + winH - bh - pad;
         saveCloseButton = new FlatButtonWidget(widgetX, closeBtnY, bw, bh,
@@ -519,6 +569,12 @@ public class FarmingConfigScreen extends Screen {
         visitorsBlacklistButton.visible       = t4 && inContentBounds(visitorsBlacklistButton);
         visitorsMinCountSlider.visible        = t4 && inContentBounds(visitorsMinCountSlider);
         visitorsMaxPriceSlider.visible        = t4 && inContentBounds(visitorsMaxPriceSlider);
+
+        boolean t5 = activeTab == 5;
+        pestKillerEnabledButton.visible         = t5 && inContentBounds(pestKillerEnabledButton);
+        pestKillerWarpToPlotButton.visible      = t5 && inContentBounds(pestKillerWarpToPlotButton);
+        pestKillerTeleportDelaySlider.visible   = t5 && inContentBounds(pestKillerTeleportDelaySlider);
+        pestKillerKillDurationSlider.visible    = t5 && inContentBounds(pestKillerKillDurationSlider);
     }
 
     @Override
@@ -604,6 +660,17 @@ public class FarmingConfigScreen extends Screen {
                 context.drawTextWithShadow(this.textRenderer,
                         net.minecraft.text.Text.literal(stateText).withColor(COL_TEXT_MUTED),
                         visitorStatusX, visitorStatusY, COL_TEXT_MUTED);
+            }
+        } else if (activeTab == 5) {
+            if (yInContentBounds(sectionPestKillerY))
+                drawSectionLabel(context, "Auto Pest Killer", sectionPestKillerY);
+            // Show current pest killer state below the buttons when active
+            if (pestKillerManager != null && pestKillerManager.isActive() && yInContentBounds(pestKillerStatusY)) {
+                String stateText = "State: " + pestKillerManager.getState().name();
+                int statusX = contentX + Math.round(12 * scale);
+                context.drawTextWithShadow(this.textRenderer,
+                        net.minecraft.text.Text.literal(stateText).withColor(COL_TEXT_MUTED),
+                        statusX, pestKillerStatusY, COL_TEXT_MUTED);
             }
         }
 
@@ -695,8 +762,13 @@ public class FarmingConfigScreen extends Screen {
         config.bazaarSearchDelay        = bazaarSearchDelaySlider.getDelayValue();
         config.visitorsMinCount         = visitorsMinCountSlider.getCountValue();
         config.visitorsMaxPrice         = visitorsMaxPriceSlider.getPriceValue();
+        config.autoPestKillerEnabled    = pestKillerEnabledButton.getValue();
+        config.pestKillerWarpToPlot     = pestKillerWarpToPlotButton.getValue();
+        config.pestKillerTeleportDelay  = pestKillerTeleportDelaySlider.getDelayValue();
+        config.pestKillerKillDuration   = pestKillerKillDurationSlider.getDelayValue();
         macroManager.setConfig(config);
         if (visitorManager != null) visitorManager.setConfig(config);
+        if (pestKillerManager != null) pestKillerManager.setConfig(config);
     }
 
     private Text getCropSelectText() {
@@ -1280,6 +1352,36 @@ public class FarmingConfigScreen extends Screen {
         @Override
         public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
             FlatButtonWidget.renderFlatSlider(context, getX(), getY(), getWidth(), getHeight(), value, getMessage());
+        }
+    }
+
+    /** Slider for the pest killer teleport delay (1000–10000 ms). */
+    private static class PestKillerTeleportDelaySlider extends IntStepSlider {
+
+        PestKillerTeleportDelaySlider(int x, int y, int width, int height, int initialValue) {
+            super(x, y, width, height, 1000, 10000, initialValue);
+        }
+
+        int getDelayValue() { return getIntValue(); }
+
+        @Override
+        protected void updateMessage() {
+            setMessage(Text.literal(String.format("Teleport Delay: %d ms", getIntValue())));
+        }
+    }
+
+    /** Slider for the pest killer kill duration (500–5000 ms). */
+    private static class PestKillerKillDurationSlider extends IntStepSlider {
+
+        PestKillerKillDurationSlider(int x, int y, int width, int height, int initialValue) {
+            super(x, y, width, height, 500, 5000, initialValue);
+        }
+
+        int getDelayValue() { return getIntValue(); }
+
+        @Override
+        protected void updateMessage() {
+            setMessage(Text.literal(String.format("Kill Duration: %d ms", getIntValue())));
         }
     }
 }
