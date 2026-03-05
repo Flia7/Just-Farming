@@ -53,7 +53,7 @@ public class PestKillerManager {
      */
     private static final long SCAN_TIMEOUT_MS = 3000;
 
-    /** Distance (blocks) within which the player is considered "at" the pest. */
+    /** Fallback kill radius (blocks) used when the config value is not set. */
     private static final double KILL_RADIUS = 5.0;
 
     /** Distance (blocks) at which the player starts slowing down near the pest. */
@@ -124,6 +124,23 @@ public class PestKillerManager {
     private float targetPitch = 0f;
     /** Wall-clock time (ms) of the last smooth-look call; 0 = not yet called. */
     private long  lastSmoothLookTime = 0;
+
+    // Stuck detection (used by flyToward to recover when the player stops making progress)
+    private Vec3d lastProgressPos     = null;
+    private long  lastProgressCheckTime = 0;
+    /** Current strafe direction used during an unstuck manoeuvre: +1 = right, -1 = left, 0 = none. */
+    private int   strafeDirection      = 0;
+    /** Wall-clock time (ms) at which the current strafe manoeuvre ends; 0 = inactive. */
+    private long  strafeEndTime        = 0;
+
+    /** How often (ms) to check whether the player is stuck. */
+    private static final long   STUCK_CHECK_INTERVAL_MS      = 1500;
+    /** Minimum distance (blocks) the player must travel per check interval to be considered "un-stuck". */
+    private static final double MIN_PROGRESS_PER_INTERVAL    = 0.5;
+    /** How long (ms) to hold the strafe key when an unstuck manoeuvre is triggered. */
+    private static final long   STRAFE_DURATION_MS           = 600;
+    /** Minimum distance to the target (blocks) below which stuck detection is skipped. */
+    private static final double MIN_STUCK_CHECK_DIST         = 2.0;
 
     // Hotbar state
     /** Hotbar slot of the vacuum item; -1 if not found. */
@@ -279,7 +296,7 @@ public class PestKillerManager {
                 }
                 Vec3d pestPos = currentPest.position();
                 double dist = player.getEyePos().distanceTo(pestPos);
-                if (dist <= KILL_RADIUS) {
+                if (dist <= getEffectiveKillRadius()) {
                     releaseMovementKeys();
                     // Find vacuum before entering kill state
                     findAndEquipVacuum(player);
@@ -305,7 +322,7 @@ public class PestKillerManager {
                 Vec3d pestPos = currentPest.position();
                 double dist = player.getEyePos().distanceTo(pestPos);
                 // If the pest moved out of kill range, fly toward it again
-                if (dist > KILL_RADIUS * 1.5) {
+                if (dist > getEffectiveKillRadius() * 1.5) {
                     enterState(State.FLYING_TO_PEST);
                     return;
                 }
@@ -354,6 +371,13 @@ public class PestKillerManager {
         stateEnteredAt = System.currentTimeMillis();
         int globalRandom = (config != null) ? config.globalRandomizationMs : 0;
         randomExtra = random.nextInt(Math.max(1, globalRandom));
+        if (next == State.FLYING_TO_PEST) {
+            // Reset stuck detection so each new flight attempt starts fresh
+            lastProgressPos      = null;
+            lastProgressCheckTime = 0;
+            strafeEndTime        = 0;
+            strafeDirection      = 0;
+        }
         if (next != State.IDLE && next != State.DONE) {
             LOGGER.info("[JustFarming-PestKiller] -> {}", next);
         }
@@ -428,8 +452,15 @@ public class PestKillerManager {
      * Fly one tick toward {@code target} by pointing the camera at it (including
      * pitch for vertical movement) and pressing the forward key.  In the Hypixel
      * Skyblock Garden, players have creative-style flight so forward + pitch causes
-     * genuine 3D movement.  A jump key press is added when the target is
-     * significantly above the player as a fallback for non-flight contexts.
+     * genuine 3D movement.
+     *
+     * <p>The jump key is held when the target is above the player and the sneak
+     * key is held when the target is below – both are standard creative-flight
+     * controls for ascending and descending respectively.
+     *
+     * <p>When the player stops making progress toward the target (stuck detection),
+     * a brief left/right strafe manoeuvre is triggered to help navigate around any
+     * obstacle that is blocking the direct path.
      */
     private void flyToward(ClientPlayerEntity player, Vec3d target) {
         if (client.options == null) return;
@@ -455,15 +486,40 @@ public class PestKillerManager {
             shouldFly = (ticks % pulseStride == 0);
         }
 
-        // Press jump when the target is clearly above the player and not in creative flight
+        // Vertical movement: jump to ascend, sneak to descend (creative-flight controls)
         double dy = target.y - eye.y;
-        boolean shouldJump = dy > 1.5 && !shouldFly; // jump while waiting for camera
+        boolean shouldJump  = dy >  1.5;
+        boolean shouldSneak = dy < -1.5;
 
+        // ── Stuck detection ─────────────────────────────────────────────────
+        long now = System.currentTimeMillis();
+        if (lastProgressPos == null) {
+            lastProgressPos      = eye;
+            lastProgressCheckTime = now;
+        }
+        if (now - lastProgressCheckTime >= STUCK_CHECK_INTERVAL_MS) {
+            double progress = lastProgressPos.distanceTo(eye);
+            if (progress < MIN_PROGRESS_PER_INTERVAL && dist > MIN_STUCK_CHECK_DIST) {
+                // Player has not moved enough – alternate strafe direction and hold it briefly
+                strafeDirection = (strafeDirection >= 0) ? -1 : 1;
+                strafeEndTime   = now + STRAFE_DURATION_MS;
+                LOGGER.debug("[JustFarming-PestKiller] Stuck (progress={} blocks); strafing {}.",
+                        String.format("%.2f", progress), strafeDirection > 0 ? "right" : "left");
+            }
+            lastProgressPos       = eye;
+            lastProgressCheckTime = now;
+        }
+
+        boolean isStrafeActive = now < strafeEndTime && strafeDirection != 0;
+
+        // Allow forward movement alongside strafe so the player still approaches
+        // the target while the unstuck manoeuvre is active.
         client.options.forwardKey.setPressed(shouldFly);
         client.options.jumpKey.setPressed(shouldJump);
+        client.options.sneakKey.setPressed(shouldSneak);
+        client.options.leftKey.setPressed(isStrafeActive && strafeDirection < 0);
+        client.options.rightKey.setPressed(isStrafeActive && strafeDirection > 0);
         client.options.backKey.setPressed(false);
-        client.options.leftKey.setPressed(false);
-        client.options.rightKey.setPressed(false);
     }
 
     /** Aim the camera toward {@code target} using smooth interpolation. */
@@ -522,6 +578,19 @@ public class PestKillerManager {
         client.options.leftKey.setPressed(false);
         client.options.rightKey.setPressed(false);
         client.options.jumpKey.setPressed(false);
+        client.options.sneakKey.setPressed(false);
+    }
+
+    /**
+     * Returns the effective kill/vacuum radius in blocks.
+     * Uses {@link FarmingConfig#pestKillerVacuumRange} when set, otherwise falls
+     * back to the hardcoded {@link #KILL_RADIUS}.
+     */
+    private double getEffectiveKillRadius() {
+        if (config != null && config.pestKillerVacuumRange > 0) {
+            return config.pestKillerVacuumRange;
+        }
+        return KILL_RADIUS;
     }
 
     private void returnToFarm() {

@@ -248,6 +248,15 @@ public class FarmingConfig {
     public int pestKillerKillDuration = 2000;
 
     /**
+     * Maximum distance (in blocks) from which the vacuum item is used to kill a pest.
+     * The Vacuum can reach up to 15 blocks; set higher values to kill pests from a
+     * distance without flying all the way up to them.
+     *
+     * <p>Range: 1–15 blocks.  Default {@code 5}.
+     */
+    public int pestKillerVacuumRange = 5;
+
+    /**
      * Minimum number of visitors that must be present at the barn for the
      * visitor routine to proceed.  If fewer visitors are found after the
      * teleport wait, the routine skips the barn visit and warps directly back
