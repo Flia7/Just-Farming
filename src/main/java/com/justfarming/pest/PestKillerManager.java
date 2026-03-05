@@ -287,8 +287,14 @@ public class PestKillerManager {
     // Hotbar state
     /** Hotbar slot of the vacuum item; -1 if not found. */
     private int vacuumSlot = -1;
-    /** Hotbar slot active before the vacuum switch; -1 if unknown. */
+    /** Hotbar slot of the farming tool detected at routine start; -1 if unknown. */
     private int preVacuumSlot = -1;
+    /**
+     * Wall-clock timestamp (ms) after which post-kill scan may begin.
+     * Set to {@code now + pestKillerGoToNextPestDelay} each time a pest is
+     * killed so there is a short, configurable gap before flying to the next one.
+     */
+    private long pestKillWaitEnd = 0;
     /**
      * Kill range (blocks) automatically detected from the equipped vacuum's
      * display name.  {@code -1} means no vacuum has been detected yet; the
@@ -382,6 +388,7 @@ public class PestKillerManager {
         ceilingAvoidStartTime = 0;
         remainingPlots.clear();
         detectedVacuumRange = -1.0;
+        pestKillWaitEnd = 0;
         resetPlotState();
     }
 
@@ -398,6 +405,7 @@ public class PestKillerManager {
         doubleJumpStartTime = 0;
         ceilingAvoidPhase = 0;
         ceilingAvoidStartTime = 0;
+        pestKillWaitEnd = 0;
         remainingPlots.clear();
         detectedVacuumRange = -1.0;
         resetPlotState();
@@ -439,6 +447,7 @@ public class PestKillerManager {
         currentPest = null;
         vacuumSlot = -1;
         preVacuumSlot = -1;
+        pestKillWaitEnd = 0;
         lastSmoothLookTime = 0;
         returnWarpSentAt = 0;
         resetPlotState();
@@ -559,6 +568,9 @@ public class PestKillerManager {
             }
 
             case SCANNING -> {
+                // Honour the post-kill wait before starting to scan for the next pest.
+                if (now < pestKillWaitEnd) return;
+
                 List<PestEntityDetector.PestEntity> pests = pestEntityDetector.getDetectedPests();
                 if (!pests.isEmpty()) {
                     currentPest = pickNearestPest(player, pests);
@@ -728,10 +740,11 @@ public class PestKillerManager {
                 // Keep targeting the nearest pest
                 currentPest = pickNearestPest(player, pests);
                 if (currentPest == null) {
-                    // Pest was killed; scan for more
+                    // Pest was killed; brief configurable pause before scanning for more.
                     LOGGER.info("[JustFarming-PestKiller] Pest killed; scanning for remaining pests.");
-                    restoreHotbarSlot();
                     releaseMovementKeys();
+                    int goNextDelay = (config != null) ? config.pestKillerGoToNextPestDelay : 0;
+                    pestKillWaitEnd = (goNextDelay > 0) ? now + goNextDelay : 0;
                     vacuumShotAttempted = false; // reset so we can try vacuum shot on the next plot
                     enterState(State.SCANNING);
                     return;
@@ -855,9 +868,16 @@ public class PestKillerManager {
 
     /**
      * Searches the hotbar for the first item whose display name contains
-     * "vacuum" (case-insensitive), records the current slot as {@link #preVacuumSlot},
-     * switches to the vacuum slot, and auto-detects its kill range from
-     * {@link #VACUUM_RANGES}.  Does nothing if no vacuum is found.
+     * "vacuum" (case-insensitive), records the farming tool slot as
+     * {@link #preVacuumSlot} (via {@link #findFarmingToolSlot}), switches to the
+     * vacuum slot, and auto-detects its kill range from {@link #VACUUM_RANGES}.
+     * Does nothing if no vacuum is found.
+     *
+     * <p>The farming tool slot is detected once per routine: if {@link #preVacuumSlot}
+     * is already set from a previous call this method is a no-op (the vacuum stays
+     * equipped between kills so the player's tool is not swapped back and forth for
+     * every pest).  The original tool slot is only restored at the end of the full
+     * pest-killer routine.
      */
     private void findAndEquipVacuum(ClientPlayerEntity player) {
         if (vacuumSlot >= 0) return; // already found and equipped
@@ -899,11 +919,52 @@ public class PestKillerManager {
             }
         }
 
-        preVacuumSlot = player.getInventory().getSelectedSlot();
+        // Detect the farming tool slot once, before switching away from it.
+        preVacuumSlot = findFarmingToolSlot(player, found);
         vacuumSlot = found;
         player.getInventory().setSelectedSlot(vacuumSlot);
-        LOGGER.info("[JustFarming-PestKiller] Equipped vacuum from hotbar slot {} (was slot {}).",
+        LOGGER.info("[JustFarming-PestKiller] Equipped vacuum from hotbar slot {} (farming tool at slot {}).",
                 vacuumSlot, preVacuumSlot);
+    }
+
+    /**
+     * Determines which hotbar slot holds the farming tool that should be active
+     * while the pest-killer routine is not running.
+     *
+     * <p>Priority order:
+     * <ol>
+     *   <li>{@link FarmingConfig#farmingToolHotbarSlot} when set to a valid slot
+     *       (0–8) and that slot contains an item.</li>
+     *   <li>The first non-vacuum, non-empty hotbar slot.</li>
+     *   <li>The currently selected slot as a last resort.</li>
+     * </ol>
+     *
+     * @param player     the local player
+     * @param vacuumIdx  the hotbar index of the vacuum (excluded from auto-detection)
+     * @return the hotbar slot index to restore after the routine ends, or {@code -1}
+     *         if none could be determined
+     */
+    private int findFarmingToolSlot(ClientPlayerEntity player, int vacuumIdx) {
+        // 1. Honour the explicit per-crop (or global) preferred slot from config.
+        if (config != null && config.farmingToolHotbarSlot >= 0
+                && config.farmingToolHotbarSlot <= 8
+                && !player.getInventory().getStack(config.farmingToolHotbarSlot).isEmpty()) {
+            LOGGER.info("[JustFarming-PestKiller] Using configured farming tool slot {}.",
+                    config.farmingToolHotbarSlot);
+            return config.farmingToolHotbarSlot;
+        }
+
+        // 2. Auto-detect: first non-vacuum, non-empty hotbar slot.
+        for (int i = 0; i < 9; i++) {
+            if (i == vacuumIdx) continue;
+            if (!player.getInventory().getStack(i).isEmpty()) {
+                LOGGER.info("[JustFarming-PestKiller] Auto-detected farming tool at hotbar slot {}.", i);
+                return i;
+            }
+        }
+
+        // 3. Fallback: currently selected slot.
+        return player.getInventory().getSelectedSlot();
     }
 
     /**
