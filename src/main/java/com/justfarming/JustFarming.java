@@ -11,6 +11,7 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
@@ -131,30 +132,7 @@ public class JustFarming implements ClientModInitializer {
                                                         net.minecraft.text.Text.literal("§a[JustFarming] Visitor routine started. Teleporting to barn..."), true);
                                             }
                                             return 1;
-                                        })
-                                        .then(literal("waypoint")
-                                                .executes(ctx -> {
-                                                    net.minecraft.client.network.ClientPlayerEntity p = ctx.getSource().getPlayer();
-                                                    if (p != null) {
-                                                        double[] pos = { p.getX(), p.getY(), p.getZ() };
-                                                        config.visitorWaypoints.add(pos);
-                                                        config.save();
-                                                        p.sendMessage(net.minecraft.text.Text.literal(
-                                                                "§a[JustFarming] Visitor waypoint " + config.visitorWaypoints.size()
-                                                                + " added at " + String.format("%.1f, %.1f, %.1f", pos[0], pos[1], pos[2]) + "."), true);
-                                                    }
-                                                    return 1;
-                                                })
-                                                .then(literal("clear")
-                                                        .executes(ctx -> {
-                                                            config.visitorWaypoints.clear();
-                                                            config.save();
-                                                            if (ctx.getSource().getPlayer() != null) {
-                                                                ctx.getSource().getPlayer().sendMessage(
-                                                                        net.minecraft.text.Text.literal("§a[JustFarming] All visitor waypoints cleared."), true);
-                                                            }
-                                                            return 1;
-                                                        }))))
+                                        }))
                                 .then(literal("pest")
                                         .executes(ctx -> {
                                             if (!pestKillerManager.isActive()) {
@@ -338,7 +316,24 @@ public class JustFarming implements ClientModInitializer {
             }
         });
 
-        LOGGER.info("[JustFarming] Ready. Toggle macro: R | Open GUI: I | Freelook: L | Alternate direction: N | Commands: /just rewarp, /just rewarp clear, /just visitor, /just visitor waypoint, /just visitor waypoint clear, /just pest, /just farm");
+        // Stop all active systems when the player disconnects from a server so
+        // that stale macro state does not interfere with the next session join
+        // (which can cause premature packet sends or authentication timeouts).
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            if (macroManager.isRunning() || macroManager.isWaitingForVisitors()) {
+                macroManager.stop();
+            }
+            if (visitorManager.isActive()) {
+                visitorManager.stop();
+            }
+            if (pestKillerManager.isActive()) {
+                pestKillerManager.reset();
+            }
+            pestKillerShouldResumeMacro = false;
+            LOGGER.info("[JustFarming] Disconnected – all macros stopped.");
+        });
+
+        LOGGER.info("[JustFarming] Ready. Toggle macro: R | Open GUI: I | Freelook: L | Alternate direction: N | Commands: /just rewarp, /just rewarp clear, /just visitor, /just pest, /just farm");
     }
 
     /** Returns the shared config instance. */

@@ -232,6 +232,11 @@ public class MacroManager {
         return running;
     }
 
+    /** Returns {@code true} when the macro is paused waiting for the visitor routine to finish. */
+    public boolean isWaitingForVisitors() {
+        return waitingForVisitors;
+    }
+
     /**
      * Returns {@code true} when the macro should pause movement and block-breaking
      * because a GUI screen is open while {@link FarmingConfig#macroEnabledInGui}
