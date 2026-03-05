@@ -6,6 +6,7 @@ import com.justfarming.pest.PestKillerManager;
 import com.justfarming.visitor.VisitorManager;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.item.ItemStack;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
@@ -338,12 +339,25 @@ public class MacroManager {
         }
         waitingForVisitors = false;
         running = true;
-        // Switch to the configured farming tool slot if one is set.
-        if (config.farmingToolHotbarSlot >= 0 && config.farmingToolHotbarSlot <= 8
-                && client.player != null
-                && !client.player.getInventory().getStack(config.farmingToolHotbarSlot).isEmpty()) {
-            client.player.getInventory().setSelectedSlot(config.farmingToolHotbarSlot);
-            LOGGER.info("[JustFarming] Switched to farming tool slot {}.", config.farmingToolHotbarSlot);
+        // Switch to the configured farming tool slot if one is set, or auto-detect
+        // a farming tool in the hotbar when in Auto mode (farmingToolHotbarSlot == -1).
+        if (client.player != null) {
+            if (config.farmingToolHotbarSlot >= 0 && config.farmingToolHotbarSlot <= 8
+                    && !client.player.getInventory().getStack(config.farmingToolHotbarSlot).isEmpty()) {
+                client.player.getInventory().setSelectedSlot(config.farmingToolHotbarSlot);
+                LOGGER.info("[JustFarming] Switched to farming tool slot {}.", config.farmingToolHotbarSlot);
+            } else if (config.farmingToolHotbarSlot < 0) {
+                // Auto-detect: find the first hotbar slot that holds a known farming tool.
+                for (int i = 0; i < 9; i++) {
+                    ItemStack stack = client.player.getInventory().getStack(i);
+                    if (PestKillerManager.isFarmingTool(stack)) {
+                        client.player.getInventory().setSelectedSlot(i);
+                        LOGGER.info("[JustFarming] Auto-detected farming tool '{}' at slot {}; switching.",
+                                PestKillerManager.getCleanItemName(stack), i);
+                        break;
+                    }
+                }
+            }
         }
         boolean skipMousemat = false;
         if (config.squeakyMousematEnabled && client.player != null) {

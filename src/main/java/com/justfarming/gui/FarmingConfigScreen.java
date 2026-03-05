@@ -252,9 +252,11 @@ public class FarmingConfigScreen extends Screen {
         this.addDrawableChild(farmingToolSlotSlider);
         farmingToolSlotSlider.setTooltip(Tooltip.of(Text.literal(
                 "Hotbar slot that holds your farming tool.\n" +
-                "Auto: the mod detects it automatically (first non-vacuum slot).\n" +
-                "Slot 1–9: pin a specific slot so the macro always switches to the\n" +
-                "correct tool when farming starts and after killing pests.")));
+                "Auto: the mod scans your hotbar for a known farming tool\n" +
+                "(hoe, dicer, chopper, cutter, cactus knife) and switches to it\n" +
+                "automatically when the macro starts and after killing pests.\n" +
+                "Slot 1–9: pin a specific slot so the macro always switches to\n" +
+                "the correct tool regardless of hotbar order.")));
         tabContentHeights[0] = y + bh - contentAreaTopY + tabScrollOffsets[0];
 
         // ── Tab 1 – Pests ─────────────────────────────────────────────────────

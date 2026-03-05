@@ -17,6 +17,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Random;
+import java.util.Set;
+import java.util.regex.Pattern;
 /**
  * Manages the auto pest killer routine for Just Farming.
  *
@@ -89,6 +91,56 @@ public class PestKillerManager {
 
     /** Distance (blocks) at which the player starts slowing down near the pest. */
     private static final double BRAKE_RADIUS = 10.0;
+
+    /** Pre-compiled pattern for stripping Minecraft/Hypixel colour-code sequences (§X). */
+    private static final Pattern COLOR_CODE_PATTERN = Pattern.compile("§.");
+
+    /**
+     * Substrings (lower-case) present in the display name of every Hypixel SkyBlock
+     * farming tool.  Used by {@link #isFarmingTool(ItemStack)} to distinguish a
+     * farming tool from other hotbar items (potions, swords, vacuums, etc.).
+     *
+     * <p>Covered tools include:
+     * <ul>
+     *   <li>All hoes – Rookie Hoe, Euclid's Wheat Hoe, Gauss Carrot Hoe,
+     *       Pythagorean Potato Hoe, Turing Sugar Cane Hoe, Newton Nether Wart Hoe,
+     *       Eclipse Hoe, Wild Rose Hoe, etc.</li>
+     *   <li>Dicers – Pumpkin Dicer, Melon Dicer.</li>
+     *   <li>Cocoa Chopper.</li>
+     *   <li>Fungi Cutter.</li>
+     *   <li>Cactus Knife.</li>
+     * </ul>
+     */
+    private static final Set<String> FARMING_TOOL_KEYWORDS = Set.of(
+            "hoe", "dicer", "chopper", "cutter", "cactus knife");
+
+    /**
+     * Returns the stripped display name of {@code stack} (colour codes removed,
+     * leading/trailing whitespace trimmed).
+     *
+     * @param stack the hotbar item to inspect; must not be {@code null}
+     * @return cleaned display name, never {@code null}
+     */
+    public static String getCleanItemName(ItemStack stack) {
+        return COLOR_CODE_PATTERN.matcher(stack.getName().getString()).replaceAll("").trim();
+    }
+
+    /**
+     * Returns {@code true} if {@code stack} is a Hypixel SkyBlock farming tool,
+     * detected by matching the item's stripped display name against
+     * {@link #FARMING_TOOL_KEYWORDS}.
+     *
+     * @param stack the hotbar item to inspect; must not be {@code null}
+     * @return {@code true} when the item name contains a known farming tool keyword
+     */
+    public static boolean isFarmingTool(ItemStack stack) {
+        if (stack.isEmpty()) return false;
+        String cleanName = getCleanItemName(stack).toLowerCase();
+        for (String keyword : FARMING_TOOL_KEYWORDS) {
+            if (cleanName.contains(keyword)) return true;
+        }
+        return false;
+    }
 
     /**
      * Camera rotation speed (degrees per second) used when pointing the camera
@@ -887,9 +939,7 @@ public class PestKillerManager {
         for (int i = 0; i < 9; i++) {
             ItemStack stack = player.getInventory().getStack(i);
             if (!stack.isEmpty()) {
-                String name = stack.getName().getString();
-                // Strip formatting codes before checking
-                String cleanName = name.replaceAll("§.", "").trim();
+                String cleanName = getCleanItemName(stack);
                 if (cleanName.toLowerCase().contains("vacuum")) {
                     found = i;
                     foundName = cleanName;
@@ -935,7 +985,9 @@ public class PestKillerManager {
      * <ol>
      *   <li>{@link FarmingConfig#farmingToolHotbarSlot} when set to a valid slot
      *       (0–8) and that slot contains an item.</li>
-     *   <li>The first non-vacuum, non-empty hotbar slot.</li>
+     *   <li>The first non-vacuum hotbar slot whose item name matches a known
+     *       farming-tool keyword (see {@link #isFarmingTool}).</li>
+     *   <li>The first non-vacuum, non-empty hotbar slot (legacy fallback).</li>
      *   <li>The currently selected slot as a last resort.</li>
      * </ol>
      *
@@ -954,16 +1006,27 @@ public class PestKillerManager {
             return config.farmingToolHotbarSlot;
         }
 
-        // 2. Auto-detect: first non-vacuum, non-empty hotbar slot.
+        // 2. Auto-detect: first non-vacuum hotbar slot that holds a known farming tool.
         for (int i = 0; i < 9; i++) {
             if (i == vacuumIdx) continue;
-            if (!player.getInventory().getStack(i).isEmpty()) {
-                LOGGER.info("[JustFarming-PestKiller] Auto-detected farming tool at hotbar slot {}.", i);
+            ItemStack stack = player.getInventory().getStack(i);
+            if (isFarmingTool(stack)) {
+                LOGGER.info("[JustFarming-PestKiller] Auto-detected farming tool '{}' at hotbar slot {}.",
+                        getCleanItemName(stack), i);
                 return i;
             }
         }
 
-        // 3. Fallback: currently selected slot.
+        // 3. Fallback: first non-vacuum, non-empty hotbar slot.
+        for (int i = 0; i < 9; i++) {
+            if (i == vacuumIdx) continue;
+            if (!player.getInventory().getStack(i).isEmpty()) {
+                LOGGER.info("[JustFarming-PestKiller] No named farming tool found; using first non-empty slot {}.", i);
+                return i;
+            }
+        }
+
+        // 4. Last resort: currently selected slot.
         return player.getInventory().getSelectedSlot();
     }
 
