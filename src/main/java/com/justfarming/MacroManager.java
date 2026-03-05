@@ -1,6 +1,8 @@
 package com.justfarming;
 
 import com.justfarming.config.FarmingConfig;
+import com.justfarming.pest.PestDetector;
+import com.justfarming.pest.PestKillerManager;
 import com.justfarming.visitor.VisitorManager;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
@@ -11,7 +13,10 @@ import net.minecraft.util.math.Vec3d;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Random;
+import java.util.Set;
 
 /**
  * Manages the cocoa-beans farming macro state and tick logic.
@@ -93,6 +98,8 @@ public class MacroManager {
     private final MinecraftClient client;
     private FarmingConfig config;
     private VisitorManager visitorManager;
+    private PestKillerManager pestKillerManager;
+    private PestDetector pestDetector;
     private final Random random = new Random();
 
     // -----------------------------------------------------------------------
@@ -111,6 +118,13 @@ public class MacroManager {
      * routine completes (reaches {@link VisitorManager.State#DONE}).
      */
     private boolean waitingForVisitors = false;
+    /**
+     * {@code true} when the pest killer routine is running (triggered at the
+     * rewarp block) and the farming macro has been paused.  The macro will
+     * automatically restart (or hand off to the visitor routine) once the pest
+     * killer completes.
+     */
+    private boolean waitingForPestKiller = false;
     private boolean freelookEnabled = false;
     private double freelookZoom = DEFAULT_ZOOM;
 
@@ -218,6 +232,15 @@ public class MacroManager {
         this.visitorManager = visitorManager;
     }
 
+    /**
+     * Inject the {@link PestKillerManager} and {@link PestDetector} so the
+     * macro can trigger pest killing at the rewarp block before handling visitors.
+     */
+    public void setPestKillerManager(PestKillerManager pestKillerManager, PestDetector pestDetector) {
+        this.pestKillerManager = pestKillerManager;
+        this.pestDetector = pestDetector;
+    }
+
     /** Update the config reference (called after GUI saves). */
     public void setConfig(FarmingConfig config) {
         this.config = config;
@@ -235,6 +258,11 @@ public class MacroManager {
     /** Returns {@code true} when the macro is paused waiting for the visitor routine to finish. */
     public boolean isWaitingForVisitors() {
         return waitingForVisitors;
+    }
+
+    /** Returns {@code true} when the macro is paused waiting for the pest killer routine to finish. */
+    public boolean isWaitingForPestKiller() {
+        return waitingForPestKiller;
     }
 
     /**
@@ -341,14 +369,19 @@ public class MacroManager {
 
     /** Stop the macro and release all held keys. */
     public void stop() {
-        if (!running && !waitingForVisitors && (visitorManager == null || !visitorManager.isActive())) return;
+        if (!running && !waitingForVisitors && !waitingForPestKiller
+                && (visitorManager == null || !visitorManager.isActive())) return;
         running = false;
         waitingForVisitors = false;
+        waitingForPestKiller = false;
         state = MacroState.IDLE;
         lastRotationTime = 0;
         releaseKeys();
         if (visitorManager != null && visitorManager.isActive()) {
             visitorManager.stop();
+        }
+        if (pestKillerManager != null && pestKillerManager.isActive()) {
+            pestKillerManager.stop();
         }
         if (config.unlockedMouseEnabled && client.currentScreen == null) {
             client.mouse.lockCursor();
@@ -358,7 +391,8 @@ public class MacroManager {
 
     /** Toggle start / stop. */
     public void toggle() {
-        if (running || waitingForVisitors || (visitorManager != null && visitorManager.isActive())) stop();
+        if (running || waitingForVisitors || waitingForPestKiller
+                || (visitorManager != null && visitorManager.isActive())) stop();
         else start();
     }
 
@@ -455,6 +489,29 @@ public class MacroManager {
 
     /** Called every client tick. Executes one step of the macro if active. */
     public void onTick() {
+        // If paused waiting for the pest killer routine to finish (triggered at rewarp),
+        // start the visitor routine or restart farming once the pest killer is done.
+        if (waitingForPestKiller) {
+            if (pestKillerManager != null && pestKillerManager.isDone()) {
+                waitingForPestKiller = false;
+                pestKillerManager.reset();
+                if (config.visitorsEnabled && visitorManager != null) {
+                    // Pest killer already sent /warp garden; visitors will /tptoplot barn.
+                    waitingForVisitors = true;
+                    if (config.unlockedMouseEnabled && client.currentScreen == null) {
+                        client.mouse.lockCursor();
+                    }
+                    visitorManager.start();
+                    LOGGER.info("[JustFarming] Pest killer done – visitor mode enabled, starting visitor routine.");
+                } else {
+                    // Pest killer already sent /warp garden; restart farming.
+                    start();
+                    LOGGER.info("[JustFarming] Pest killer done – resuming farming macro.");
+                }
+            }
+            return;
+        }
+
         // If paused waiting for the visitor routine to finish, restart farming when done.
         if (waitingForVisitors) {
             if (visitorManager != null && visitorManager.isDone()) {
@@ -492,7 +549,22 @@ public class MacroManager {
                     // Still waiting for the configured delay – keep keys released
                     break;
                 }
-                if (config.visitorsEnabled && visitorManager != null) {
+                Set<String> pestPlots = (pestDetector != null)
+                        ? pestDetector.getPestPlots() : Collections.emptySet();
+                if (config.autoPestKillerEnabled && pestKillerManager != null
+                        && !pestPlots.isEmpty()) {
+                    // Pest killer has priority over visitors at the rewarp block.
+                    // Stop the farming macro and start the pest killer for all infested plots.
+                    running = false;
+                    state = MacroState.IDLE;
+                    lastRotationTime = 0;
+                    waitingForPestKiller = true;
+                    if (config.unlockedMouseEnabled && client.currentScreen == null) {
+                        client.mouse.lockCursor();
+                    }
+                    pestKillerManager.start(new ArrayList<>(pestPlots));
+                    LOGGER.info("[JustFarming] Pest killer enabled – stopping farming macro, starting pest killer routine.");
+                } else if (config.visitorsEnabled && visitorManager != null) {
                     // Stop the farming macro and hand off to the visitor routine.
                     // The macro will automatically restart once visitors are done.
                     running = false;

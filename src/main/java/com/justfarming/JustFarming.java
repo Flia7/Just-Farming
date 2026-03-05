@@ -74,6 +74,7 @@ public class JustFarming implements ClientModInitializer {
         pestKillerManager = new PestKillerManager(
                 net.minecraft.client.MinecraftClient.getInstance(), config, pestEntityDetector);
         macroManager.setVisitorManager(visitorManager);
+        macroManager.setPestKillerManager(pestKillerManager, pestDetector);
 
         // Register keybindings
         toggleMacroKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
@@ -240,10 +241,10 @@ public class JustFarming implements ClientModInitializer {
             if (config.autoPestKillerEnabled) {
                 pestKillerManager.onTick();
 
-                // When pest killer finishes, optionally restart the farming macro.
-                // The macro is guaranteed not to be running here because it was explicitly
-                // stopped (by pest killer trigger below) before the pest killer started.
-                if (pestKillerManager.isDone()) {
+                // When pest killer finishes and was started manually (not from the rewarp flow),
+                // optionally restart the farming macro.
+                // When started from the rewarp flow, MacroManager handles resumption directly.
+                if (pestKillerManager.isDone() && !macroManager.isWaitingForPestKiller()) {
                     if (pestKillerShouldResumeMacro && !macroManager.isRunning()
                             && !visitorManager.isActive()) {
                         macroManager.start();
@@ -255,21 +256,6 @@ public class JustFarming implements ClientModInitializer {
                     pestKillerShouldResumeMacro = false;
                     pestKillerManager.reset();
                 }
-
-                // Trigger pest killer when new pests appear and it is not already running
-                if (!pestKillerManager.isActive() && !visitorManager.isActive()
-                        && pestDetector.getTotalPests() > 0
-                        && !pestEntityDetector.getDetectedPests().isEmpty()) {
-                    pestKillerShouldResumeMacro = macroManager.isRunning();
-                    if (macroManager.isRunning()) {
-                        macroManager.stop();
-                    }
-                    pestKillerManager.start(new ArrayList<>(pestDetector.getPestPlots()));
-                    if (client.player != null) {
-                        client.player.sendMessage(net.minecraft.text.Text.literal(
-                                "§e[JustFarming] Pests detected – starting pest killer."), true);
-                    }
-                }
             }
 
             // Update pest detection every tick
@@ -277,10 +263,13 @@ public class JustFarming implements ClientModInitializer {
             pestEntityDetector.update(client);
 
             // Stop macro if Garden-only mode is enabled and the player left the Garden.
-            // Do not stop while the visitor routine is active or while the macro is in
-            // the VISITING state (returning from visitors to the garden).
+            // Do not stop while the visitor routine is active, while the macro is in
+            // the VISITING state (returning from visitors to the garden), or while the
+            // pest killer is running (it teleports the player to infested plots outside
+            // the current garden position).
             if (!pestDetector.isInGarden() && config.gardenOnlyEnabled && macroManager.isRunning()
-                    && !visitorManager.isActive() && !macroManager.isVisiting()) {
+                    && !visitorManager.isActive() && !macroManager.isVisiting()
+                    && !macroManager.isWaitingForPestKiller()) {
                 macroManager.stop();
                 if (client.player != null) {
                     client.player.sendMessage(net.minecraft.text.Text.literal(
@@ -318,7 +307,8 @@ public class JustFarming implements ClientModInitializer {
         // that stale macro state does not interfere with the next session join
         // (which can cause premature packet sends or authentication timeouts).
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
-            if (macroManager.isRunning() || macroManager.isWaitingForVisitors()) {
+            if (macroManager.isRunning() || macroManager.isWaitingForVisitors()
+                    || macroManager.isWaitingForPestKiller()) {
                 macroManager.stop();
             }
             if (visitorManager.isActive()) {
