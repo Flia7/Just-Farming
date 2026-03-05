@@ -243,6 +243,36 @@ public class VisitorManager {
      */
     private static final double BASE_WALK_SPEED = 0.1;
 
+    // ── Stair-entry vertical navigation ──────────────────────────────────────
+
+    /**
+     * Minimum height difference (blocks) between the player and the target before
+     * stair-entry detection is activated.  Below this threshold the path is treated
+     * as flat (auto-step handles small rises/drops) so no stair search is needed.
+     */
+    private static final double STAIR_NAV_HEIGHT_THRESHOLD = 2.0;
+
+    /**
+     * Horizontal radius (blocks) to scan when searching for a staircase entry point.
+     * Covers the full width of the Hypixel SkyBlock barn area.
+     */
+    private static final int STAIR_SEARCH_RADIUS = 15;
+
+    /**
+     * How long (ms) to keep a cached stair-entry waypoint before recomputing it.
+     * Recomputing every tick would be expensive (up to ~14 000 block lookups);
+     * a 2-second cache keeps CPU usage low while still updating as the player moves.
+     */
+    private static final long STAIR_ENTRY_CACHE_MS = 2000L;
+
+    /**
+     * Maximum angular difference (degrees) between the direction toward the stair
+     * entry and the direction toward the ultimate target.  Stair entries that fall
+     * outside this cone are ignored so the pathfinder never walks away from the
+     * target to reach a staircase on the opposite side of the barn.
+     */
+    private static final float STAIR_FORWARD_CONE_DEGREES = 120f;
+
     // ── Wall-crash / stuck recovery ──────────────────────────────────────────
 
     /**
@@ -365,6 +395,16 @@ public class VisitorManager {
      * {@code 0} means no strafe recovery is active.
      */
     private long  walkRecoveryEndTime         = 0;
+
+    // Stair-entry vertical navigation state
+    /**
+     * Cached stair-entry waypoint computed by {@link #findStairEntry}.
+     * {@code null} when no stair entry search has been performed yet or when
+     * vertical navigation is no longer needed.
+     */
+    private Vec3d cachedStairEntry     = null;
+    /** Wall-clock time (ms) when {@link #cachedStairEntry} was last computed. */
+    private long  cachedStairEntryTime = 0;
 
     // Visitor tracking
     private Entity       currentVisitor  = null;
@@ -519,6 +559,8 @@ public class VisitorManager {
         walkRecoveryDirection = 0;
         walkRecoveryBackupEndTime = 0;
         walkRecoveryEndTime = 0;
+        cachedStairEntry = null;
+        cachedStairEntryTime = 0;
         enterState(State.IDLE);
     }
 
@@ -542,6 +584,8 @@ public class VisitorManager {
         returnWarpDelay   = 0;
         returnWarpSentAt  = 0;
         midRunRescanPerformed = false;
+        cachedStairEntry = null;
+        cachedStairEntryTime = 0;
         long base = config.visitorsTeleportDelay > 0
                 ? config.visitorsTeleportDelay : TELEPORT_WAIT_DEFAULT_MS;
         teleportWaitMs = base + random.nextInt((int) TELEPORT_EXTRA_RANDOM_MS + 1)
@@ -1104,6 +1148,37 @@ public class VisitorManager {
         // from rotating left and right unnecessarily while traversing a staircase.
         boolean onStepSurface = isStepBlock(client.world.getBlockState(playerFeetBlockPos(player)));
 
+        // ── Stair-entry vertical navigation ──────────────────────────────────
+        // When the target is at a significantly different height and the near path
+        // is blocked, scan for the closest staircase entry point and aim toward it.
+        // For ascending (target above player): aim for the lowest nearby stair block
+        // (the bottom/entry of the staircase).
+        // For descending (target below player): aim for the highest nearby stair block
+        // (the top/entry of the staircase).
+        // Only activate when the near path is actually blocked – on clear paths the
+        // normal isPathClear / steer-angle logic handles everything.
+        double heightDiff = target.y - player.getY();
+        if (Math.abs(heightDiff) > STAIR_NAV_HEIGHT_THRESHOLD
+                && !isPathClear(player, baseTargetYaw, steerProbeStep, avoidNpcs)) {
+            if (cachedStairEntry == null || now - cachedStairEntryTime > STAIR_ENTRY_CACHE_MS) {
+                cachedStairEntry     = findStairEntry(player, heightDiff > 0, baseTargetYaw);
+                cachedStairEntryTime = now;
+            }
+            if (cachedStairEntry != null) {
+                double sdx = cachedStairEntry.x - eye.x;
+                double sdz = cachedStairEntry.z - eye.z;
+                double stairDist = Math.sqrt(sdx * sdx + sdz * sdz);
+                // Only redirect when the stair entry is far enough to give a meaningful
+                // heading (very small distances would produce a near-zero direction vector).
+                if (stairDist > 1.5) {
+                    baseTargetYaw = (float) Math.toDegrees(Math.atan2(-sdx, sdz));
+                }
+            }
+        } else if (Math.abs(heightDiff) <= STAIR_NAV_HEIGHT_THRESHOLD) {
+            // No longer need vertical stair navigation; clear cached entry.
+            cachedStairEntry = null;
+        }
+
         // Try the direct path first; if clear, apply jitter for humanlike variation.
         // Jitter is suppressed on stair/slab surfaces to avoid useless rotations.
         // If the far probe detects a wall but the near probe is still clear, keep
@@ -1248,9 +1323,18 @@ public class VisitorManager {
         // within the feetY block (which is already air) and does NOT reach feetY+1,
         // so the feetY+1 check is skipped.  For same-level or step-up movement
         // (feetState non-air) the standard feetY+1 check still applies.
+        // When feetState is a step block (stair/slab), the block at feetY+1 may be
+        // the next stair step in an ascending staircase.  Treating that next step
+        // as a wall would incorrectly block upward stair traversal, so step blocks
+        // at head level are also permitted when standing on a step surface.
         boolean headBlocked;
         if (feetState.isAir()) {
             headBlocked = false; // step-down: head after descent is within the air at feetY
+        } else if (isStepBlock(feetState)) {
+            // Stepping up: the block immediately above a stair/slab may be the next
+            // step and must not be treated as a wall.
+            BlockState headState = client.world.getBlockState(probe.set(bx, feetY + 1, bz));
+            headBlocked = !headState.isAir() && !isStepBlock(headState);
         } else {
             headBlocked = !client.world.getBlockState(probe.set(bx, feetY + 1, bz)).isAir();
         }
@@ -1266,6 +1350,75 @@ public class VisitorManager {
             floorAhead = !client.world.getBlockState(probe.set(bx, feetY - dy, bz)).isAir();
         }
         return floorAhead && !wallAhead;
+    }
+
+    /**
+     * Scans nearby blocks for a staircase entry point to use when vertical
+     * navigation is required.
+     *
+     * <p>When {@code goingUp} is {@code true}, the method returns the position
+     * of the <em>lowest</em> stair or slab block found within
+     * {@link #STAIR_SEARCH_RADIUS} horizontal blocks of the player (at the current
+     * Y level or above).  This is the bottom of the nearest staircase, i.e. the
+     * point the player must walk to in order to begin climbing.
+     *
+     * <p>When {@code goingUp} is {@code false}, the method returns the position
+     * of the <em>highest</em> stair or slab block found within the same horizontal
+     * radius (at the current Y level or below).  This is the top of the nearest
+     * staircase, i.e. the point the player must walk to in order to begin descending.
+     *
+     * <p>Only stair entries within {@link #STAIR_FORWARD_CONE_DEGREES} of the
+     * direct path toward the ultimate target ({@code targetYaw}) are considered, so
+     * the pathfinder never turns away from the target to find a staircase on the
+     * opposite side of the barn.
+     *
+     * @param player    the local player
+     * @param goingUp   {@code true} when the target is above the player
+     * @param targetYaw horizontal yaw (degrees) toward the ultimate navigation target
+     * @return position of the stair entry block (XZ-centred, at block Y), or
+     *         {@code null} if none was found within the search area
+     */
+    private Vec3d findStairEntry(ClientPlayerEntity player, boolean goingUp, float targetYaw) {
+        if (client.world == null) return null;
+        int px = (int) Math.floor(player.getX());
+        int py = (int) Math.floor(player.getY());
+        int pz = (int) Math.floor(player.getZ());
+
+        Vec3d best  = null;
+        int   bestY = goingUp ? Integer.MAX_VALUE : Integer.MIN_VALUE;
+
+        // Y range: scan upward from player's feet level when ascending, downward
+        // when descending.  The opposite bound equals the full height of the barn.
+        int yFrom = goingUp ? py : py - STAIR_SEARCH_RADIUS;
+        int yTo   = goingUp ? py + STAIR_SEARCH_RADIUS : py;
+
+        BlockPos.Mutable pos = new BlockPos.Mutable();
+        for (int dx = -STAIR_SEARCH_RADIUS; dx <= STAIR_SEARCH_RADIUS; dx++) {
+            for (int dz = -STAIR_SEARCH_RADIUS; dz <= STAIR_SEARCH_RADIUS; dz++) {
+                for (int y = yFrom; y <= yTo; y++) {
+                    pos.set(px + dx, y, pz + dz);
+                    if (!isStepBlock(client.world.getBlockState(pos))) continue;
+
+                    // Only consider blocks in the forward hemisphere relative to the
+                    // ultimate target direction so we never navigate away from the visitor.
+                    double sdx = (px + dx + 0.5) - player.getX();
+                    double sdz = (pz + dz + 0.5) - player.getZ();
+                    double dist = Math.sqrt(sdx * sdx + sdz * sdz);
+                    if (dist < 0.5) continue; // skip blocks directly under the player
+                    float stairYaw = (float) Math.toDegrees(Math.atan2(-sdx, sdz));
+                    float yawDiff  = stairYaw - targetYaw;
+                    while (yawDiff >  180f) yawDiff -= 360f;
+                    while (yawDiff < -180f) yawDiff += 360f;
+                    if (Math.abs(yawDiff) > STAIR_FORWARD_CONE_DEGREES) continue;
+
+                    if ((goingUp && y < bestY) || (!goingUp && y > bestY)) {
+                        bestY = y;
+                        best  = new Vec3d(px + dx + 0.5, y, pz + dz + 0.5);
+                    }
+                }
+            }
+        }
+        return best;
     }
 
     /**

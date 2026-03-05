@@ -10,7 +10,10 @@ import net.minecraft.util.math.Vec3d;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Collection;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.Queue;
 import java.util.Random;
 
 /**
@@ -19,8 +22,8 @@ import java.util.Random;
  * <p>When {@link FarmingConfig#autoPestKillerEnabled} is {@code true} and pests
  * are detected, this manager:
  * <ol>
- *   <li>Teleports to the infested plot (via {@code /tptoplot <plot>}) or to the
- *       garden (via {@code /warp garden}), depending on
+ *   <li>Teleports to the first infested plot (via {@code /tptoplot <plot>}) or to
+ *       the garden (via {@code /warp garden}), depending on
  *       {@link FarmingConfig#pestKillerWarpToPlot}.</li>
  *   <li>After the teleport delay, scans for pest entities via
  *       {@link PestEntityDetector}.</li>
@@ -29,6 +32,8 @@ import java.util.Random;
  *   <li>Switches to a vacuum item in the hotbar (any item whose name contains
  *       "Vacuum", case-insensitive) and right-clicks while aiming at the pest
  *       for {@link FarmingConfig#pestKillerKillDuration} ms to kill it.</li>
+ *   <li>When no pests remain on the current plot, teleports to the next infested
+ *       plot (if any) and repeats steps 2–4 until all plots have been cleared.</li>
  *   <li>Sends {@code /warp garden} when all detected pests have been killed
  *       and marks itself {@link State#DONE}.</li>
  * </ol>
@@ -116,6 +121,15 @@ public class PestKillerManager {
     private long  returnWarpSentAt = 0;
     /** Per-state random extra (0–150 ms) added to hardcoded timing constants. */
     private int   randomExtra = 0;
+
+    /**
+     * Queue of infested plot names still to be visited this run.  Populated by
+     * {@link #start(Collection)} and consumed one-by-one in the SCANNING state
+     * when no pests are found on the current plot.  The first plot is removed
+     * from the queue before TELEPORTING is entered; each subsequent entry is
+     * dequeued when the scan for the previous plot times out with no pests.
+     */
+    private final Queue<String> remainingPlots = new LinkedList<>();
 
     // Target pest
     private PestEntityDetector.PestEntity currentPest = null;
@@ -255,6 +269,7 @@ public class PestKillerManager {
         doubleJumpStartTime = 0;
         ceilingAvoidPhase = 0;
         ceilingAvoidStartTime = 0;
+        remainingPlots.clear();
     }
 
     /**
@@ -269,24 +284,54 @@ public class PestKillerManager {
         doubleJumpStartTime = 0;
         ceilingAvoidPhase = 0;
         ceilingAvoidStartTime = 0;
+        remainingPlots.clear();
         enterState(State.IDLE);
     }
 
     /**
-     * Start the pest killer routine.
+     * Start the pest killer routine targeting a single infested plot.
      *
-     * @param pestPlotName the name of a plot that has pests (e.g. {@code "4"}),
-     *                     used to build the {@code /tptoplot} command when
-     *                     {@link FarmingConfig#pestKillerWarpToPlot} is enabled.
-     *                     May be {@code null} if no specific plot name is known.
+     * <p>Convenience overload for {@link #start(Collection)}; equivalent to
+     * {@code start(pestPlotName == null ? List.of() : List.of(pestPlotName))}.
+     *
+     * @param pestPlotName the name of the plot with pests (e.g. {@code "4"}), or
+     *                     {@code null} to warp to the garden without a plot target.
      */
     public void start(String pestPlotName) {
+        if (pestPlotName != null && !pestPlotName.isBlank()) {
+            start(List.of(pestPlotName));
+        } else {
+            start(List.of());
+        }
+    }
+
+    /**
+     * Start the pest killer routine, visiting each infested plot in order.
+     *
+     * <p>The routine teleports to the first plot in {@code pestPlots}, scans for
+     * pests and kills them.  When the scan for one plot times out with no pests
+     * found, it teleports to the next plot in the collection instead of returning
+     * to the farm immediately.  Only after all plots have been visited (and no
+     * pests remain) does the routine send {@code /warp garden} and finish.
+     *
+     * @param pestPlots ordered collection of plot names with pests
+     *                  (e.g. {@code ["4", "12"]}).  May be empty, in which case
+     *                  the routine warps to the garden and scans there.
+     */
+    public void start(Collection<String> pestPlots) {
         LOGGER.info("[JustFarming-PestKiller] Starting pest killer routine.");
         currentPest = null;
         vacuumSlot = -1;
         preVacuumSlot = -1;
         lastSmoothLookTime = 0;
         returnWarpSentAt = 0;
+
+        remainingPlots.clear();
+        if (pestPlots != null) {
+            for (String p : pestPlots) {
+                if (p != null && !p.isBlank()) remainingPlots.add(p);
+            }
+        }
 
         long base = config != null && config.pestKillerTeleportDelay > 0
                 ? config.pestKillerTeleportDelay : TELEPORT_WAIT_DEFAULT_MS;
@@ -296,9 +341,10 @@ public class PestKillerManager {
 
         enterState(State.TELEPORTING);
 
-        if (config.pestKillerWarpToPlot && pestPlotName != null && !pestPlotName.isBlank()) {
-            sendCommand("tptoplot " + pestPlotName);
-            LOGGER.info("[JustFarming-PestKiller] Sent /tptoplot {} to reach infested plot.", pestPlotName);
+        String firstPlot = remainingPlots.poll(); // remove and use the first plot
+        if (config.pestKillerWarpToPlot && firstPlot != null) {
+            sendCommand("tptoplot " + firstPlot);
+            LOGGER.info("[JustFarming-PestKiller] Sent /tptoplot {} to reach infested plot.", firstPlot);
         } else {
             sendCommand("warp garden");
             LOGGER.info("[JustFarming-PestKiller] Sent /warp garden to reach garden.");
@@ -344,8 +390,28 @@ public class PestKillerManager {
                         enterState(State.FLYING_TO_PEST);
                     }
                 } else if (now - stateEnteredAt >= SCAN_TIMEOUT_MS) {
-                    LOGGER.info("[JustFarming-PestKiller] No pests found after scanning; returning to farm.");
-                    returnToFarm();
+                    if (!remainingPlots.isEmpty()) {
+                        // Pests on this plot have been cleared; move on to the next
+                        // infested plot rather than returning to the farm immediately.
+                        String nextPlot = remainingPlots.poll();
+                        LOGGER.info("[JustFarming-PestKiller] No pests found on this plot; "
+                                + "teleporting to next infested plot: {}.", nextPlot);
+                        long base = config != null && config.pestKillerTeleportDelay > 0
+                                ? config.pestKillerTeleportDelay : TELEPORT_WAIT_DEFAULT_MS;
+                        int globalRandom = (config != null) ? config.globalRandomizationMs : 0;
+                        teleportWaitMs = base + random.nextInt((int) TELEPORT_EXTRA_RANDOM_MS + 1)
+                                + random.nextInt(Math.max(1, globalRandom));
+                        if (config.pestKillerWarpToPlot) {
+                            sendCommand("tptoplot " + nextPlot);
+                        } else {
+                            sendCommand("warp garden");
+                        }
+                        enterState(State.TELEPORTING);
+                    } else {
+                        LOGGER.info("[JustFarming-PestKiller] No pests found after scanning all plots; "
+                                + "returning to farm.");
+                        returnToFarm();
+                    }
                 }
             }
 
