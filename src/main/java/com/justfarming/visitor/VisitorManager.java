@@ -220,6 +220,13 @@ public class VisitorManager {
     private static final double BEHIND_POINT_REACH_DIST = 1.5;
 
     /**
+     * How close (blocks) the player must get to each user-configured navigation
+     * waypoint before it is considered reached and the pathfinder advances to the
+     * next waypoint (or to the visitor, when all waypoints are done).
+     */
+    private static final double WAYPOINT_REACH_DIST = 2.0;
+
+    /**
      * Maximum time (ms) to spend navigating toward the behind-point before
      * giving up and proceeding directly to the first visitor.  Guards against
      * a behind-point that is technically passable but effectively unreachable
@@ -392,6 +399,21 @@ public class VisitorManager {
     /** Wall-clock time (ms) when navigation toward {@link #behindPoint} began; 0 = not started. */
     private long  behindPointStartTime = 0;
 
+    /**
+     * Index of the next waypoint in {@link com.justfarming.config.FarmingConfig#visitorWaypoints}
+     * that the pathfinder must navigate to.  Incremented each time a waypoint is
+     * reached.  Reset to {@code 0} by {@link #start()} and {@link #stop()}.
+     */
+    private int waypointIndex = 0;
+
+    /**
+     * {@code true} once all user-configured waypoints have been reached for this
+     * run.  After this flag is set, the pathfinder proceeds directly to each
+     * visitor without re-traversing the waypoints.  Reset by {@link #start()} and
+     * {@link #stop()}.
+     */
+    private boolean waypointsTraversed = false;
+
     // Item requirements extracted from the current visitor's menu
     private final List<VisitorRequirement> pendingRequirements = new ArrayList<>();
     private int requirementIndex = 0;
@@ -519,6 +541,8 @@ public class VisitorManager {
         walkRecoveryDirection = 0;
         walkRecoveryBackupEndTime = 0;
         walkRecoveryEndTime = 0;
+        waypointIndex = 0;
+        waypointsTraversed = false;
         enterState(State.IDLE);
     }
 
@@ -542,6 +566,8 @@ public class VisitorManager {
         returnWarpDelay   = 0;
         returnWarpSentAt  = 0;
         midRunRescanPerformed = false;
+        waypointIndex     = 0;
+        waypointsTraversed = false;
         long base = config.visitorsTeleportDelay > 0
                 ? config.visitorsTeleportDelay : TELEPORT_WAIT_DEFAULT_MS;
         teleportWaitMs = base + random.nextInt((int) TELEPORT_EXTRA_RANDOM_MS + 1)
@@ -620,6 +646,37 @@ public class VisitorManager {
                     nextVisitor();
                     return;
                 }
+
+                // Navigate through user-configured waypoints before the first visitor approach.
+                // Waypoints define a safe corridor through the barn (e.g. the entrance) that
+                // avoids walls the direct-path planner would otherwise crash into.
+                // They are traversed once per start() call; after all are reached the flag
+                // waypointsTraversed is set and normal visitor navigation begins.
+                if (!waypointsTraversed) {
+                    java.util.List<double[]> wps = config.visitorWaypoints;
+                    if (wps != null && !wps.isEmpty()) {
+                        Vec3d playerPos = new Vec3d(player.getX(), player.getY(), player.getZ());
+                        // Skip any waypoints already reached (loop handles multiple reached in one tick).
+                        while (waypointIndex < wps.size()) {
+                            double[] wp = wps.get(waypointIndex);
+                            Vec3d waypointPos = new Vec3d(wp[0], wp[1], wp[2]);
+                            double wpDist = playerPos.distanceTo(waypointPos);
+                            if (wpDist > WAYPOINT_REACH_DIST) {
+                                // Not yet at this waypoint – walk toward it and wait.
+                                walkToward(player, waypointPos, false);
+                                return;
+                            }
+                            // Reached this waypoint; advance to the next.
+                            LOGGER.info("[JustFarming-Visitors] Reached waypoint {}/{}.",
+                                    waypointIndex + 1, wps.size());
+                            waypointIndex++;
+                        }
+                    }
+                    // All configured waypoints (if any) have been reached.
+                    waypointsTraversed = true;
+                    LOGGER.info("[JustFarming-Visitors] Waypoints traversed; proceeding to visitors.");
+                }
+
                 Vec3d visitorPos = new Vec3d(currentVisitor.getX(), currentVisitor.getY(), currentVisitor.getZ());
                 // Navigate to the behind-point first so the player approaches the
                 // visitor queue from the far end rather than walking through the line.
@@ -1367,23 +1424,30 @@ public class VisitorManager {
      * {@link #targetYaw}/{@link #targetPitch} at the given {@code degreesPerSecond}
      * rate.  Higher values produce faster camera tracking which is required at
      * elevated SkyBlock movement speeds to maintain accurate directional control.
+     *
+     * <p>Camera movement is fully delta-based: each call computes the angular delta
+     * proportional to the elapsed wall-clock time since the previous call
+     * ({@code deltaMs / 1000 * degreesPerSecond}) and adds it to the current
+     * rotation, rather than computing a new absolute Vec3d target.  This ensures
+     * smooth, frame-rate-independent rotation without sudden jumps after lag spikes.
      */
     private void smoothRotateCamera(ClientPlayerEntity player, float degreesPerSecond) {
         long now = System.currentTimeMillis();
-        // Cap the delta to SMOOTH_LOOK_MAX_DELTA_MS so a severe lag spike doesn't teleport the camera.
+        // Cap the elapsed time to SMOOTH_LOOK_MAX_DELTA_MS so a severe lag spike
+        // does not teleport the camera by applying a huge angular delta in one step.
         float deltaMs = (lastSmoothLookTime == 0)
                 ? SMOOTH_LOOK_INITIAL_DELTA_MS
                 : Math.min(SMOOTH_LOOK_MAX_DELTA_MS, (float)(now - lastSmoothLookTime));
         // Always advance the timestamp so the next call computes an accurate delta.
         lastSmoothLookTime = now;
 
-        // Scale the maximum step by actual elapsed time for frame-rate independence.
+        // Maximum angular delta this step, proportional to actual elapsed time.
         float step = degreesPerSecond * deltaMs / 1000.0f;
 
         float currentYaw   = player.getYaw();
         float currentPitch = player.getPitch();
 
-        // Normalise yaw delta to [-180, 180] to take the shortest arc
+        // Normalise the yaw error to [-180, 180] so we always take the shortest arc.
         float yawDiff = targetYaw - currentYaw;
         while (yawDiff >  180f) yawDiff -= 360f;
         while (yawDiff < -180f) yawDiff += 360f;
@@ -1394,17 +1458,27 @@ public class VisitorManager {
         // amplitude so the camera does not oscillate around the aim point.
         if (Math.abs(yawDiff) < 1.0f && Math.abs(pitchDiff) < 1.0f) return;
 
-        float newYaw   = currentYaw   + Math.max(-step, Math.min(step, yawDiff));
-        float newPitch = currentPitch + Math.max(-step, Math.min(step, pitchDiff));
-        newPitch = Math.max(-90f, Math.min(90f, newPitch));
+        // Compute rotation deltas: clamp each axis to at most one step, then add
+        // a tiny tremor that mimics the natural micro-vibration of a real mouse.
+        // Both components are pure deltas applied to the current rotation – no
+        // absolute Vec3d target is used.
+        float deltaYaw   = Math.max(-step, Math.min(step, yawDiff))
+                         + generateTremor(SMOOTH_LOOK_TREMOR_AMPLITUDE);
+        float deltaPitch = Math.max(-step, Math.min(step, pitchDiff))
+                         + generateTremor(SMOOTH_LOOK_TREMOR_AMPLITUDE * SMOOTH_LOOK_TREMOR_PITCH_SCALE);
 
-        // Add a tiny random tremor to simulate the micro-vibration of a real
-        // mouse player (delta-based, like genuine mouse input).
-        float tremorYaw   = (random.nextFloat() * 2f - 1f) * SMOOTH_LOOK_TREMOR_AMPLITUDE;
-        float tremorPitch = (random.nextFloat() * 2f - 1f) * SMOOTH_LOOK_TREMOR_AMPLITUDE * SMOOTH_LOOK_TREMOR_PITCH_SCALE;
+        // Apply deltas to the current rotation.  Pitch is clamped after applying
+        // the tremor so it never escapes the valid [-90, 90] range.
+        player.setYaw(currentYaw + deltaYaw);
+        player.setPitch(Math.max(-90f, Math.min(90f, currentPitch + deltaPitch)));
+    }
 
-        player.setYaw(newYaw + tremorYaw);
-        player.setPitch(newPitch + tremorPitch);
+    /**
+     * Returns a random tremor value in {@code [-amplitude, amplitude]} to simulate
+     * the micro-vibration of a real mouse player.
+     */
+    private float generateTremor(float amplitude) {
+        return (random.nextFloat() * 2f - 1f) * amplitude;
     }
 
     private void releaseMovementKeys() {
