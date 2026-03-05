@@ -273,6 +273,44 @@ public class VisitorManager {
      */
     private static final float STAIR_FORWARD_CONE_DEGREES = 120f;
 
+    // ── Flat-terrain navigation waypoints ────────────────────────────────────
+
+    /**
+     * Horizontal radius (blocks) to scan when looking for a flat-terrain
+     * navigation waypoint.  Used when the direct path is blocked at the same
+     * Y-level and stair navigation is not active.
+     */
+    private static final int    NAV_WAYPOINT_RADIUS     = 8;
+
+    /**
+     * How long (ms) to keep a cached flat-terrain navigation waypoint before
+     * recomputing it.  A short cache keeps the waypoint responsive to changes
+     * in the player's position while avoiding expensive per-tick block scans.
+     */
+    private static final long   NAV_WAYPOINT_CACHE_MS   = 1500L;
+
+    /**
+     * Half-angle (degrees) of the forward cone searched for flat-terrain
+     * navigation waypoints.  Only blocks within this arc of the direct path
+     * toward the target are considered, preventing the pathfinder from turning
+     * away from the visitor to reach a waypoint behind a wall on the far side.
+     */
+    private static final float  NAV_WAYPOINT_CONE_DEG   = 90f;
+
+    /**
+     * Distance (blocks) at which a flat-terrain navigation waypoint is
+     * considered reached and normal visitor-directed navigation resumes.
+     */
+    private static final double NAV_WAYPOINT_REACH_DIST = 1.5;
+
+    /**
+     * Minimum horizontal distance (blocks) from the player to consider a
+     * candidate as a flat-terrain navigation waypoint.  Blocks too close to
+     * the player's current position are excluded so the waypoint always
+     * represents a meaningful forward step.
+     */
+    private static final double NAV_WAYPOINT_MIN_DIST   = 1.0;
+
     // ── Wall-crash / stuck recovery ──────────────────────────────────────────
 
     /**
@@ -405,6 +443,19 @@ public class VisitorManager {
     private Vec3d cachedStairEntry     = null;
     /** Wall-clock time (ms) when {@link #cachedStairEntry} was last computed. */
     private long  cachedStairEntryTime = 0;
+
+    // Flat-terrain navigation waypoint state
+    /**
+     * Cached passable floor block used as an intermediate navigation target
+     * when the direct path to the visitor is blocked at the same height level.
+     * The player navigates to this "detected block" before rotating toward the
+     * distant visitor, preventing the pathfinder from getting stuck while
+     * simultaneously steering around a wall and turning toward the target.
+     * {@code null} when not active.
+     */
+    private Vec3d cachedNavWaypoint     = null;
+    /** Wall-clock time (ms) when {@link #cachedNavWaypoint} was last computed. */
+    private long  cachedNavWaypointTime = 0;
 
     // Visitor tracking
     private Entity       currentVisitor  = null;
@@ -982,6 +1033,10 @@ public class VisitorManager {
             walkRecoveryDirection     = 0;
             walkRecoveryBackupEndTime = 0;
             walkRecoveryEndTime       = 0;
+            // Reset flat-terrain navigation waypoint so it is recomputed for the
+            // new navigation leg rather than carrying over a stale target.
+            cachedNavWaypoint     = null;
+            cachedNavWaypointTime = 0;
         }
         LOGGER.info("[JustFarming-Visitors] -> {}", next);
     }
@@ -1177,6 +1232,43 @@ public class VisitorManager {
         } else if (Math.abs(heightDiff) <= STAIR_NAV_HEIGHT_THRESHOLD) {
             // No longer need vertical stair navigation; clear cached entry.
             cachedStairEntry = null;
+        }
+
+        // ── Flat-terrain navigation waypoints ──────────────────────────────────
+        // When the near path is blocked at the same height level (stair navigation
+        // is not active), scan for the nearest passable floor block in the forward
+        // cone and redirect toward it.  The player navigates to this "detected
+        // block" before the camera rotates toward the distant visitor, preventing
+        // the pathfinder from getting stuck while simultaneously trying to steer
+        // around a wall and turn toward the target.
+        //
+        // isPathClear is checked every tick (even with a cached waypoint) so that
+        // the waypoint is discarded immediately once the path to the visitor clears,
+        // rather than persisting until the cache expires.
+        if (Math.abs(heightDiff) <= STAIR_NAV_HEIGHT_THRESHOLD
+                && !isPathClear(player, baseTargetYaw, steerProbeStep, avoidNpcs)) {
+            if (cachedNavWaypoint == null
+                    || now - cachedNavWaypointTime > NAV_WAYPOINT_CACHE_MS) {
+                cachedNavWaypoint     = findNavWaypoint(player, baseTargetYaw, avoidNpcs);
+                cachedNavWaypointTime = now;
+            }
+            if (cachedNavWaypoint != null) {
+                double wdx   = cachedNavWaypoint.x - eye.x;
+                double wdz   = cachedNavWaypoint.z - eye.z;
+                double wdist = Math.sqrt(wdx * wdx + wdz * wdz);
+                if (wdist <= NAV_WAYPOINT_REACH_DIST) {
+                    // Waypoint reached; discard it so normal navigation resumes.
+                    cachedNavWaypoint = null;
+                } else {
+                    // Redirect toward the waypoint so the camera rotates toward the
+                    // detected block instead of the distant visitor.
+                    baseTargetYaw = (float) Math.toDegrees(Math.atan2(-wdx, wdz));
+                }
+            }
+        } else {
+            // Path is clear, or height difference is too large (stair nav handles it);
+            // discard any cached flat-terrain waypoint.
+            cachedNavWaypoint = null;
         }
 
         // Try the direct path first; if clear, apply jitter for humanlike variation.
@@ -1415,6 +1507,64 @@ public class VisitorManager {
                         bestY = y;
                         best  = new Vec3d(px + dx + 0.5, y, pz + dz + 0.5);
                     }
+                }
+            }
+        }
+        return best;
+    }
+
+    /**
+     * Scans nearby floor blocks for a passable intermediate navigation waypoint
+     * to use when the direct path toward the target is blocked on flat terrain.
+     *
+     * <p>Searches a {@link #NAV_WAYPOINT_RADIUS}-block horizontal radius around
+     * the player at the player's current feet Y-level, considering only positions
+     * within {@link #NAV_WAYPOINT_CONE_DEG} degrees of {@code targetYaw} to avoid
+     * routing the player away from the visitor.  Among the candidates, the nearest
+     * position that is both a valid standing spot
+     * (see {@link #isBehindPointPassable}) and has a clear immediate step toward
+     * it (see {@link #isPathClear}) is returned.
+     *
+     * @param player    the local player
+     * @param targetYaw horizontal yaw (degrees) toward the ultimate navigation target
+     * @param avoidNpcs whether to apply NPC-avoidance when checking the path
+     * @return the nearest suitable waypoint (XZ-centred, at player's feet Y), or
+     *         {@code null} if no passable block was found in the search area
+     */
+    private Vec3d findNavWaypoint(ClientPlayerEntity player, float targetYaw, boolean avoidNpcs) {
+        if (client.world == null) return null;
+        int px = (int) Math.floor(player.getX());
+        int py = (int) Math.floor(player.getY());
+        int pz = (int) Math.floor(player.getZ());
+
+        Vec3d  best     = null;
+        double bestDist = Double.MAX_VALUE;
+
+        for (int dx = -NAV_WAYPOINT_RADIUS; dx <= NAV_WAYPOINT_RADIUS; dx++) {
+            for (int dz = -NAV_WAYPOINT_RADIUS; dz <= NAV_WAYPOINT_RADIUS; dz++) {
+                double sdx  = (px + dx + 0.5) - player.getX();
+                double sdz  = (pz + dz + 0.5) - player.getZ();
+                double dist = Math.sqrt(sdx * sdx + sdz * sdz);
+                if (dist < NAV_WAYPOINT_MIN_DIST) continue; // skip the block occupied by the player
+
+                // Only blocks inside the forward cone toward the target.
+                float  wayYaw  = (float) Math.toDegrees(Math.atan2(-sdx, sdz));
+                float  yawDiff = wayYaw - targetYaw;
+                while (yawDiff >  180f) yawDiff -= 360f;
+                while (yawDiff < -180f) yawDiff += 360f;
+                if (Math.abs(yawDiff) > NAV_WAYPOINT_CONE_DEG) continue;
+
+                // The candidate must be a valid standing position at the player's Y level.
+                Vec3d candidate = new Vec3d(px + dx + 0.5, py, pz + dz + 0.5);
+                if (!isBehindPointPassable(candidate)) continue;
+
+                // The immediate step toward the candidate must be passable so the
+                // player can actually start walking toward it without hitting a wall.
+                if (!isPathClear(player, wayYaw, PROBE_STEP, avoidNpcs)) continue;
+
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    best     = candidate;
                 }
             }
         }
