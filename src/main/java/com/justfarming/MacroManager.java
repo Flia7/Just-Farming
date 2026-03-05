@@ -338,6 +338,13 @@ public class MacroManager {
         }
         waitingForVisitors = false;
         running = true;
+        // Switch to the configured farming tool slot if one is set.
+        if (config.farmingToolHotbarSlot >= 0 && config.farmingToolHotbarSlot <= 8
+                && client.player != null
+                && !client.player.getInventory().getStack(config.farmingToolHotbarSlot).isEmpty()) {
+            client.player.getInventory().setSelectedSlot(config.farmingToolHotbarSlot);
+            LOGGER.info("[JustFarming] Switched to farming tool slot {}.", config.farmingToolHotbarSlot);
+        }
         boolean skipMousemat = false;
         if (config.squeakyMousematEnabled && client.player != null) {
             float desiredYaw   = config.getEffectiveYaw(config.selectedCrop);
@@ -370,7 +377,8 @@ public class MacroManager {
     /** Stop the macro and release all held keys. */
     public void stop() {
         if (!running && !waitingForVisitors && !waitingForPestKiller
-                && (visitorManager == null || !visitorManager.isActive())) return;
+                && (visitorManager == null || !visitorManager.isActive())
+                && (pestKillerManager == null || !pestKillerManager.isActive())) return;
         running = false;
         waitingForVisitors = false;
         waitingForPestKiller = false;
@@ -392,7 +400,8 @@ public class MacroManager {
     /** Toggle start / stop. */
     public void toggle() {
         if (running || waitingForVisitors || waitingForPestKiller
-                || (visitorManager != null && visitorManager.isActive())) stop();
+                || (visitorManager != null && visitorManager.isActive())
+                || (pestKillerManager != null && pestKillerManager.isActive())) stop();
         else start();
     }
 
