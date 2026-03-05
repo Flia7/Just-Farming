@@ -5,6 +5,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.Hand;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -133,6 +134,22 @@ public class PestKillerManager {
     /** Wall-clock time (ms) at which the current strafe manoeuvre ends; 0 = inactive. */
     private long  strafeEndTime        = 0;
 
+    // Double-jump flight activation
+    /**
+     * Wall-clock time (ms) when the current double-jump sequence started; 0 = inactive.
+     * Set to 0 once the player is confirmed flying or the sequence completes.
+     */
+    private long doubleJumpStartTime = 0;
+
+    // Ceiling avoidance
+    /**
+     * Current phase of the ceiling-avoidance manoeuvre:
+     * 0 = none, 1 = backing up while rising, 2 = rising above the ceiling.
+     */
+    private int  ceilingAvoidPhase     = 0;
+    /** Wall-clock time (ms) when the current ceiling-avoidance phase started; 0 = inactive. */
+    private long ceilingAvoidStartTime = 0;
+
     /** How often (ms) to check whether the player is stuck. */
     private static final long   STUCK_CHECK_INTERVAL_MS      = 1500;
     /** Minimum distance (blocks) the player must travel per check interval to be considered "un-stuck". */
@@ -141,6 +158,49 @@ public class PestKillerManager {
     private static final long   STRAFE_DURATION_MS           = 600;
     /** Minimum distance to the target (blocks) below which stuck detection is skipped. */
     private static final double MIN_STUCK_CHECK_DIST         = 2.0;
+
+    // ── Double-jump (flight activation) ─────────────────────────────────────
+
+    /**
+     * Duration (ms) of each jump-key press in the double-jump sequence used to
+     * activate creative-style flight on Hypixel SkyBlock.
+     */
+    private static final long DOUBLE_JUMP_PRESS_MS = 100L;
+
+    /**
+     * Gap (ms) between the two jump-key presses in the double-jump sequence.
+     * A short but non-zero release window is required so the server registers
+     * two distinct key-press events rather than a single held press.
+     */
+    private static final long DOUBLE_JUMP_GAP_MS = 60L;
+
+    /**
+     * Additional wait (ms) after the second jump-press of the double-jump sequence
+     * before the sequence is reset and can be retried.  Gives the game time to
+     * process the key events and update {@code player.getAbilities().flying} before
+     * another sequence begins.
+     */
+    private static final long DOUBLE_JUMP_COMPLETION_WAIT_MS = 200L;
+
+    // ── Ceiling avoidance ────────────────────────────────────────────────────
+
+    /**
+     * Number of blocks above the player's head (feet Y + 2) to scan for a
+     * ceiling that would block upward flight toward the pest.
+     */
+    private static final int  CEILING_SCAN_HEIGHT         = 3;
+
+    /**
+     * How long (ms) to hold the back key while rising during the ceiling-avoidance
+     * manoeuvre (phase 1: back up + rise).
+     */
+    private static final long CEILING_BACKUP_MS           = 600L;
+
+    /**
+     * Maximum time (ms) to spend rising in phase 2 of ceiling avoidance before
+     * giving up and resuming normal pathfinding.
+     */
+    private static final long CEILING_RISE_TIMEOUT_MS     = 2500L;
 
     // Hotbar state
     /** Hotbar slot of the vacuum item; -1 if not found. */
@@ -192,6 +252,9 @@ public class PestKillerManager {
         enterState(State.IDLE);
         restoreHotbarSlot();
         releaseMovementKeys();
+        doubleJumpStartTime = 0;
+        ceilingAvoidPhase = 0;
+        ceilingAvoidStartTime = 0;
     }
 
     /**
@@ -203,6 +266,9 @@ public class PestKillerManager {
         LOGGER.info("[JustFarming-PestKiller] Stopped.");
         releaseMovementKeys();
         restoreHotbarSlot();
+        doubleJumpStartTime = 0;
+        ceilingAvoidPhase = 0;
+        ceilingAvoidStartTime = 0;
         enterState(State.IDLE);
     }
 
@@ -377,6 +443,9 @@ public class PestKillerManager {
             lastProgressCheckTime = 0;
             strafeEndTime        = 0;
             strafeDirection      = 0;
+            doubleJumpStartTime  = 0;
+            ceilingAvoidPhase    = 0;
+            ceilingAvoidStartTime = 0;
         }
         if (next != State.IDLE && next != State.DONE) {
             LOGGER.info("[JustFarming-PestKiller] -> {}", next);
@@ -465,6 +534,34 @@ public class PestKillerManager {
     private void flyToward(ClientPlayerEntity player, Vec3d target) {
         if (client.options == null) return;
 
+        long now = System.currentTimeMillis();
+
+        // ── Step 1: Ensure the player is flying ──────────────────────────────
+        // On Hypixel SkyBlock Garden the player has creative-style flight.
+        // If they land on a surface (e.g. after hitting a wall) flight is
+        // deactivated; a double-jump sequence re-activates it.
+        if (!player.getAbilities().flying) {
+            executeDoubleJump(player, now);
+            return; // wait for flight to be active before moving
+        }
+        // Flight confirmed – clear the double-jump sequence tracker.
+        doubleJumpStartTime = 0;
+
+        // ── Step 2: Ceiling avoidance ─────────────────────────────────────────
+        // If there is a solid block within CEILING_SCAN_HEIGHT blocks above the
+        // player's head, normal upward flight is blocked.  Execute the three-phase
+        // avoidance manoeuvre: back up while rising → rise clear of the ceiling →
+        // resume direct pathfinding.
+        if (ceilingAvoidPhase != 0 || hasCeilingAbove(player)) {
+            if (ceilingAvoidPhase == 0) {
+                ceilingAvoidPhase    = 1;
+                ceilingAvoidStartTime = now;
+                LOGGER.debug("[JustFarming-PestKiller] Ceiling detected; starting avoidance manoeuvre.");
+            }
+            executeCeilingAvoidance(player, now, target);
+            return;
+        }
+
         // Point camera at the target (includes pitch for vertical direction)
         lookAt(player, target);
 
@@ -492,7 +589,6 @@ public class PestKillerManager {
         boolean shouldSneak = dy < -1.5;
 
         // ── Stuck detection ─────────────────────────────────────────────────
-        long now = System.currentTimeMillis();
         if (lastProgressPos == null) {
             lastProgressPos      = eye;
             lastProgressCheckTime = now;
@@ -520,6 +616,113 @@ public class PestKillerManager {
         client.options.leftKey.setPressed(isStrafeActive && strafeDirection < 0);
         client.options.rightKey.setPressed(isStrafeActive && strafeDirection > 0);
         client.options.backKey.setPressed(false);
+    }
+
+    /**
+     * Executes a timed double-jump sequence to re-activate creative-style flight
+     * when the player has landed on a surface.
+     *
+     * <p>The sequence is:
+     * <ol>
+     *   <li>0 – {@link #DOUBLE_JUMP_PRESS_MS} ms: hold jump key (first press).</li>
+     *   <li>{@code DOUBLE_JUMP_PRESS_MS} – {@code DOUBLE_JUMP_PRESS_MS + DOUBLE_JUMP_GAP_MS} ms:
+     *       release the jump key so the server registers two distinct events.</li>
+     *   <li>{@code DOUBLE_JUMP_PRESS_MS + DOUBLE_JUMP_GAP_MS} –
+     *       {@code DOUBLE_JUMP_PRESS_MS * 2 + DOUBLE_JUMP_GAP_MS} ms:
+     *       hold jump key again (second press).</li>
+     *   <li>After the sequence: reset {@link #doubleJumpStartTime} so the sequence
+     *       can be retried if the player is still not flying.</li>
+     * </ol>
+     */
+    private void executeDoubleJump(ClientPlayerEntity player, long now) {
+        if (doubleJumpStartTime == 0) {
+            doubleJumpStartTime = now;
+            LOGGER.debug("[JustFarming-PestKiller] Player not flying; initiating double-jump sequence.");
+        }
+        long elapsed  = now - doubleJumpStartTime;
+        long phase1End = DOUBLE_JUMP_PRESS_MS;
+        long phase2End = DOUBLE_JUMP_PRESS_MS + DOUBLE_JUMP_GAP_MS;
+        long phase3End = DOUBLE_JUMP_PRESS_MS * 2 + DOUBLE_JUMP_GAP_MS;
+
+        boolean jumpPressed = elapsed < phase1End
+                || (elapsed >= phase2End && elapsed < phase3End);
+        client.options.jumpKey.setPressed(jumpPressed);
+        client.options.forwardKey.setPressed(false); // don't move while re-activating flight
+
+        if (elapsed >= phase3End + DOUBLE_JUMP_COMPLETION_WAIT_MS) {
+            // Sequence complete; reset so we retry if the player is still not flying.
+            doubleJumpStartTime = 0;
+            LOGGER.debug("[JustFarming-PestKiller] Double-jump sequence completed.");
+        }
+    }
+
+    /**
+     * Returns {@code true} if there is at least one non-air block within
+     * {@link #CEILING_SCAN_HEIGHT} blocks above the player's head.
+     *
+     * <p>The player occupies blocks at {@code floor(Y)} (feet) and
+     * {@code floor(Y)+1} (head), so the first potential ceiling block is at
+     * {@code floor(Y)+2}.  Detecting a ceiling here means the player cannot
+     * ascend further without hitting a solid surface.
+     */
+    private boolean hasCeilingAbove(ClientPlayerEntity player) {
+        if (client.world == null) return false;
+        int bx = (int) Math.floor(player.getX());
+        int bz = (int) Math.floor(player.getZ());
+        int headTopY = (int) Math.floor(player.getY()) + 2; // one block above head
+        for (int dy = 0; dy < CEILING_SCAN_HEIGHT; dy++) {
+            if (!client.world.getBlockState(new BlockPos(bx, headTopY + dy, bz)).isAir()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Executes the active phase of the ceiling-avoidance manoeuvre.
+     *
+     * <ul>
+     *   <li><b>Phase 1</b>: Back up while pressing jump to rise away from
+     *       under the ceiling for {@link #CEILING_BACKUP_MS} ms.</li>
+     *   <li><b>Phase 2</b>: Continue rising until the ceiling clears (no longer
+     *       detected by {@link #hasCeilingAbove}) or {@link #CEILING_RISE_TIMEOUT_MS}
+     *       elapses.  On completion {@link #ceilingAvoidPhase} is reset to 0
+     *       so normal pathfinding can resume.</li>
+     * </ul>
+     */
+    private void executeCeilingAvoidance(ClientPlayerEntity player, long now, Vec3d target) {
+        long elapsed = now - ceilingAvoidStartTime;
+
+        if (ceilingAvoidPhase == 1) {
+            // Phase 1: back up while rising to escape from under the ceiling
+            lookAt(player, target); // keep tracking the pest visually
+            client.options.backKey.setPressed(true);
+            client.options.forwardKey.setPressed(false);
+            client.options.jumpKey.setPressed(true);
+            client.options.sneakKey.setPressed(false);
+            client.options.leftKey.setPressed(false);
+            client.options.rightKey.setPressed(false);
+            if (elapsed >= CEILING_BACKUP_MS) {
+                ceilingAvoidPhase    = 2;
+                ceilingAvoidStartTime = now;
+                LOGGER.debug("[JustFarming-PestKiller] Ceiling avoidance: backed up, now rising above ceiling.");
+            }
+        } else if (ceilingAvoidPhase == 2) {
+            // Phase 2: rise until the ceiling above clears or the timeout expires
+            lookAt(player, target);
+            client.options.backKey.setPressed(false);
+            client.options.jumpKey.setPressed(true);
+            client.options.sneakKey.setPressed(false);
+            client.options.leftKey.setPressed(false);
+            client.options.rightKey.setPressed(false);
+            client.options.forwardKey.setPressed(false);
+            boolean cleared = !hasCeilingAbove(player) || elapsed >= CEILING_RISE_TIMEOUT_MS;
+            if (cleared) {
+                ceilingAvoidPhase    = 0;
+                ceilingAvoidStartTime = 0;
+                LOGGER.debug("[JustFarming-PestKiller] Ceiling avoidance complete; resuming normal pathfinding.");
+            }
+        }
     }
 
     /** Aim the camera toward {@code target} using smooth interpolation. */
