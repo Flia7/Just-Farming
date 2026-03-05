@@ -11,8 +11,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Queue;
 import java.util.Random;
 /**
@@ -64,6 +66,26 @@ public class PestKillerManager {
 
     /** Fallback kill radius (blocks) used when the config value is not set. */
     private static final double KILL_RADIUS = 5.0;
+
+    /**
+     * Kill ranges (blocks) for each known Hypixel vacuum type, ordered from
+     * most-specific to least-specific so that the first matching substring wins.
+     * Values mirror the actual in-game vacuum ranges.
+     *
+     * <p>Keys are matched case-insensitively against the stripped item display
+     * name via {@link String#contains}.  The more specific
+     * {@code "infiniVacuum™ Hooverius"} entry must appear before the shorter
+     * {@code "infiniVacuum"} entry so that the 15-block variant is recognised
+     * correctly; the ™ character is part of the actual in-game item name.
+     */
+    private static final Map<String, Double> VACUUM_RANGES = new LinkedHashMap<>();
+    static {
+        VACUUM_RANGES.put("infinivacuum™ hooverius", 15.0);
+        VACUUM_RANGES.put("infinivacuum",            12.5);
+        VACUUM_RANGES.put("hyper vacuum",            10.0);
+        VACUUM_RANGES.put("turbo vacuum",             7.5);
+        VACUUM_RANGES.put("skymart vacuum",           5.0);
+    }
 
     /** Distance (blocks) at which the player starts slowing down near the pest. */
     private static final double BRAKE_RADIUS = 10.0;
@@ -267,6 +289,13 @@ public class PestKillerManager {
     private int vacuumSlot = -1;
     /** Hotbar slot active before the vacuum switch; -1 if unknown. */
     private int preVacuumSlot = -1;
+    /**
+     * Kill range (blocks) automatically detected from the equipped vacuum's
+     * display name.  {@code -1} means no vacuum has been detected yet; the
+     * effective range will fall back to {@link FarmingConfig#pestKillerVacuumRange}
+     * or {@link #KILL_RADIUS}.
+     */
+    private double detectedVacuumRange = -1.0;
 
     // ── Plot-centre navigation ───────────────────────────────────────────────
 
@@ -352,6 +381,7 @@ public class PestKillerManager {
         ceilingAvoidPhase = 0;
         ceilingAvoidStartTime = 0;
         remainingPlots.clear();
+        detectedVacuumRange = -1.0;
         resetPlotState();
     }
 
@@ -369,6 +399,7 @@ public class PestKillerManager {
         ceilingAvoidPhase = 0;
         ceilingAvoidStartTime = 0;
         remainingPlots.clear();
+        detectedVacuumRange = -1.0;
         resetPlotState();
         enterState(State.IDLE);
     }
@@ -825,12 +856,14 @@ public class PestKillerManager {
     /**
      * Searches the hotbar for the first item whose display name contains
      * "vacuum" (case-insensitive), records the current slot as {@link #preVacuumSlot},
-     * and switches to the vacuum slot.  Does nothing if no vacuum is found.
+     * switches to the vacuum slot, and auto-detects its kill range from
+     * {@link #VACUUM_RANGES}.  Does nothing if no vacuum is found.
      */
     private void findAndEquipVacuum(ClientPlayerEntity player) {
         if (vacuumSlot >= 0) return; // already found and equipped
 
         int found = -1;
+        String foundName = null;
         for (int i = 0; i < 9; i++) {
             ItemStack stack = player.getInventory().getStack(i);
             if (!stack.isEmpty()) {
@@ -839,6 +872,7 @@ public class PestKillerManager {
                 String cleanName = name.replaceAll("§.", "").trim();
                 if (cleanName.toLowerCase().contains("vacuum")) {
                     found = i;
+                    foundName = cleanName;
                     break;
                 }
             }
@@ -847,6 +881,22 @@ public class PestKillerManager {
         if (found < 0) {
             LOGGER.warn("[JustFarming-PestKiller] No vacuum item found in hotbar.");
             return;
+        }
+
+        // Auto-detect kill range from the vacuum item name
+        if (detectedVacuumRange < 0 && foundName != null) {
+            String lowerName = foundName.toLowerCase();
+            for (Map.Entry<String, Double> entry : VACUUM_RANGES.entrySet()) {
+                if (lowerName.contains(entry.getKey())) {
+                    detectedVacuumRange = entry.getValue();
+                    LOGGER.info("[JustFarming-PestKiller] Auto-detected vacuum '{}' with kill range {} blocks.",
+                            foundName, detectedVacuumRange);
+                    break;
+                }
+            }
+            if (detectedVacuumRange < 0) {
+                LOGGER.info("[JustFarming-PestKiller] Unknown vacuum '{}'; using configured/default range.", foundName);
+            }
         }
 
         preVacuumSlot = player.getInventory().getSelectedSlot();
@@ -1144,10 +1194,19 @@ public class PestKillerManager {
 
     /**
      * Returns the effective kill/vacuum radius in blocks.
-     * Uses {@link FarmingConfig#pestKillerVacuumRange} when set, otherwise falls
-     * back to the hardcoded {@link #KILL_RADIUS}.
+     *
+     * <p>Priority order:
+     * <ol>
+     *   <li>Auto-detected range from the equipped vacuum's display name (see
+     *       {@link #VACUUM_RANGES}).</li>
+     *   <li>{@link FarmingConfig#pestKillerVacuumRange} when manually set (&gt; 0).</li>
+     *   <li>Hardcoded fallback {@link #KILL_RADIUS} (5 blocks).</li>
+     * </ol>
      */
     private double getEffectiveKillRadius() {
+        if (detectedVacuumRange > 0) {
+            return detectedVacuumRange;
+        }
         if (config != null && config.pestKillerVacuumRange > 0) {
             return config.pestKillerVacuumRange;
         }
