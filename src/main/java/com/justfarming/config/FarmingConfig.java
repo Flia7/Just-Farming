@@ -243,10 +243,15 @@ public class FarmingConfig {
 
     /**
      * Maximum distance (in blocks) from which the vacuum item is used to kill a pest.
-     * The Vacuum can reach up to 15 blocks; set higher values to kill pests from a
-     * distance without flying all the way up to them.
+     * This value is used as a fallback when the vacuum type cannot be auto-detected.
      *
-     * <p>Range: 1–15 blocks.  Default {@code 5}.
+     * <p>When the mod can identify the vacuum in your hotbar it automatically uses
+     * the correct range for that item (Skymart Vacuum = 5, Turbo Vacuum = 7.5,
+     * Hyper Vacuum = 10, InfiniVacuum = 12.5, InfiniVacuum™ Hooverius = 15).
+     * Set this to {@code 0} to rely solely on auto-detection; if auto-detection
+     * also fails the hardcoded 5-block default is used.
+     *
+     * <p>Range: 0–15 blocks.  Default {@code 5}.
      */
     public int pestKillerVacuumRange = 5;
 
