@@ -131,7 +131,30 @@ public class JustFarming implements ClientModInitializer {
                                                         net.minecraft.text.Text.literal("§a[JustFarming] Visitor routine started. Teleporting to barn..."), true);
                                             }
                                             return 1;
-                                        }))
+                                        })
+                                        .then(literal("waypoint")
+                                                .executes(ctx -> {
+                                                    net.minecraft.client.network.ClientPlayerEntity p = ctx.getSource().getPlayer();
+                                                    if (p != null) {
+                                                        double[] pos = { p.getX(), p.getY(), p.getZ() };
+                                                        config.visitorWaypoints.add(pos);
+                                                        config.save();
+                                                        p.sendMessage(net.minecraft.text.Text.literal(
+                                                                "§a[JustFarming] Visitor waypoint " + config.visitorWaypoints.size()
+                                                                + " added at " + String.format("%.1f, %.1f, %.1f", pos[0], pos[1], pos[2]) + "."), true);
+                                                    }
+                                                    return 1;
+                                                })
+                                                .then(literal("clear")
+                                                        .executes(ctx -> {
+                                                            config.visitorWaypoints.clear();
+                                                            config.save();
+                                                            if (ctx.getSource().getPlayer() != null) {
+                                                                ctx.getSource().getPlayer().sendMessage(
+                                                                        net.minecraft.text.Text.literal("§a[JustFarming] All visitor waypoints cleared."), true);
+                                                            }
+                                                            return 1;
+                                                        }))))
                                 .then(literal("pest")
                                         .executes(ctx -> {
                                             if (!pestKillerManager.isActive()) {
@@ -315,7 +338,7 @@ public class JustFarming implements ClientModInitializer {
             }
         });
 
-        LOGGER.info("[JustFarming] Ready. Toggle macro: R | Open GUI: I | Freelook: L | Alternate direction: N | Commands: /just rewarp, /just rewarp clear, /just visitor, /just pest, /just farm");
+        LOGGER.info("[JustFarming] Ready. Toggle macro: R | Open GUI: I | Freelook: L | Alternate direction: N | Commands: /just rewarp, /just rewarp clear, /just visitor, /just visitor waypoint, /just visitor waypoint clear, /just pest, /just farm");
     }
 
     /** Returns the shared config instance. */

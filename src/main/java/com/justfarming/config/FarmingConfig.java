@@ -219,6 +219,21 @@ public class FarmingConfig {
      */
     public List<String> visitorBlacklist = new ArrayList<>();
 
+    /**
+     * Ordered list of navigation waypoints for the visitor pathfinder.
+     *
+     * <p>Each entry is a {@code [x, y, z]} coordinate array.  When the visitor
+     * routine begins, the player navigates through these points in order before
+     * approaching the first visitor NPC.  Use this to guide the player along a
+     * known-safe corridor through the barn entrance, preventing wall collisions
+     * that occur when the pathfinder tries to navigate directly to a visitor
+     * that is blocked by a wall.
+     *
+     * <p>Add waypoints with {@code /just visitor waypoint} while standing at each
+     * key position in the barn.  Clear them with {@code /just visitor waypoint clear}.
+     */
+    public List<double[]> visitorWaypoints = new ArrayList<>();
+
     // --- Auto Pest Killer Settings ---
 
     /**
