@@ -52,21 +52,23 @@ public class PestKillerManager {
 
     /**
      * Fixed wait (ms) after the teleport command lands before scanning for pests.
-     * Always applied regardless of configuration.
+     * Used as a fallback default when {@link FarmingConfig#pestKillerAfterTeleportDelay}
+     * is not available (e.g. config is null).
      */
     private static final long SCAN_WAIT_MS = 500;
-
-    /**
-     * Maximum random extra (ms) added on top of {@link #SCAN_WAIT_MS}.
-     * The actual scan wait is {@code SCAN_WAIT_MS + random(0, SCAN_WAIT_RANDOM_MS)}.
-     */
-    private static final long SCAN_WAIT_RANDOM_MS = 150;
 
     /**
      * How long (ms) to poll for pest entities after teleporting before giving
      * up and returning to the farm.  Allows the server time to render mob data.
      */
     private static final long SCAN_TIMEOUT_MS = 3000;
+
+    /**
+     * Shorter scan timeout (ms) used after at least one pest has been killed on
+     * the current plot.  Since entities have already been visible, a brief wait
+     * is sufficient before declaring the plot clear and moving to the next one.
+     */
+    private static final long SCAN_TIMEOUT_AFTER_KILL_MS = 1000;
 
     /** Fallback kill radius (blocks) used when the config value is not set. */
     private static final double KILL_RADIUS = 5.0;
@@ -391,8 +393,18 @@ public class PestKillerManager {
     /**
      * {@code true} after one full vacuum-shot attempt has already been made for
      * the current plot.  Prevents an infinite SCANNING → VACUUM_SHOT loop.
+     * Also set to {@code true} when at least one pest is killed via direct
+     * entity tracking, so a vacuum shot is not wasted after clearing the plot.
      */
     private boolean vacuumShotAttempted = false;
+
+    /**
+     * {@code true} once at least one pest has been killed on the current plot
+     * via direct entity tracking.  Used to apply a shorter scan timeout after
+     * clearing a plot so the macro moves quickly to the next infested plot
+     * instead of waiting the full {@link #SCAN_TIMEOUT_MS}.
+     */
+    private boolean atLeastOnePestKilledThisPlot = false;
 
     /** Shared particle tracker singleton used for vacuum-shot guidance. */
     private final VacuumParticleTracker vacuumParticleTracker = VacuumParticleTracker.getInstance();
@@ -512,9 +524,19 @@ public class PestKillerManager {
 
         remainingPlots.clear();
         if (pestPlots != null) {
+            // Sort plots numerically so the visit order is predictable.
+            java.util.List<String> sorted = new java.util.ArrayList<>();
             for (String p : pestPlots) {
-                if (p != null && !p.isBlank()) remainingPlots.add(p);
+                if (p != null && !p.isBlank()) sorted.add(p);
             }
+            sorted.sort((a, b) -> {
+                try { return Integer.compare(Integer.parseInt(a), Integer.parseInt(b)); }
+                catch (NumberFormatException e) {
+                    LOGGER.warn("[JustFarming-PestKiller] Non-numeric plot name '{}' or '{}'; using string sort.", a, b);
+                    return a.compareTo(b);
+                }
+            });
+            remainingPlots.addAll(sorted);
         }
 
         String firstPlot = remainingPlots.poll(); // remove and use the first plot
@@ -563,8 +585,12 @@ public class PestKillerManager {
                         sendCommand("warp garden");
                         LOGGER.info("[JustFarming-PestKiller] Sent /warp garden to reach garden.");
                     }
-                    // Fixed post-teleport scan wait: 500 ms + random 0–150 ms.
-                    teleportWaitMs = SCAN_WAIT_MS + random.nextInt((int) SCAN_WAIT_RANDOM_MS + 1);
+                    // Configurable post-teleport wait (pestKillerAfterTeleportDelay)
+                    // before scanning for pest entities; global randomization is added.
+                    int afterTpDelay = (config != null && config.pestKillerAfterTeleportDelay >= 0)
+                            ? config.pestKillerAfterTeleportDelay : (int) SCAN_WAIT_MS;
+                    int globalRandom = (config != null) ? config.globalRandomizationMs : 0;
+                    teleportWaitMs = afterTpDelay + random.nextInt(Math.max(1, globalRandom));
                     enterState(State.TELEPORTING);
                 }
             }
@@ -645,7 +671,8 @@ public class PestKillerManager {
                                 pests.size(), currentPest.displayName(), currentPest.position());
                         enterState(State.FLYING_TO_PEST);
                     }
-                } else if (now - stateEnteredAt >= SCAN_TIMEOUT_MS) {
+                } else if (now - stateEnteredAt >= (atLeastOnePestKilledThisPlot
+                        ? SCAN_TIMEOUT_AFTER_KILL_MS : SCAN_TIMEOUT_MS)) {
                     // No pests found at centre; try a vacuum shot to locate them via
                     // the particle trail (only one attempt per plot).
                     if (!vacuumShotAttempted && currentPlotName != null) {
@@ -811,7 +838,13 @@ public class PestKillerManager {
                     releaseMovementKeys();
                     int goNextDelay = (config != null) ? config.pestKillerGoToNextPestDelay : 0;
                     pestKillWaitEnd = (goNextDelay > 0) ? now + goNextDelay : 0;
-                    vacuumShotAttempted = false; // reset so we can try vacuum shot on the next plot
+                    // Mark that at least one pest was killed on this plot so the scanner
+                    // uses a shorter timeout before moving to the next plot.
+                    atLeastOnePestKilledThisPlot = true;
+                    // Skip vacuum shot for this plot: pests were found via direct tracking,
+                    // so a shot is unnecessary. vacuumShotAttempted is reset in resetPlotState()
+                    // when the next plot begins.
+                    vacuumShotAttempted = true;
                     enterState(State.SCANNING);
                     return;
                 }
@@ -888,6 +921,7 @@ public class PestKillerManager {
         particleWaypoint = null;
         vacuumShotFired = false;
         vacuumShotAttempted = false;
+        atLeastOnePestKilledThisPlot = false;
         vacuumParticleTracker.stopTracking();
         vacuumParticleTracker.reset();
     }

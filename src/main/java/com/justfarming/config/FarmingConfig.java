@@ -219,7 +219,7 @@ public class FarmingConfig {
      */
     public List<String> visitorBlacklist = new ArrayList<>();
 
-    // --- Auto Pest Killer Settings ---
+    // --- Pest Killer Settings ---
 
     /**
      * When {@code true}, the mod will automatically kill pests when they are
@@ -278,6 +278,15 @@ public class FarmingConfig {
      * <p>Range: 0–15 blocks.  Default {@code 5}.
      */
     public int pestKillerVacuumRange = 5;
+
+    /**
+     * How long (in milliseconds) to wait after the plot teleport command lands
+     * before scanning for pest entities.  Increase this if the server is slow
+     * to load entity data after a teleport.
+     *
+     * <p>Range: 0–5000 ms.  Default {@code 500}.
+     */
+    public int pestKillerAfterTeleportDelay = 500;
 
     /**
      * Minimum number of visitors that must be present at the barn for the

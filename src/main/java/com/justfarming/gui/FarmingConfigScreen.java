@@ -101,6 +101,7 @@ public class FarmingConfigScreen extends Screen {
     private MousematPostDelaySlider       mousematPostDelaySlider;
     private MousematResumeDelaySlider     mousematResumeDelaySlider;
     private PestKillerTeleportDelaySlider pestKillerTeleportDelaySliderInDelays;
+    private PestKillerAfterTeleportSlider pestKillerAfterTeleportSlider;
     private PestKillerGoToNextPestSlider  pestKillerGoToNextPestSlider;
 
     // ── Tab 4 – Visitors widgets ──────────────────────────────────────────────
@@ -253,12 +254,8 @@ public class FarmingConfigScreen extends Screen {
                         config.farmingToolHotbarSlot);
         this.addDrawableChild(farmingToolSlotSlider);
         farmingToolSlotSlider.setTooltip(Tooltip.of(Text.literal(
-                "Hotbar slot that holds your farming tool.\n" +
-                "Auto: the mod scans your hotbar for a known farming tool\n" +
-                "(hoe, dicer, chopper, cutter, cactus knife) and switches to it\n" +
-                "automatically when the macro starts and after killing pests.\n" +
-                "Slot 1–9: pin a specific slot so the macro always switches to\n" +
-                "the correct tool regardless of hotbar order.")));
+                "Hotbar slot for your farming tool.\n" +
+                "Auto: detect automatically. Slot 1–9: pin a specific slot.")));
         tabContentHeights[0] = y + bh - contentAreaTopY + tabScrollOffsets[0];
 
         // ── Tab 1 – Pests ─────────────────────────────────────────────────────
@@ -307,8 +304,7 @@ public class FarmingConfigScreen extends Screen {
                         config.autoPestKillerEnabled);
         this.addDrawableChild(pestKillerEnabledButton);
         pestKillerEnabledButton.setTooltip(Tooltip.of(Text.literal(
-                "When enabled, the mod automatically flies toward pests and\n" +
-                "kills them with a vacuum item when they are detected in the Garden.")));
+                "Flies toward pests and kills them with a vacuum when detected.")));
         y += bh + pad;
 
         pestKillerWarpToPlotButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
@@ -316,17 +312,14 @@ public class FarmingConfigScreen extends Screen {
                         config.pestKillerWarpToPlot);
         this.addDrawableChild(pestKillerWarpToPlotButton);
         pestKillerWarpToPlotButton.setTooltip(Tooltip.of(Text.literal(
-                "Enable Warping to Plot: if ON, runs /tptoplot <plot> to warp directly\n" +
-                "to the infested plot. If OFF, runs /warp garden instead.")));
+                "Warp directly to the infested plot via /tptoplot <plot>.")));
         y += bh + pad;
 
         pestKillerVacuumRangeSlider = new PestKillerVacuumRangeSlider(widgetX, y, bw, bh,
                         config.pestKillerVacuumRange);
         this.addDrawableChild(pestKillerVacuumRangeSlider);
         pestKillerVacuumRangeSlider.setTooltip(Tooltip.of(Text.literal(
-                "Maximum distance (blocks) from which the vacuum item activates.\n" +
-                "The Vacuum can reach up to 15 blocks – set higher to kill pests\n" +
-                "from a distance without flying all the way up to them.")));
+                "Max distance (blocks) at which the vacuum activates.")));
         y += bh + pad + gap;
         pestKillerStatusY = y;
         tabContentHeights[1] = y - contentAreaTopY + tabScrollOffsets[1];
@@ -467,9 +460,14 @@ public class FarmingConfigScreen extends Screen {
                 config.pestKillerTeleportDelay);
         this.addDrawableChild(pestKillerTeleportDelaySliderInDelays);
         pestKillerTeleportDelaySliderInDelays.setTooltip(Tooltip.of(Text.literal(
-                "How long to wait before sending the plot teleport command.\n" +
-                "After teleporting the mod always waits a fixed 500 ms (+up to 150 ms random)\n" +
-                "before scanning for pest entities. (ms)")));
+                "Wait before sending the plot teleport command. (ms)")));
+        y += bh + pad;
+
+        pestKillerAfterTeleportSlider = new PestKillerAfterTeleportSlider(widgetX, y, bw, bh,
+                config.pestKillerAfterTeleportDelay);
+        this.addDrawableChild(pestKillerAfterTeleportSlider);
+        pestKillerAfterTeleportSlider.setTooltip(Tooltip.of(Text.literal(
+                "Wait after teleporting to a pest plot before scanning for pests. (ms)")));
         y += bh + pad;
 
         pestKillerGoToNextPestSlider = new PestKillerGoToNextPestSlider(widgetX, y, bw, bh,
@@ -595,6 +593,7 @@ public class FarmingConfigScreen extends Screen {
         visitorsTeleportDelaySlider.visible   = t3 && inContentBounds(visitorsTeleportDelaySlider);
         bazaarSearchDelaySlider.visible       = t3 && inContentBounds(bazaarSearchDelaySlider);
         pestKillerTeleportDelaySliderInDelays.visible = t3 && inContentBounds(pestKillerTeleportDelaySliderInDelays);
+        pestKillerAfterTeleportSlider.visible = t3 && inContentBounds(pestKillerAfterTeleportSlider);
         pestKillerGoToNextPestSlider.visible  = t3 && inContentBounds(pestKillerGoToNextPestSlider);
 
         boolean t4 = activeTab == 4;
@@ -661,7 +660,7 @@ public class FarmingConfigScreen extends Screen {
             if (yInContentBounds(sectionPestsY))
                 drawSectionLabel(context, "Pests", sectionPestsY);
             if (yInContentBounds(sectionPestKillerY))
-                drawSectionLabel(context, "Auto Pest Killer", sectionPestKillerY);
+                drawSectionLabel(context, "Pest Killer", sectionPestKillerY);
             // Show current pest killer state below the buttons when active
             if (pestKillerManager != null && pestKillerManager.isActive() && yInContentBounds(pestKillerStatusY)) {
                 String stateText = "State: " + pestKillerManager.getState().name();
@@ -794,6 +793,7 @@ public class FarmingConfigScreen extends Screen {
         config.autoPestKillerEnabled    = pestKillerEnabledButton.getValue();
         config.pestKillerWarpToPlot     = pestKillerWarpToPlotButton.getValue();
         config.pestKillerTeleportDelay  = pestKillerTeleportDelaySliderInDelays.getDelayValue();
+        config.pestKillerAfterTeleportDelay = pestKillerAfterTeleportSlider.getDelayValue();
         config.pestKillerGoToNextPestDelay = pestKillerGoToNextPestSlider.getDelayValue();
         config.pestKillerVacuumRange    = pestKillerVacuumRangeSlider.getRangeValue();
         config.farmingToolHotbarSlot    = farmingToolSlotSlider.getSlotValue();
@@ -1391,11 +1391,11 @@ public class FarmingConfigScreen extends Screen {
         }
     }
 
-    /** Slider for the pest killer teleport delay (1000–10000 ms). */
+    /** Slider for the pest killer teleport delay (0–10000 ms). */
     private static class PestKillerTeleportDelaySlider extends IntStepSlider {
 
         PestKillerTeleportDelaySlider(int x, int y, int width, int height, int initialValue) {
-            super(x, y, width, height, 1000, 10000, initialValue);
+            super(x, y, width, height, 0, 10000, initialValue);
         }
 
         int getDelayValue() { return getIntValue(); }
@@ -1403,6 +1403,21 @@ public class FarmingConfigScreen extends Screen {
         @Override
         protected void updateMessage() {
             setMessage(Text.literal(String.format("Plot Teleport Delay: %d ms", getIntValue())));
+        }
+    }
+
+    /** Slider for the pest killer after-teleport scan wait (0–5000 ms). */
+    private static class PestKillerAfterTeleportSlider extends IntStepSlider {
+
+        PestKillerAfterTeleportSlider(int x, int y, int width, int height, int initialValue) {
+            super(x, y, width, height, 0, 5000, initialValue);
+        }
+
+        int getDelayValue() { return getIntValue(); }
+
+        @Override
+        protected void updateMessage() {
+            setMessage(Text.literal(String.format("After Teleport Timer: %d ms", getIntValue())));
         }
     }
 
