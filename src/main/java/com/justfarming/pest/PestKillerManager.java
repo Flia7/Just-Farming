@@ -64,11 +64,12 @@ public class PestKillerManager {
     private static final long SCAN_TIMEOUT_MS = 3000;
 
     /**
-     * Shorter scan timeout (ms) used after at least one pest has been killed on
-     * the current plot.  Since entities have already been visible, a brief wait
-     * is sufficient before declaring the plot clear and moving to the next one.
+     * Scan timeout (ms) used after at least one pest has been killed on the
+     * current plot.  Raised from 1 s to 2.5 s so that the last remaining pest,
+     * which may temporarily fall outside the client's entity-render range while
+     * the player is flying, is not missed due to an overly short scan window.
      */
-    private static final long SCAN_TIMEOUT_AFTER_KILL_MS = 1000;
+    private static final long SCAN_TIMEOUT_AFTER_KILL_MS = 2500;
 
     /** Fallback kill radius (blocks) used when the config value is not set. */
     private static final double KILL_RADIUS = 5.0;
@@ -1255,10 +1256,15 @@ public class PestKillerManager {
 
         boolean isStrafeActive = now < strafeEndTime && strafeDirection != 0;
 
+        // When the unstuck strafe is active and the target is above the player,
+        // also press jump so the player can climb over vertical obstacles that
+        // are blocking forward progress rather than simply sliding sideways.
+        boolean stuckClimbNeeded = isStrafeActive && dy > 0;
+
         // Allow forward movement alongside strafe so the player still approaches
         // the target while the unstuck manoeuvre is active.
         client.options.forwardKey.setPressed(shouldFly);
-        client.options.jumpKey.setPressed(shouldJump);
+        client.options.jumpKey.setPressed(shouldJump || stuckClimbNeeded);
         client.options.sneakKey.setPressed(shouldSneak);
         client.options.leftKey.setPressed(isStrafeActive && strafeDirection < 0);
         client.options.rightKey.setPressed(isStrafeActive && strafeDirection > 0);

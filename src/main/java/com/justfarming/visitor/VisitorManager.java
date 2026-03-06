@@ -570,6 +570,15 @@ public class VisitorManager {
      */
     private boolean skipCurrentVisitorDueToPrice = false;
 
+    /**
+     * When {@code true}, the current visitor's offer was declined because the
+     * visitor's name appears in {@link com.justfarming.config.FarmingConfig#visitorBlacklist}.
+     * The next {@link State#CLOSING_MENU} transition will call {@link #nextVisitor()}
+     * without going to the bazaar or accepting the offer.
+     * Reset by {@link #start()} and {@link #stop()}.
+     */
+    private boolean skipCurrentVisitorDueToBlacklist = false;
+
     // Regex patterns for requirement lines like "64x Wheat", "Wheat ×32", "64 Wheat"
     private static final Pattern PAT_AMOUNT_FIRST =
             Pattern.compile("(\\d[\\d,]*)\\s*[xX×]?\\s+(.+)");
@@ -651,6 +660,7 @@ public class VisitorManager {
         postAccept = false;
         postPurchase = false;
         skipCurrentVisitorDueToPrice = false;
+        skipCurrentVisitorDueToBlacklist = false;
         behindPoint = null;
         behindPointStartTime = 0;
         returnWarpDelay = 0;
@@ -702,6 +712,7 @@ public class VisitorManager {
         postAccept        = false;
         postPurchase      = false;
         skipCurrentVisitorDueToPrice = false;
+        skipCurrentVisitorDueToBlacklist = false;
         walkJitter        = 0f;
         walkJitterNextUpdate = 0;
         lastSmoothLookTime = 0;
@@ -918,11 +929,24 @@ public class VisitorManager {
                     // Without this guard the parse can run while slots are still empty,
                     // producing zero requirements and causing the macro to skip bazaar.
                     if (now - stateEnteredAt >= currentActionDelay) {
-                        parseVisitorMenu(screen);
-                        if (skipCurrentVisitorDueToPrice) {
-                            // Price limit exceeded – click "Decline Offer" in the GUI
-                            // before closing the menu so the server records the decline.
+                        if (isCurrentVisitorBlacklisted()) {
+                            // Visitor is blacklisted – click "Refuse Offer" so the server
+                            // records the decline, then close the menu and move on.
+                            String bName = currentVisitor != null && currentVisitor.getCustomName() != null
+                                    ? stripFormatting(currentVisitor.getCustomName().getString()) : "unknown";
+                            LOGGER.info("[JustFarming-Visitors] Blacklisted visitor {}; clicking Refuse Offer.", bName);
                             tryClickDeclineOffer(screen);
+                            if (currentVisitor != null) {
+                                completedVisitorIds.add(currentVisitor.getId());
+                            }
+                            skipCurrentVisitorDueToBlacklist = true;
+                        } else {
+                            parseVisitorMenu(screen);
+                            if (skipCurrentVisitorDueToPrice) {
+                                // Price limit exceeded – click "Decline Offer" in the GUI
+                                // before closing the menu so the server records the decline.
+                                tryClickDeclineOffer(screen);
+                            }
                         }
                         // Close the screen before opening the bazaar (or accepting)
                         player.closeHandledScreen();
@@ -938,6 +962,10 @@ public class VisitorManager {
                     if (postAccept) {
                         // Offer was accepted – move on to the next visitor.
                         postAccept = false;
+                        nextVisitor();
+                    } else if (skipCurrentVisitorDueToBlacklist) {
+                        // Visitor declined because it is blacklisted – skip to the next one.
+                        skipCurrentVisitorDueToBlacklist = false;
                         nextVisitor();
                     } else if (skipCurrentVisitorDueToPrice) {
                         // Visitor declined due to price limit – skip to the next one.
@@ -1213,13 +1241,12 @@ public class VisitorManager {
                             String name = stripFormatting(e.getCustomName().getString());
                             if (!KNOWN_VISITOR_NAMES.contains(name)) return false;
                             if (completedVisitorIds.contains(e.getId())) {
-                                LOGGER.info("[JustFarming-Visitors] Skipping already-accepted visitor: {}", name);
+                                LOGGER.info("[JustFarming-Visitors] Skipping already-completed visitor: {}", name);
                                 return false;
                             }
-                            if (config.visitorBlacklist != null && config.visitorBlacklist.contains(name)) {
-                                LOGGER.info("[JustFarming-Visitors] Skipping blacklisted visitor: {}", name);
-                                return false;
-                            }
+                            // Blacklisted visitors are included so the routine can navigate
+                            // to them, open their menu, and click "Refuse Offer".  They are
+                            // handled in READING_VISITOR_MENU rather than skipped here.
                             return true;
                         })
                 .forEach(pendingVisitors::add);
@@ -2285,6 +2312,18 @@ public class VisitorManager {
      */
     private boolean tryClickDeclineOffer(HandledScreen<?> screen) {
         return tryClickSlotWithName(screen, "Refuse Offer", "Decline Offer", "Refuse", "Decline");
+    }
+
+    /**
+     * Returns {@code true} if {@link #currentVisitor} is in the configured
+     * {@link com.justfarming.config.FarmingConfig#visitorBlacklist}.
+     */
+    private boolean isCurrentVisitorBlacklisted() {
+        if (currentVisitor == null) return false;
+        if (config.visitorBlacklist == null || config.visitorBlacklist.isEmpty()) return false;
+        if (currentVisitor.getCustomName() == null) return false;
+        String name = stripFormatting(currentVisitor.getCustomName().getString());
+        return config.visitorBlacklist.contains(name);
     }
 
     /**
