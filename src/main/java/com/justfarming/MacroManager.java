@@ -96,6 +96,13 @@ public class MacroManager {
      */
     private static final float ROTATION_TREMOR_PITCH_SCALE = 0.5f;
 
+    /** Duration (ms) for each space-key press in the disable-flight sequence. */
+    private static final long DISABLE_FLIGHT_PRESS_MS = 100L;
+    /** Gap (ms) between the two presses in the disable-flight sequence. */
+    private static final long DISABLE_FLIGHT_GAP_MS   = 60L;
+    /** Extra wait (ms) after the second press before declaring the sequence complete. */
+    private static final long DISABLE_FLIGHT_DONE_MS  = 200L;
+
     private final MinecraftClient client;
     private FarmingConfig config;
     private VisitorManager visitorManager;
@@ -107,7 +114,7 @@ public class MacroManager {
     // State
     // -----------------------------------------------------------------------
 
-    private enum MacroState { IDLE, MOUSEMAT_CLICK, ALIGNING_ROTATION, DETECTING, BACKWARD_LEFT, FORWARD_LEFT, FORWARD_RIGHT,
+    private enum MacroState { IDLE, DISABLING_FLIGHT, MOUSEMAT_CLICK, ALIGNING_ROTATION, DETECTING, BACKWARD_LEFT, FORWARD_LEFT, FORWARD_RIGHT,
             STRAFE_LEFT_ONLY, STRAFE_RIGHT_ONLY, BACK_ONLY, FORWARD_ONLY, WARPING,
             LANE_SWAP_WAITING, VISITING }
 
@@ -193,6 +200,11 @@ public class MacroManager {
      * state, so the key is never released and no lateral micro-movement occurs.
      */
     private boolean laneSwapKeepRight = false;
+
+    /** Wall-clock time (ms) when the disable-flight sequence started; 0 = not active. */
+    private long disableFlightStartTime = 0;
+    /** The state to enter once the disable-flight sequence finishes. */
+    private MacroState nextStateAfterFlightDisable = MacroState.DETECTING;
 
     /**
      * Tracks which phase of the MOUSEMAT_CLICK state we are in.
@@ -365,7 +377,8 @@ public class MacroManager {
                 LOGGER.info("[JustFarming] Already aimed at target yaw/pitch – skipping Squeaky Mousemat.");
             }
         }
-        state = (config.squeakyMousematEnabled && !skipMousemat) ? MacroState.MOUSEMAT_CLICK : MacroState.ALIGNING_ROTATION;
+        MacroState normalFirstState = (config.squeakyMousematEnabled && !skipMousemat)
+                ? MacroState.MOUSEMAT_CLICK : MacroState.ALIGNING_ROTATION;
         detectStartPos = null;
         startDetectTime = 0;
         lastPos = null;
@@ -377,8 +390,17 @@ public class MacroManager {
         mousematActionTime = 0;
         mousematPhaseRandomExtra = 0;
         lastRotationTime = 0;
+        disableFlightStartTime = 0;
         if (config.unlockedMouseEnabled) {
             client.mouse.unlockCursor();
+        }
+        // If the player is currently flying, disable flight before starting the macro.
+        if (client.player != null && client.player.getAbilities().flying) {
+            LOGGER.info("[JustFarming] Player is flying; disabling flight before starting macro.");
+            nextStateAfterFlightDisable = normalFirstState;
+            state = MacroState.DISABLING_FLIGHT;
+        } else {
+            state = normalFirstState;
         }
         LOGGER.info("[JustFarming] Macro started. Crop: {}", config.selectedCrop);
     }
@@ -393,6 +415,7 @@ public class MacroManager {
         waitingForPestKiller = false;
         state = MacroState.IDLE;
         lastRotationTime = 0;
+        disableFlightStartTime = 0;
         releaseKeys();
         if (visitorManager != null && visitorManager.isActive()) {
             visitorManager.stop();
@@ -551,6 +574,7 @@ public class MacroManager {
         // (60+ FPS) for smooth, linear steps.  Nothing to do here.
 
         switch (state) {
+            case DISABLING_FLIGHT  -> tickDisablingFlight(player);
             case MOUSEMAT_CLICK     -> tickMousematClick(player);
             case ALIGNING_ROTATION -> tickAligningRotation(player);
             case DETECTING         -> tickDetecting(player);
@@ -662,6 +686,32 @@ public class MacroManager {
             startDetectTime  = 0;
             detectStartPos   = null;
             LOGGER.info("[JustFarming] Rotation aligned (yaw diff={}, pitch diff={}) – starting detection.", yawDiff, pitchDiff);
+        }
+    }
+
+    /**
+     * Executes a double-press space sequence to disable creative-style flight.
+     * Once the sequence completes the macro transitions to {@link #nextStateAfterFlightDisable}.
+     */
+    private void tickDisablingFlight(ClientPlayerEntity player) {
+        if (client.options == null) return;
+        long now = System.currentTimeMillis();
+        if (disableFlightStartTime == 0) disableFlightStartTime = now;
+        long elapsed   = now - disableFlightStartTime;
+        long phase1End = DISABLE_FLIGHT_PRESS_MS;
+        long phase2End = DISABLE_FLIGHT_PRESS_MS + DISABLE_FLIGHT_GAP_MS;
+        long phase3End = DISABLE_FLIGHT_PRESS_MS * 2 + DISABLE_FLIGHT_GAP_MS;
+
+        if (elapsed >= phase3End + DISABLE_FLIGHT_DONE_MS) {
+            disableFlightStartTime = 0;
+            client.options.jumpKey.setPressed(false);
+            LOGGER.info("[JustFarming] Disable-flight sequence complete; continuing startup.");
+            state = nextStateAfterFlightDisable;
+        } else {
+            boolean jumpPressed = elapsed < phase1End
+                    || (elapsed >= phase2End && elapsed < phase3End);
+            client.options.jumpKey.setPressed(jumpPressed);
+            client.options.forwardKey.setPressed(false);
         }
     }
 
