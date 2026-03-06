@@ -221,7 +221,7 @@ public class JustFarming implements ClientModInitializer {
                 macroManager.toggleFreelook();
                 if (client.player != null) {
                     client.player.sendMessage(
-                            net.minecraft.text.Text.literal(macroManager.isFreelookEnabled()
+                            net.minecraft.text.Text.literal(macroManager.isFreelookActive()
                                     ? "§e[JustFarming] Freelook enabled."
                                     : "§e[JustFarming] Freelook disabled."), true);
                 }

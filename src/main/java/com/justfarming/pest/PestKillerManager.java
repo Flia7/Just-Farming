@@ -4,7 +4,6 @@ import com.justfarming.config.FarmingConfig;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.item.ItemStack;
-import net.minecraft.util.Hand;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import org.slf4j.Logger;
@@ -806,6 +805,7 @@ public class PestKillerManager {
                 double dist = player.getEyePos().distanceTo(pestPos);
                 // If the pest moved out of kill range, fly toward it again
                 if (dist > getEffectiveKillRadius() * 1.5) {
+                    if (client.options != null) client.options.useKey.setPressed(false);
                     enterState(State.FLYING_TO_PEST);
                     return;
                 }
@@ -818,11 +818,10 @@ public class PestKillerManager {
                     player.getInventory().setSelectedSlot(vacuumSlot);
                 }
 
-                // Right-click (use vacuum) while aimed at pest.
-                // Continue until the pest disappears from the entity list – no fixed
-                // kill-duration timer.
-                if (client.interactionManager != null) {
-                    client.interactionManager.interactItem(player, Hand.MAIN_HAND);
+                // Hold the use key (right-click) while aimed at pest.
+                // Continue until the pest disappears from the entity list.
+                if (client.options != null) {
+                    client.options.useKey.setPressed(true);
                 }
             }
 
@@ -1314,6 +1313,7 @@ public class PestKillerManager {
         client.options.rightKey.setPressed(false);
         client.options.jumpKey.setPressed(false);
         client.options.sneakKey.setPressed(false);
+        client.options.useKey.setPressed(false);
     }
 
     /**
