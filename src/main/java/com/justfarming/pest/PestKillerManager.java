@@ -531,7 +531,10 @@ public class PestKillerManager {
             }
             sorted.sort((a, b) -> {
                 try { return Integer.compare(Integer.parseInt(a), Integer.parseInt(b)); }
-                catch (NumberFormatException e) { return a.compareTo(b); }
+                catch (NumberFormatException e) {
+                    LOGGER.warn("[JustFarming-PestKiller] Non-numeric plot name '{}' or '{}'; using string sort.", a, b);
+                    return a.compareTo(b);
+                }
             });
             remainingPlots.addAll(sorted);
         }

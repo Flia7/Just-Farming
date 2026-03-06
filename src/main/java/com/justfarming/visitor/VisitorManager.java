@@ -1177,16 +1177,17 @@ public class VisitorManager {
      */
     private Entity findVisitorWithinRadius(ClientPlayerEntity player, double radius) {
         double px = player.getX(), py = player.getY(), pz = player.getZ();
+        double radiusSq = radius * radius;
         for (Entity v : pendingVisitors) {
             if (v == null || !v.isAlive()) continue;
             double dx = v.getX() - px, dy = v.getY() - py, dz = v.getZ() - pz;
-            if (Math.sqrt(dx * dx + dy * dy + dz * dz) <= radius) return v;
+            if (dx * dx + dy * dy + dz * dz <= radiusSq) return v;
         }
         if (currentVisitor != null && currentVisitor.isAlive()) {
             double dx = currentVisitor.getX() - px,
                    dy = currentVisitor.getY() - py,
                    dz = currentVisitor.getZ() - pz;
-            if (Math.sqrt(dx * dx + dy * dy + dz * dz) <= radius) return currentVisitor;
+            if (dx * dx + dy * dy + dz * dz <= radiusSq) return currentVisitor;
         }
         return null;
     }
