@@ -235,9 +235,11 @@ public class FarmingConfig {
     public boolean pestKillerWarpToPlot = true;
 
     /**
-     * How long (in milliseconds) to wait after sending the teleport command
-     * before scanning for pest entities.  Increase if the server is slow to
-     * load the destination area.
+     * How long (in milliseconds) to wait before sending the plot teleport command.
+     * Increase this to add a delay before the mod warps to the infested plot,
+     * making the behaviour look more human-like.
+     * After the teleport command is sent, the mod always waits a fixed 500 ms
+     * (plus up to 150 ms random) before scanning for pest entities.
      */
     public int pestKillerTeleportDelay = 4000;
 

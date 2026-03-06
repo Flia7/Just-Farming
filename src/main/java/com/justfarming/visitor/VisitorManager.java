@@ -1,6 +1,7 @@
 package com.justfarming.visitor;
 
 import com.justfarming.config.FarmingConfig;
+import com.justfarming.pest.PestKillerManager;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.CarpetBlock;
 import net.minecraft.block.AbstractPressurePlateBlock;
@@ -634,6 +635,25 @@ public class VisitorManager {
 
     public void start() {
         LOGGER.info("[JustFarming-Visitors] Starting visitor routine.");
+        // Auto-swap to farming tool (same logic as MacroManager.start)
+        ClientPlayerEntity player = client.player;
+        if (player != null) {
+            if (config.farmingToolHotbarSlot >= 0 && config.farmingToolHotbarSlot <= 8
+                    && !player.getInventory().getStack(config.farmingToolHotbarSlot).isEmpty()) {
+                player.getInventory().setSelectedSlot(config.farmingToolHotbarSlot);
+                LOGGER.info("[JustFarming-Visitors] Switched to farming tool slot {}.", config.farmingToolHotbarSlot);
+            } else if (config.farmingToolHotbarSlot < 0) {
+                for (int i = 0; i < 9; i++) {
+                    ItemStack stack = player.getInventory().getStack(i);
+                    if (PestKillerManager.isFarmingTool(stack)) {
+                        player.getInventory().setSelectedSlot(i);
+                        LOGGER.info("[JustFarming-Visitors] Auto-detected farming tool '{}' at slot {}; switching.",
+                                PestKillerManager.getCleanItemName(stack), i);
+                        break;
+                    }
+                }
+            }
+        }
         pendingVisitors.clear();
         pendingRequirements.clear();
         completedVisitorIds.clear();
