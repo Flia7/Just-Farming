@@ -231,12 +231,20 @@ public class VisitorManager {
 
     /**
      * Maximum angular error (degrees) between the player's current yaw and the
-     * chosen walk direction before walking is suppressed.  Prevents the player
-     * from pressing the forward key in the wrong direction while the camera is
-     * still rotating to face the target – which would carry them away from or
-     * into a wall.
+     * chosen walk direction before walking is suppressed at normal (1×) speed.
+     * At higher SkyBlock movement speeds this value is tightened proportionally
+     * (down to a minimum of {@link #MIN_WALK_YAW_ERROR_DEGREES}) so the player
+     * doesn't overshoot the visitor when moving at extreme speeds.
      */
     private static final float MAX_WALK_YAW_ERROR_DEGREES = 45f;
+
+    /**
+     * Minimum angular error threshold (degrees) applied at high movement speeds.
+     * The effective threshold is {@code max(MIN_WALK_YAW_ERROR_DEGREES,
+     * MAX_WALK_YAW_ERROR_DEGREES / speedMult)}, guaranteeing the player is always
+     * aimed to within this angle before forward movement is enabled.
+     */
+    private static final float MIN_WALK_YAW_ERROR_DEGREES = 15f;
 
     /**
      * Vanilla-default player walk-speed attribute value.
@@ -476,9 +484,7 @@ public class VisitorManager {
     private boolean midRunRescanPerformed = false;
     /**
      * When {@code true}, the routine is in the first {@link State#NAVIGATING}
-     * leg of this visitor visit.  A 300 ms pause is applied at the start of
-     * navigation so the camera rotation begins slightly later, matching the
-     * timing the server expects before the player starts moving.
+     * leg of this visitor visit.  Reserved for future use.
      */
     private boolean firstNavigationInRoutine = false;
     /**
@@ -729,16 +735,6 @@ public class VisitorManager {
                 if (currentVisitor == null || !currentVisitor.isAlive()) {
                     nextVisitor();
                     return;
-                }
-
-                // Apply a 300 ms hold at the very start of the first navigation leg so
-                // the camera rotation begins slightly later, matching server-side timing.
-                if (firstNavigationInRoutine) {
-                    if (now - stateEnteredAt < 300) {
-                        releaseMovementKeys();
-                        return;
-                    }
-                    firstNavigationInRoutine = false;
                 }
 
                 Vec3d visitorPos = new Vec3d(currentVisitor.getX(), currentVisitor.getY(), currentVisitor.getZ());
@@ -1357,14 +1353,22 @@ public class VisitorManager {
 
         // Suppress walking when the camera is still far from the chosen direction.
         // The forward key moves the player in the direction they are currently looking,
-        // so pressing it while the camera is >MAX_WALK_YAW_ERROR_DEGREES off-target
-        // would carry them in the wrong direction (e.g. away from the visitor or into
-        // a wall after rounding the behind-point).
+        // so pressing it while the camera is too far off-target would carry them in the
+        // wrong direction (e.g. away from the visitor or into a wall after rounding the
+        // behind-point).  At higher movement speeds (SkyBlock buffs) the allowable yaw
+        // error is tightened proportionally so the player always walks in precisely the
+        // right direction before committing to forward movement.
         if (shouldWalk) {
             float yawError = chosenYaw - player.getYaw();
             while (yawError >  180f) yawError -= 360f;
             while (yawError < -180f) yawError += 360f;
-            if (Math.abs(yawError) > MAX_WALK_YAW_ERROR_DEGREES) {
+            // Scale the threshold down with speed: at 1× speed, allow up to
+            // MAX_WALK_YAW_ERROR_DEGREES; at higher speeds require tighter aim
+            // (floor of MIN_WALK_YAW_ERROR_DEGREES) so the player doesn't overshoot
+            // at extreme speeds.
+            float speedAwareYawThreshold = Math.max(MIN_WALK_YAW_ERROR_DEGREES,
+                    MAX_WALK_YAW_ERROR_DEGREES / (float) Math.max(1.0, speedMult));
+            if (Math.abs(yawError) > speedAwareYawThreshold) {
                 shouldWalk = false;
             }
         }
