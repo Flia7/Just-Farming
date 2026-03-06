@@ -488,11 +488,11 @@ public class VisitorManager {
      */
     private boolean firstNavigationInRoutine = false;
     /**
-     * Intermediate waypoint placed {@link #BEHIND_VISITOR_DIST} blocks past the
-     * farthest visitor (away from the player's starting position).  The routine
-     * navigates here before turning to accept the first visitor so it approaches
-     * from behind the queue.  {@code null} once the point has been reached or
-     * when not applicable.
+     * Intermediate waypoint set to the nearest visitor's position.  The routine
+     * navigates here first (without trading) so the player arrives behind the
+     * visitor queue, then rotates and walks toward the farthest visitor to begin
+     * trading.  {@code null} when there is only one visitor or once the point
+     * has been reached.
      */
     private Vec3d behindPoint = null;
     /** Wall-clock time (ms) when navigation toward {@link #behindPoint} began; 0 = not started. */
@@ -714,10 +714,19 @@ public class VisitorManager {
                         returnToFarm();
                     } else {
                         currentVisitor = pendingVisitors.remove(0);
-                        behindPoint = computeBehindPoint(player, currentVisitor);
+                        // Use the nearest visitor's position (last in the farthest-first
+                        // sorted list) as the navigation node.  The player first walks to
+                        // the nearest visitor without trading, then rotates and approaches
+                        // the farthest visitor to begin the acceptance sequence.
+                        if (!pendingVisitors.isEmpty()) {
+                            Entity nearestVisitor = pendingVisitors.get(pendingVisitors.size() - 1);
+                            behindPoint = new Vec3d(nearestVisitor.getX(), nearestVisitor.getY(), nearestVisitor.getZ());
+                        } else {
+                            behindPoint = null;
+                        }
                         behindPointStartTime = 0;
                         if (behindPoint != null) {
-                            LOGGER.info("[JustFarming-Visitors] Auto-computed behind-point at {}.",
+                            LOGGER.info("[JustFarming-Visitors] Navigation node at nearest visitor's location: {}.",
                                     String.format("%.1f, %.1f, %.1f", behindPoint.x, behindPoint.y, behindPoint.z));
                         }
                         LOGGER.info("[JustFarming-Visitors] Found {} visitor(s). Navigating farthest first.",
