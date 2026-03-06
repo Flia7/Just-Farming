@@ -829,7 +829,7 @@ public class FarmingConfigScreen extends Screen {
     }
 
     private Text getFreelookButtonText() {
-        return macroManager.isFreelookEnabled()
+        return macroManager.isFreelookActive()
                 ? Text.translatable("gui.just-farming.freelook_on")
                 : Text.translatable("gui.just-farming.freelook_off");
     }

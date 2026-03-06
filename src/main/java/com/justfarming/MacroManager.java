@@ -298,11 +298,6 @@ public class MacroManager {
         return state == MacroState.VISITING;
     }
 
-    /** Returns {@code true} if freelook mode is enabled. */
-    public boolean isFreelookEnabled() {
-        return freelookEnabled;
-    }
-
     /** Returns {@code true} if freelook is active (enabled regardless of macro state). */
     public boolean isFreelookActive() {
         return freelookEnabled;
@@ -1037,15 +1032,16 @@ public class MacroManager {
      * progress.  Calling {@link net.minecraft.client.network.ClientPlayerInteractionManager#attackBlock}
      * on the same block position every tick is idempotent: the first call sends
      * {@code START_DESTROY_BLOCK}; subsequent calls for the same block are
-     * no-ops until the block changes.</p>
+     * no-ops until the block changes.  {@code swingHand} is only called when
+     * {@code attackBlock} confirms the action was processed.</p>
      */
     public void directBreakBlock() {
         if (client.interactionManager == null || client.world == null) return;
         if (!(client.crosshairTarget instanceof BlockHitResult blockHit)) return;
         BlockPos pos = blockHit.getBlockPos();
         if (!client.world.getBlockState(pos).isAir()) {
-            client.interactionManager.attackBlock(pos, blockHit.getSide());
-            if (client.player != null) {
+            boolean attacked = client.interactionManager.attackBlock(pos, blockHit.getSide());
+            if (attacked && client.player != null) {
                 client.player.swingHand(Hand.MAIN_HAND);
             }
         }
