@@ -1122,22 +1122,16 @@ public class MacroManager {
      * no-ops until the block changes.  {@code swingHand} is only called when
      * {@code attackBlock} confirms the action was processed.
      *
-     * <p>A fresh raycast is computed from the player's current tick-synchronised
-     * position (tickDelta&nbsp;=&nbsp;1.0f) instead of reusing
-     * {@code client.crosshairTarget}, which is set during the render loop with
-     * an interpolated (sub-tick) position.  For fast-moving crops such as Cocoa
-     * Beans the render-frame origin can be several tenths of a block ahead of
-     * the tick origin, which may cause the render-frame ray to strike a block
-     * face (e.g. the back of a cocoa-bean pod) that a human aiming at the same
-     * yaw/pitch from the real tick position would never hit.  Using the tick
-     * position ensures the macro only breaks exactly the blocks a real player
-     * would see at the configured yaw and pitch.</p>
+     * <p>{@code client.crosshairTarget} is used as the authoritative block
+     * selection instead of a separate raycast so that the macro only ever
+     * breaks blocks that the game itself considers the player to be looking at.
+     * This prevents breaking small-hitbox blocks (e.g. immature Cocoa Beans)
+     * that are not highlighted in the player's crosshair even when the macro's
+     * camera is aimed at the same yaw/pitch.</p>
      */
     public void directBreakBlock() {
         if (client.interactionManager == null || client.world == null || client.player == null) return;
-        double reach = client.player.getAttributeValue(EntityAttributes.BLOCK_INTERACTION_RANGE);
-        HitResult hit = client.player.raycast(reach, 1.0f, false);
-        if (!(hit instanceof BlockHitResult blockHit)) return;
+        if (!(client.crosshairTarget instanceof BlockHitResult blockHit)) return;
         BlockPos pos = blockHit.getBlockPos();
         if (!client.world.getBlockState(pos).isAir()) {
             boolean attacked = client.interactionManager.attackBlock(pos, blockHit.getSide());
