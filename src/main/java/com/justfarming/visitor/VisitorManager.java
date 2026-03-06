@@ -114,6 +114,21 @@ public class VisitorManager {
     private static final float SMOOTH_LOOK_DEGREES_PER_SECOND = 90.0f;
 
     /**
+     * Faster camera rotation speed (degrees/second) used when the player is
+     * already within {@link #VISITOR_DETECT_RADIUS} of a visitor and needs to
+     * align quickly but still smoothly (not a hard snap).  At 540°/s a 180°
+     * turn completes in ~0.3 s – noticeably fast but visually continuous.
+     */
+    private static final float FAST_LOOK_DEGREES_PER_SECOND = 540.0f;
+
+    /** How long (ms) to hold the space key for each press in the disable-flight sequence. */
+    private static final long DISABLE_FLIGHT_PRESS_MS  = 100L;
+    /** Gap (ms) between the two space-key presses in the disable-flight sequence. */
+    private static final long DISABLE_FLIGHT_GAP_MS    = 60L;
+    /** Extra wait (ms) after the second press before declaring the sequence complete. */
+    private static final long DISABLE_FLIGHT_DONE_MS   = 200L;
+
+    /**
      * Assumed elapsed time (ms) used on the very first {@code smoothRotateCamera}
      * call, before a previous timestamp is available.  50 ms corresponds to one
      * tick at the standard 20 TPS rate.
@@ -169,10 +184,9 @@ public class VisitorManager {
      * interaction during the behindPoint navigation phase.  When the player
      * comes within this distance of any visitor while navigating toward the
      * behindPoint, the macro interacts with that visitor directly instead of
-     * continuing to walk.  Corresponds to roughly half a block on each side
-     * of the visitor's position.
+     * continuing to walk.
      */
-    private static final double VISITOR_DETECT_RADIUS = 0.5;
+    private static final double VISITOR_DETECT_RADIUS = 1.8;
 
     /**
      * Maximum angular error (degrees) between the player's current yaw/pitch and
@@ -366,6 +380,8 @@ public class VisitorManager {
     public enum State {
         /** Not doing anything. */
         IDLE,
+        /** Double-pressing space to turn off creative flight before the routine begins. */
+        DISABLING_FLIGHT,
         /** Waiting for the server to teleport the player to the barn. */
         TELEPORTING,
         /** Looking for visitor NPC entities near the player. */
@@ -426,6 +442,15 @@ public class VisitorManager {
     private float targetPitch = 0f;
     /** Wall-clock time (ms) of the previous smoothRotateCamera call; 0 = not yet called. */
     private long  lastSmoothLookTime = 0;
+    /**
+     * When {@code true}, {@link #onRenderTick()} rotates the camera at
+     * {@link #FAST_LOOK_DEGREES_PER_SECOND} rather than the normal rate.
+     * Set when the player is within {@link #VISITOR_DETECT_RADIUS} of a visitor.
+     */
+    private boolean fastRotateActive = false;
+
+    /** Wall-clock time (ms) when the disable-flight sequence started; 0 = not active. */
+    private long disableFlightStartTime = 0;
 
     // Walk-direction jitter for humanlike path variation
     /** Current random yaw offset (degrees) added to the walking direction. */
@@ -639,6 +664,8 @@ public class VisitorManager {
         walkRecoveryEndTime = 0;
         cachedStairEntry = null;
         cachedStairEntryTime = 0;
+        fastRotateActive = false;
+        disableFlightStartTime = 0;
         enterState(State.IDLE);
     }
 
@@ -678,6 +705,8 @@ public class VisitorManager {
         walkJitter        = 0f;
         walkJitterNextUpdate = 0;
         lastSmoothLookTime = 0;
+        fastRotateActive  = false;
+        disableFlightStartTime = 0;
         returnWarpDelay   = 0;
         returnWarpSentAt  = 0;
         midRunRescanPerformed = false;
@@ -688,8 +717,14 @@ public class VisitorManager {
                 ? config.visitorsTeleportDelay : TELEPORT_WAIT_DEFAULT_MS;
         teleportWaitMs = base + random.nextInt((int) TELEPORT_EXTRA_RANDOM_MS + 1)
                 + random.nextInt(Math.max(1, config.globalRandomizationMs));
-        enterState(State.TELEPORTING);
-        sendCommand("tptoplot barn");
+        // If the player is currently flying, disable flight first before teleporting.
+        if (player != null && player.getAbilities().flying) {
+            LOGGER.info("[JustFarming-Visitors] Player is flying; disabling flight before starting routine.");
+            enterState(State.DISABLING_FLIGHT);
+        } else {
+            enterState(State.TELEPORTING);
+            sendCommand("tptoplot barn");
+        }
     }
 
     /**
@@ -711,7 +746,8 @@ public class VisitorManager {
         if (state != State.NAVIGATING && state != State.ACCEPTING_OFFER) return;
         ClientPlayerEntity player = client.player;
         if (player == null) return;
-        smoothRotateCamera(player);
+        float speed = fastRotateActive ? FAST_LOOK_DEGREES_PER_SECOND : SMOOTH_LOOK_DEGREES_PER_SECOND;
+        smoothRotateCamera(player, speed);
     }
 
     /** Called every client tick from the main tick event. */
@@ -724,6 +760,34 @@ public class VisitorManager {
         long now = System.currentTimeMillis();
 
         switch (state) {
+
+            case DISABLING_FLIGHT -> {
+                // Double-press space to turn off creative-style flight before starting.
+                if (disableFlightStartTime == 0) {
+                    disableFlightStartTime = now;
+                }
+                long elapsed   = now - disableFlightStartTime;
+                long phase1End = DISABLE_FLIGHT_PRESS_MS;
+                long phase2End = DISABLE_FLIGHT_PRESS_MS + DISABLE_FLIGHT_GAP_MS;
+                long phase3End = DISABLE_FLIGHT_PRESS_MS * 2 + DISABLE_FLIGHT_GAP_MS;
+
+                if (elapsed >= phase3End + DISABLE_FLIGHT_DONE_MS) {
+                    // Sequence complete – proceed to teleport whether or not flight
+                    // is already off (it should be, but guard against edge cases).
+                    disableFlightStartTime = 0;
+                    if (client.options != null) client.options.jumpKey.setPressed(false);
+                    LOGGER.info("[JustFarming-Visitors] Disable-flight sequence complete; teleporting.");
+                    enterState(State.TELEPORTING);
+                    sendCommand("tptoplot barn");
+                } else {
+                    boolean jumpPressed = elapsed < phase1End
+                            || (elapsed >= phase2End && elapsed < phase3End);
+                    if (client.options != null) {
+                        client.options.jumpKey.setPressed(jumpPressed);
+                        client.options.forwardKey.setPressed(false);
+                    }
+                }
+            }
 
             case TELEPORTING -> {
                 if (now - stateEnteredAt >= teleportWaitMs) {
@@ -818,15 +882,20 @@ public class VisitorManager {
                 double dist = new Vec3d(player.getX(), player.getY(), player.getZ()).distanceTo(visitorPos);
                 if (dist <= INTERACT_RADIUS) {
                     releaseMovementKeys();
-                    // Always update the camera target so the player visibly turns
-                    // toward the visitor before the interact packet is sent.
-                    lookAt(player, visitorPos);
+                    // Within VISITOR_DETECT_RADIUS: use fast rotation so the camera
+                    // aligns quickly but still smoothly (not a hard snap).
+                    fastRotateActive = dist <= VISITOR_DETECT_RADIUS;
+                    lookAt(player, visitorPos, fastRotateActive
+                            ? FAST_LOOK_DEGREES_PER_SECOND
+                            : SMOOTH_LOOK_DEGREES_PER_SECOND);
                     if (isAimedAtTarget(player) && now >= interactCooldownUntil) {
+                        fastRotateActive = false;
                         interactWithEntity(player, currentVisitor);
                         interactCooldownUntil = now + INTERACT_COOLDOWN_MS + randomExtra150;
                         enterState(State.INTERACTING);
                     }
                 } else {
+                    fastRotateActive = false;
                     walkToward(player, visitorPos);
                 }
             }
@@ -1031,15 +1100,18 @@ public class VisitorManager {
                 double dist = new Vec3d(player.getX(), player.getY(), player.getZ()).distanceTo(visitorPos);
                 if (dist <= INTERACT_RADIUS) {
                     releaseMovementKeys();
-                    // Always update the camera target so the player visibly turns
-                    // toward the visitor before the interact packet is sent.
-                    lookAt(player, visitorPos);
+                    fastRotateActive = dist <= VISITOR_DETECT_RADIUS;
+                    lookAt(player, visitorPos, fastRotateActive
+                            ? FAST_LOOK_DEGREES_PER_SECOND
+                            : SMOOTH_LOOK_DEGREES_PER_SECOND);
                     if (isAimedAtTarget(player) && now >= interactCooldownUntil) {
+                        fastRotateActive = false;
                         interactWithEntity(player, currentVisitor);
                         interactCooldownUntil = now + INTERACT_COOLDOWN_MS + randomExtra150;
                         enterState(State.WAITING_FOR_ACCEPT);
                     }
                 } else {
+                    fastRotateActive = false;
                     walkToward(player, visitorPos);
                 }
             }
@@ -1797,6 +1869,15 @@ public class VisitorManager {
 
     /** Smoothly rotate the player's camera toward {@code target} over multiple ticks. */
     private void lookAt(ClientPlayerEntity player, Vec3d target) {
+        lookAt(player, target, SMOOTH_LOOK_DEGREES_PER_SECOND);
+    }
+
+    /**
+     * Smoothly rotate the player's camera toward {@code target} at
+     * {@code degreesPerSecond} degrees per second.  Higher values make the
+     * camera align quickly (used when within {@link #VISITOR_DETECT_RADIUS}).
+     */
+    private void lookAt(ClientPlayerEntity player, Vec3d target, float degreesPerSecond) {
         Vec3d eye = player.getEyePos();
         double dx = target.x - eye.x;
         double dy = (target.y + 1.0) - eye.y; // aim at roughly head height
@@ -1804,7 +1885,7 @@ public class VisitorManager {
         double distXZ = Math.sqrt(dx * dx + dz * dz);
         targetYaw   = (float) Math.toDegrees(Math.atan2(-dx, dz));
         targetPitch = (float) -Math.toDegrees(Math.atan2(dy, distXZ));
-        smoothRotateCamera(player);
+        smoothRotateCamera(player, degreesPerSecond);
     }
 
     /**

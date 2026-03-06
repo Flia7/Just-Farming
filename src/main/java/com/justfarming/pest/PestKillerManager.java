@@ -268,6 +268,14 @@ public class PestKillerManager {
     /** Wall-clock time (ms) of the last smooth-look call; 0 = not yet called. */
     private long  lastSmoothLookTime = 0;
 
+    // Humanised camera-aim drift (KILLING_PEST state)
+    /** Current camera-aim offset applied on top of the pest's actual position. */
+    private Vec3d pestAimOffset       = Vec3d.ZERO;
+    /** Target offset toward which {@link #pestAimOffset} smoothly interpolates. */
+    private Vec3d pestAimOffsetTarget = Vec3d.ZERO;
+    /** Wall-clock time (ms) when the next drift-target update should occur; 0 = immediate. */
+    private long  pestAimOffsetUpdateTime = 0;
+
     // Stuck detection (used by flyToward to recover when the player stops making progress)
     private Vec3d lastProgressPos     = null;
     private long  lastProgressCheckTime = 0;
@@ -300,6 +308,37 @@ public class PestKillerManager {
     private static final long   STRAFE_DURATION_MS           = 600;
     /** Minimum distance to the target (blocks) below which stuck detection is skipped. */
     private static final double MIN_STUCK_CHECK_DIST         = 2.0;
+
+    // ── Humanised pest-aim drift ─────────────────────────────────────────────
+
+    /**
+     * Maximum radius (blocks) of the camera-aim drift applied during
+     * {@link State#KILLING_PEST}.  The camera aims at a point within this sphere
+     * around the pest rather than locking exactly on it, producing more natural
+     * looking camera movement.
+     */
+    private static final double PEST_AIM_DRIFT_RADIUS     = 1.5;
+
+    /**
+     * Base interval (ms) between drift-target updates during
+     * {@link State#KILLING_PEST}.  The actual interval also adds a small random
+     * component to prevent a perfectly periodic pattern.
+     */
+    private static final long   PEST_AIM_DRIFT_UPDATE_MS  = 600L;
+
+    /**
+     * Maximum additional random jitter (ms) added to {@link #PEST_AIM_DRIFT_UPDATE_MS}
+     * so the drift-target updates never fall into a detectable fixed rhythm.
+     */
+    private static final int    PEST_AIM_DRIFT_JITTER_MS  = 300;
+
+    /**
+     * Lerp rate (0–1) applied each tick to smoothly move {@code pestAimOffset}
+     * toward {@code pestAimOffsetTarget}.  At 8 % per tick the offset converges
+     * to within 1 % of the target in approximately 55 ticks (~2.75 s at 20 TPS),
+     * producing a gentle, organic-looking camera drift rather than sudden jumps.
+     */
+    private static final double PEST_AIM_LERP_RATE        = 0.08;
 
     // ── Double-jump (flight activation) ─────────────────────────────────────
 
@@ -459,6 +498,9 @@ public class PestKillerManager {
         remainingPlots.clear();
         detectedVacuumRange = -1.0;
         pestKillWaitEnd = 0;
+        pestAimOffset = Vec3d.ZERO;
+        pestAimOffsetTarget = Vec3d.ZERO;
+        pestAimOffsetUpdateTime = 0;
         resetPlotState();
     }
 
@@ -478,6 +520,9 @@ public class PestKillerManager {
         pestKillWaitEnd = 0;
         remainingPlots.clear();
         detectedVacuumRange = -1.0;
+        pestAimOffset = Vec3d.ZERO;
+        pestAimOffsetTarget = Vec3d.ZERO;
+        pestAimOffsetUpdateTime = 0;
         resetPlotState();
         enterState(State.IDLE);
     }
@@ -822,6 +867,10 @@ public class PestKillerManager {
                     releaseMovementKeys();
                     // Find vacuum before entering kill state
                     findAndEquipVacuum(player);
+                    // Reset drift state so the aim wanders freely from the first tick.
+                    pestAimOffset       = Vec3d.ZERO;
+                    pestAimOffsetTarget = Vec3d.ZERO;
+                    pestAimOffsetUpdateTime = 0;
                     enterState(State.KILLING_PEST);
                 } else {
                     flyToward(player, pestPos);
@@ -854,12 +903,36 @@ public class PestKillerManager {
                 // If the pest moved out of kill range, fly toward it again
                 if (dist > getEffectiveKillRadius() * 1.5) {
                     if (client.options != null) client.options.useKey.setPressed(false);
+                    pestAimOffsetUpdateTime = 0; // reset drift on next approach
                     enterState(State.FLYING_TO_PEST);
                     return;
                 }
 
-                // Aim camera at pest
-                lookAt(player, pestPos);
+                // Humanised camera aim: keep the aim point within PEST_AIM_DRIFT_RADIUS of
+                // the pest rather than locking exactly onto it.  Periodically pick a new
+                // random target offset and smoothly interpolate toward it so the camera
+                // drifts naturally without any sudden jumps.
+                if (now >= pestAimOffsetUpdateTime) {
+                    // Pick a new random target inside the drift sphere using spherical coords.
+                    double elevation = (random.nextDouble() - 0.5) * Math.PI;
+                    double azimuth   = random.nextDouble() * 2.0 * Math.PI;
+                    double radius    = random.nextDouble() * PEST_AIM_DRIFT_RADIUS;
+                    pestAimOffsetTarget = new Vec3d(
+                            Math.cos(elevation) * Math.cos(azimuth) * radius,
+                            Math.sin(elevation) * radius,
+                            Math.cos(elevation) * Math.sin(azimuth) * radius);
+                    pestAimOffsetUpdateTime = now + PEST_AIM_DRIFT_UPDATE_MS + random.nextInt(PEST_AIM_DRIFT_JITTER_MS);
+                }
+                // Smoothly lerp the current offset toward the target (8 % per tick ≈ ~40 ticks to converge).
+                pestAimOffset = new Vec3d(
+                        pestAimOffset.x + (pestAimOffsetTarget.x - pestAimOffset.x) * PEST_AIM_LERP_RATE,
+                        pestAimOffset.y + (pestAimOffsetTarget.y - pestAimOffset.y) * PEST_AIM_LERP_RATE,
+                        pestAimOffset.z + (pestAimOffsetTarget.z - pestAimOffset.z) * PEST_AIM_LERP_RATE);
+
+                lookAt(player, new Vec3d(
+                        pestPos.x + pestAimOffset.x,
+                        pestPos.y + pestAimOffset.y,
+                        pestPos.z + pestAimOffset.z));
 
                 // Ensure we're still holding the vacuum
                 if (vacuumSlot >= 0 && player.getInventory().getSelectedSlot() != vacuumSlot) {
