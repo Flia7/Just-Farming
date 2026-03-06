@@ -50,14 +50,17 @@ public class PestKillerManager {
 
     // ── Timing constants ────────────────────────────────────────────────────
 
-    /** Default teleport wait before scanning for pest entities (ms). */
-    private static final long TELEPORT_WAIT_DEFAULT_MS = 4000;
+    /**
+     * Fixed wait (ms) after the teleport command lands before scanning for pests.
+     * Always applied regardless of configuration.
+     */
+    private static final long SCAN_WAIT_MS = 500;
 
     /**
-     * Non-configurable random extra added on top of the teleport delay (ms).
-     * The actual wait is {@code pestKillerTeleportDelay + random(0, TELEPORT_EXTRA_RANDOM_MS)}.
+     * Maximum random extra (ms) added on top of {@link #SCAN_WAIT_MS}.
+     * The actual scan wait is {@code SCAN_WAIT_MS + random(0, SCAN_WAIT_RANDOM_MS)}.
      */
-    private static final long TELEPORT_EXTRA_RANDOM_MS = 200;
+    private static final long SCAN_WAIT_RANDOM_MS = 150;
 
     /**
      * How long (ms) to poll for pest entities after teleporting before giving
@@ -212,6 +215,8 @@ public class PestKillerManager {
     public enum State {
         /** Not doing anything. */
         IDLE,
+        /** Waiting before sending the plot teleport command. */
+        PRE_TELEPORT_WAIT,
         /** Waiting for the server to teleport the player. */
         TELEPORTING,
         /** Flying to the centre of the current infested plot. */
@@ -234,8 +239,10 @@ public class PestKillerManager {
 
     private State state = State.IDLE;
     private long  stateEnteredAt = 0;
-    /** Computed teleport wait (base + random extra), set when entering TELEPORTING. */
-    private long  teleportWaitMs = TELEPORT_WAIT_DEFAULT_MS;
+    /** Computed wait before sending the teleport command (pestKillerTeleportDelay + random). */
+    private long  preTeleportWaitMs = 0;
+    /** Fixed scan wait after teleporting (SCAN_WAIT_MS + random), set when entering TELEPORTING. */
+    private long  teleportWaitMs = SCAN_WAIT_MS;
     /** Timestamp (ms) when /warp garden was sent in RETURNING; 0 = not yet sent. */
     private long  returnWarpSentAt = 0;
     /** Per-state random extra (0–150 ms) added to hardcoded timing constants. */
@@ -510,23 +517,15 @@ public class PestKillerManager {
             }
         }
 
-        long base = config != null && config.pestKillerTeleportDelay > 0
-                ? config.pestKillerTeleportDelay : TELEPORT_WAIT_DEFAULT_MS;
-        int globalRandom = (config != null) ? config.globalRandomizationMs : 0;
-        teleportWaitMs = base + random.nextInt((int) TELEPORT_EXTRA_RANDOM_MS + 1)
-                + random.nextInt(Math.max(1, globalRandom));
-
-        enterState(State.TELEPORTING);
-
         String firstPlot = remainingPlots.poll(); // remove and use the first plot
         currentPlotName = firstPlot;
-        if (config.pestKillerWarpToPlot && firstPlot != null) {
-            sendCommand("tptoplot " + firstPlot);
-            LOGGER.info("[JustFarming-PestKiller] Sent /tptoplot {} to reach infested plot.", firstPlot);
-        } else {
-            sendCommand("warp garden");
-            LOGGER.info("[JustFarming-PestKiller] Sent /warp garden to reach garden.");
-        }
+
+        long base = config != null && config.pestKillerTeleportDelay > 0
+                ? config.pestKillerTeleportDelay : 0;
+        int globalRandom = (config != null) ? config.globalRandomizationMs : 0;
+        preTeleportWaitMs = base + random.nextInt(Math.max(1, globalRandom));
+
+        enterState(State.PRE_TELEPORT_WAIT);
     }
 
     /**
@@ -553,6 +552,22 @@ public class PestKillerManager {
         long now = System.currentTimeMillis();
 
         switch (state) {
+
+            case PRE_TELEPORT_WAIT -> {
+                if (now - stateEnteredAt >= preTeleportWaitMs) {
+                    // Pre-teleport delay elapsed: now send the warp command.
+                    if (config != null && config.pestKillerWarpToPlot && currentPlotName != null) {
+                        sendCommand("tptoplot " + currentPlotName);
+                        LOGGER.info("[JustFarming-PestKiller] Sent /tptoplot {} to reach infested plot.", currentPlotName);
+                    } else {
+                        sendCommand("warp garden");
+                        LOGGER.info("[JustFarming-PestKiller] Sent /warp garden to reach garden.");
+                    }
+                    // Fixed post-teleport scan wait: 500 ms + random 0–150 ms.
+                    teleportWaitMs = SCAN_WAIT_MS + random.nextInt((int) SCAN_WAIT_RANDOM_MS + 1);
+                    enterState(State.TELEPORTING);
+                }
+            }
 
             case TELEPORTING -> {
                 if (now - stateEnteredAt >= teleportWaitMs) {
@@ -885,19 +900,13 @@ public class PestKillerManager {
     private void teleportToNextPlot(String nextPlot) {
         LOGGER.info("[JustFarming-PestKiller] No pests found on this plot; "
                 + "teleporting to next infested plot: {}.", nextPlot);
-        long base = config != null && config.pestKillerTeleportDelay > 0
-                ? config.pestKillerTeleportDelay : TELEPORT_WAIT_DEFAULT_MS;
-        int globalRandom = (config != null) ? config.globalRandomizationMs : 0;
-        teleportWaitMs = base + random.nextInt((int) TELEPORT_EXTRA_RANDOM_MS + 1)
-                + random.nextInt(Math.max(1, globalRandom));
         resetPlotState();
         currentPlotName = nextPlot;
-        if (config != null && config.pestKillerWarpToPlot) {
-            sendCommand("tptoplot " + nextPlot);
-        } else {
-            sendCommand("warp garden");
-        }
-        enterState(State.TELEPORTING);
+        long base = config != null && config.pestKillerTeleportDelay > 0
+                ? config.pestKillerTeleportDelay : 0;
+        int globalRandom = (config != null) ? config.globalRandomizationMs : 0;
+        preTeleportWaitMs = base + random.nextInt(Math.max(1, globalRandom));
+        enterState(State.PRE_TELEPORT_WAIT);
     }
 
     /** Returns the pest entity closest to the player's eye position, or {@code null} if none. */

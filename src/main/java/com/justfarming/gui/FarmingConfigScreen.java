@@ -15,12 +15,14 @@ import net.minecraft.text.Text;
  * Configuration GUI screen for Just Farming.
  *
  * <p>Layout inspired by the sw mod: a left navigation sidebar with
- * category tabs and a right content panel. Three categories organise
+ * category tabs and a right content panel. Five categories organise
  * the settings:
  * <ul>
- *   <li><b>Farming</b> – crop selection, rewarp delay, set-rewarp, start/stop macro</li>
- *   <li><b>Pests</b>   – pest highlight, labels, ESP options, tracer</li>
- *   <li><b>Misc</b>    – freelook toggle, unlocked mouse</li>
+ *   <li><b>Farming</b>  – crop selection, rewarp, start/stop macro, farming tool slot</li>
+ *   <li><b>Pests</b>    – pest highlight, labels, ESP, tracer; auto pest killer settings</li>
+ *   <li><b>Misc</b>     – freelook toggle, unlocked mouse</li>
+ *   <li><b>Delays</b>   – all timing/delay sliders</li>
+ *   <li><b>Visitors</b> – visitor macro settings and filters</li>
  * </ul>
  */
 public class FarmingConfigScreen extends Screen {
@@ -48,7 +50,7 @@ public class FarmingConfigScreen extends Screen {
     private static final int COL_SHADOW      = 0x60000000; // drop shadow
 
     // ── Tabs ──────────────────────────────────────────────────────────────────
-    private static final String[] TAB_NAMES = { "Farming", "Pests", "Misc", "Delays", "Visitor's macro", "Pest Killer" };
+    private static final String[] TAB_NAMES = { "Farming", "Pests", "Misc", "Delays", "Visitors" };
     private int activeTab = 0;
 
     // ── Dynamic layout (computed in init) ─────────────────────────────────────
@@ -112,7 +114,7 @@ public class FarmingConfigScreen extends Screen {
     private VisitorMinCountSlider         visitorsMinCountSlider;
     private VisitorMaxPriceSlider         visitorsMaxPriceSlider;
 
-    // ── Tab 5 – Pest Killer widgets ───────────────────────────────────────────
+    // ── Tab 1 – Pests + Auto Pest Killer widgets (merged) ────────────────────
     private FlatBoolToggleWidget          pestKillerEnabledButton;
     private FlatBoolToggleWidget          pestKillerWarpToPlotButton;
     private PestKillerVacuumRangeSlider   pestKillerVacuumRangeSlider;
@@ -295,7 +297,39 @@ public class FarmingConfigScreen extends Screen {
                         config.pestTracerEnabled);
         this.addDrawableChild(pestTracerButton);
         pestTracerButton.setTooltip(Tooltip.of(Text.literal("Draw lines from your camera to each pest mob")));
-        tabContentHeights[1] = y + bh - contentAreaTopY + tabScrollOffsets[1];
+        y += bh + pad + gap;
+
+        sectionPestKillerY = y;
+        y += sLH;
+
+        pestKillerEnabledButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
+                        Text.translatable("gui.just-farming.pest_killer_enabled_label"),
+                        config.autoPestKillerEnabled);
+        this.addDrawableChild(pestKillerEnabledButton);
+        pestKillerEnabledButton.setTooltip(Tooltip.of(Text.literal(
+                "When enabled, the mod automatically flies toward pests and\n" +
+                "kills them with a vacuum item when they are detected in the Garden.")));
+        y += bh + pad;
+
+        pestKillerWarpToPlotButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
+                        Text.translatable("gui.just-farming.pest_killer_warp_to_plot_label"),
+                        config.pestKillerWarpToPlot);
+        this.addDrawableChild(pestKillerWarpToPlotButton);
+        pestKillerWarpToPlotButton.setTooltip(Tooltip.of(Text.literal(
+                "Enable Warping to Plot: if ON, runs /tptoplot <plot> to warp directly\n" +
+                "to the infested plot. If OFF, runs /warp garden instead.")));
+        y += bh + pad;
+
+        pestKillerVacuumRangeSlider = new PestKillerVacuumRangeSlider(widgetX, y, bw, bh,
+                        config.pestKillerVacuumRange);
+        this.addDrawableChild(pestKillerVacuumRangeSlider);
+        pestKillerVacuumRangeSlider.setTooltip(Tooltip.of(Text.literal(
+                "Maximum distance (blocks) from which the vacuum item activates.\n" +
+                "The Vacuum can reach up to 15 blocks – set higher to kill pests\n" +
+                "from a distance without flying all the way up to them.")));
+        y += bh + pad + gap;
+        pestKillerStatusY = y;
+        tabContentHeights[1] = y - contentAreaTopY + tabScrollOffsets[1];
 
         // ── Tab 2 – Misc ──────────────────────────────────────────────────────
         y = contentAreaTopY - tabScrollOffsets[2];
@@ -433,7 +467,9 @@ public class FarmingConfigScreen extends Screen {
                 config.pestKillerTeleportDelay);
         this.addDrawableChild(pestKillerTeleportDelaySliderInDelays);
         pestKillerTeleportDelaySliderInDelays.setTooltip(Tooltip.of(Text.literal(
-                "How long to wait after the plot teleport command\nbefore scanning for pest entities. (ms)")));
+                "How long to wait before sending the plot teleport command.\n" +
+                "After teleporting the mod always waits a fixed 500 ms (+up to 150 ms random)\n" +
+                "before scanning for pest entities. (ms)")));
         y += bh + pad;
 
         pestKillerGoToNextPestSlider = new PestKillerGoToNextPestSlider(widgetX, y, bw, bh,
@@ -497,40 +533,6 @@ public class FarmingConfigScreen extends Screen {
         visitorStatusY = y;
         tabContentHeights[4] = y - contentAreaTopY + tabScrollOffsets[4];
 
-        // ── Tab 5 – Pest Killer ───────────────────────────────────────────────
-        y = contentAreaTopY - tabScrollOffsets[5];
-        sectionPestKillerY = y;
-        y += sLH;
-
-        pestKillerEnabledButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
-                        Text.translatable("gui.just-farming.pest_killer_enabled_label"),
-                        config.autoPestKillerEnabled);
-        this.addDrawableChild(pestKillerEnabledButton);
-        pestKillerEnabledButton.setTooltip(Tooltip.of(Text.literal(
-                "When enabled, the mod automatically flies toward pests and\n" +
-                "kills them with a vacuum item when they are detected in the Garden.")));
-        y += bh + pad;
-
-        pestKillerWarpToPlotButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
-                        Text.translatable("gui.just-farming.pest_killer_warp_to_plot_label"),
-                        config.pestKillerWarpToPlot);
-        this.addDrawableChild(pestKillerWarpToPlotButton);
-        pestKillerWarpToPlotButton.setTooltip(Tooltip.of(Text.literal(
-                "Enable Warping to Plot: if ON, runs /tptoplot <plot> to warp directly\n" +
-                "to the infested plot. If OFF, runs /warp garden instead.")));
-        y += bh + pad;
-
-        pestKillerVacuumRangeSlider = new PestKillerVacuumRangeSlider(widgetX, y, bw, bh,
-                        config.pestKillerVacuumRange);
-        this.addDrawableChild(pestKillerVacuumRangeSlider);
-        pestKillerVacuumRangeSlider.setTooltip(Tooltip.of(Text.literal(
-                "Maximum distance (blocks) from which the vacuum item activates.\n" +
-                "The Vacuum can reach up to 15 blocks – set higher to kill pests\n" +
-                "from a distance without flying all the way up to them.")));
-        y += bh + pad + gap;
-        pestKillerStatusY = y;
-        tabContentHeights[5] = y - contentAreaTopY + tabScrollOffsets[5];
-
         // ── Always-visible: Close button anchored to the bottom ───────────────
         int closeBtnY = winY + winH - bh - pad;
         saveCloseButton = new FlatButtonWidget(widgetX, closeBtnY, bw, bh,
@@ -567,6 +569,9 @@ public class FarmingConfigScreen extends Screen {
         titleScaleSlider.visible    = t1 && inContentBounds(titleScaleSlider);
         pestEspButton.visible       = t1 && inContentBounds(pestEspButton);
         pestTracerButton.visible    = t1 && inContentBounds(pestTracerButton);
+        pestKillerEnabledButton.visible         = t1 && inContentBounds(pestKillerEnabledButton);
+        pestKillerWarpToPlotButton.visible      = t1 && inContentBounds(pestKillerWarpToPlotButton);
+        pestKillerVacuumRangeSlider.visible     = t1 && inContentBounds(pestKillerVacuumRangeSlider);
 
         boolean t2 = activeTab == 2;
         freelookButton.visible        = t2 && inContentBounds(freelookButton);
@@ -598,11 +603,6 @@ public class FarmingConfigScreen extends Screen {
         visitorsBlacklistButton.visible       = t4 && inContentBounds(visitorsBlacklistButton);
         visitorsMinCountSlider.visible        = t4 && inContentBounds(visitorsMinCountSlider);
         visitorsMaxPriceSlider.visible        = t4 && inContentBounds(visitorsMaxPriceSlider);
-
-        boolean t5 = activeTab == 5;
-        pestKillerEnabledButton.visible         = t5 && inContentBounds(pestKillerEnabledButton);
-        pestKillerWarpToPlotButton.visible      = t5 && inContentBounds(pestKillerWarpToPlotButton);
-        pestKillerVacuumRangeSlider.visible     = t5 && inContentBounds(pestKillerVacuumRangeSlider);
     }
 
     @Override
@@ -660,6 +660,16 @@ public class FarmingConfigScreen extends Screen {
         } else if (activeTab == 1) {
             if (yInContentBounds(sectionPestsY))
                 drawSectionLabel(context, "Pests", sectionPestsY);
+            if (yInContentBounds(sectionPestKillerY))
+                drawSectionLabel(context, "Auto Pest Killer", sectionPestKillerY);
+            // Show current pest killer state below the buttons when active
+            if (pestKillerManager != null && pestKillerManager.isActive() && yInContentBounds(pestKillerStatusY)) {
+                String stateText = "State: " + pestKillerManager.getState().name();
+                int statusX = contentX + Math.round(12 * scale);
+                context.drawTextWithShadow(this.textRenderer,
+                        net.minecraft.text.Text.literal(stateText).withColor(COL_TEXT_MUTED),
+                        statusX, pestKillerStatusY, COL_TEXT_MUTED);
+            }
         } else if (activeTab == 2) {
             if (yInContentBounds(sectionMiscY))
                 drawSectionLabel(context, "Misc", sectionMiscY);
@@ -680,7 +690,7 @@ public class FarmingConfigScreen extends Screen {
                 drawSectionLabel(context, "Pest Killer Delays", sectionPestKillerDelaysY);
         } else if (activeTab == 4) {
             if (yInContentBounds(sectionVisitorsY))
-                drawSectionLabel(context, "Visitor's macro", sectionVisitorsY);
+                drawSectionLabel(context, "Visitors", sectionVisitorsY);
             if (yInContentBounds(sectionVisitorFiltersY))
                 drawSectionLabel(context, "Visitor Filters", sectionVisitorFiltersY);
             // Show current visitor routine status below the buttons when active
@@ -690,17 +700,6 @@ public class FarmingConfigScreen extends Screen {
                 context.drawTextWithShadow(this.textRenderer,
                         net.minecraft.text.Text.literal(stateText).withColor(COL_TEXT_MUTED),
                         visitorStatusX, visitorStatusY, COL_TEXT_MUTED);
-            }
-        } else if (activeTab == 5) {
-            if (yInContentBounds(sectionPestKillerY))
-                drawSectionLabel(context, "Auto Pest Killer", sectionPestKillerY);
-            // Show current pest killer state below the buttons when active
-            if (pestKillerManager != null && pestKillerManager.isActive() && yInContentBounds(pestKillerStatusY)) {
-                String stateText = "State: " + pestKillerManager.getState().name();
-                int statusX = contentX + Math.round(12 * scale);
-                context.drawTextWithShadow(this.textRenderer,
-                        net.minecraft.text.Text.literal(stateText).withColor(COL_TEXT_MUTED),
-                        statusX, pestKillerStatusY, COL_TEXT_MUTED);
             }
         }
 
@@ -1475,8 +1474,8 @@ public class FarmingConfigScreen extends Screen {
         protected void updateMessage() {
             int slot = getSlotValue();
             String label = (slot == -1)
-                    ? "Farming Tool Slot: Auto"
-                    : String.format("Farming Tool Slot: %d", slot + 1);
+                    ? "Farming Tool: Auto"
+                    : String.format("Farming Tool: %d", slot + 1);
             setMessage(Text.literal(label));
         }
 
