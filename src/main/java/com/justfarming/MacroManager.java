@@ -6,9 +6,11 @@ import com.justfarming.pest.PestKillerManager;
 import com.justfarming.visitor.VisitorManager;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.entity.attribute.EntityAttributes;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
+import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import org.slf4j.Logger;
@@ -285,9 +287,37 @@ public class MacroManager {
      *
      * <p>When this returns {@code true}, {@link #tickMoving} releases all keys and
      * returns immediately, and {@link #shouldBreak()} returns {@code false}.
+     *
+     * <p>The player's own inventory screen and the chat screen are always exempt:
+     * the macro keeps running seamlessly when the player presses E (inventory) or
+     * T (chat) so that there is no detectable movement pause.  This matches the
+     * behaviour of well-known reference mods and avoids a suspicious micro-stutter
+     * that anti-cheat systems can flag.  Server-opened screens (chests, NPC shops,
+     * etc.) still block the macro when {@code macroEnabledInGui} is disabled.
      */
     private boolean isGuiBlocking() {
-        return !config.macroEnabledInGui && client.currentScreen != null;
+        if (config.macroEnabledInGui) return false;
+        if (client.currentScreen == null) return false;
+        // Inventory and chat are lightweight client screens – keep the macro running.
+        return !isNonBlockingScreen(client.currentScreen);
+    }
+
+    /**
+     * Returns {@code true} for GUI screens that must never interrupt the farming
+     * macro: the player's own inventory (opened with E) and the chat screen
+     * (opened with T).
+     *
+     * <p>These are purely client-side screens that do not require any interaction
+     * with the game's block-breaking or movement logic, so the macro can continue
+     * running transparently while they are open.  The same exemption is applied by
+     * {@link com.justfarming.mixin.MouseMixin} when deciding whether to report the
+     * cursor as locked to Minecraft's input-processing code.
+     *
+     * @param screen the currently open screen (must not be {@code null})
+     */
+    public static boolean isNonBlockingScreen(net.minecraft.client.gui.screen.Screen screen) {
+        return screen instanceof net.minecraft.client.gui.screen.ingame.InventoryScreen
+                || screen instanceof net.minecraft.client.gui.screen.ChatScreen;
     }
 
     /**
@@ -828,11 +858,18 @@ public class MacroManager {
      *       the item ability server-side, then swings the hand.</li>
      *   <li>Otherwise, sends only the hand-swing packet.</li>
      * </ul>
+     *
+     * <p>Uses a fresh tick-position raycast (tickDelta&nbsp;=&nbsp;1.0f) for the
+     * same reason as {@link #directBreakBlock()}: consistency with the real
+     * player position at the time the ability fires.</p>
      */
     private void performMousematClick(ClientPlayerEntity player) {
-        if (client.interactionManager != null
-                && client.crosshairTarget instanceof BlockHitResult blockHit) {
-            client.interactionManager.attackBlock(blockHit.getBlockPos(), blockHit.getSide());
+        if (client.interactionManager != null) {
+            double reach = player.getAttributeValue(EntityAttributes.BLOCK_INTERACTION_RANGE);
+            HitResult hit = player.raycast(reach, 1.0f, false);
+            if (hit instanceof BlockHitResult blockHit) {
+                client.interactionManager.attackBlock(blockHit.getBlockPos(), blockHit.getSide());
+            }
         }
         player.swingHand(Hand.MAIN_HAND);
     }
@@ -1083,15 +1120,28 @@ public class MacroManager {
      * on the same block position every tick is idempotent: the first call sends
      * {@code START_DESTROY_BLOCK}; subsequent calls for the same block are
      * no-ops until the block changes.  {@code swingHand} is only called when
-     * {@code attackBlock} confirms the action was processed.</p>
+     * {@code attackBlock} confirms the action was processed.
+     *
+     * <p>A fresh raycast is computed from the player's current tick-synchronised
+     * position (tickDelta&nbsp;=&nbsp;1.0f) instead of reusing
+     * {@code client.crosshairTarget}, which is set during the render loop with
+     * an interpolated (sub-tick) position.  For fast-moving crops such as Cocoa
+     * Beans the render-frame origin can be several tenths of a block ahead of
+     * the tick origin, which may cause the render-frame ray to strike a block
+     * face (e.g. the back of a cocoa-bean pod) that a human aiming at the same
+     * yaw/pitch from the real tick position would never hit.  Using the tick
+     * position ensures the macro only breaks exactly the blocks a real player
+     * would see at the configured yaw and pitch.</p>
      */
     public void directBreakBlock() {
-        if (client.interactionManager == null || client.world == null) return;
-        if (!(client.crosshairTarget instanceof BlockHitResult blockHit)) return;
+        if (client.interactionManager == null || client.world == null || client.player == null) return;
+        double reach = client.player.getAttributeValue(EntityAttributes.BLOCK_INTERACTION_RANGE);
+        HitResult hit = client.player.raycast(reach, 1.0f, false);
+        if (!(hit instanceof BlockHitResult blockHit)) return;
         BlockPos pos = blockHit.getBlockPos();
         if (!client.world.getBlockState(pos).isAir()) {
             boolean attacked = client.interactionManager.attackBlock(pos, blockHit.getSide());
-            if (attacked && client.player != null) {
+            if (attacked) {
                 client.player.swingHand(Hand.MAIN_HAND);
             }
         }

@@ -65,10 +65,14 @@ public class MouseMixin {
      * open, so the macro keeps breaking crops regardless of which screen the
      * player has open.
      *
-     * <p>When the {@code macroEnabledInGui} option is <em>disabled</em> and any
-     * GUI screen is open, we do <em>not</em> override the value.  This lets
+     * <p>When the {@code macroEnabledInGui} option is <em>disabled</em> and a
+     * <em>blocking</em> GUI screen is open (i.e. not the player's own inventory
+     * and not the chat screen), we do <em>not</em> override the value.  This lets
      * Minecraft's own logic suppress game inputs while the screen is visible,
-     * which is consistent with {@link com.justfarming.MacroManager#isGuiBlocking()}.
+     * which is consistent with
+     * {@link com.justfarming.MacroManager#isGuiBlocking()}.  The inventory and
+     * chat screens are deliberately exempt so the macro continues without any
+     * movement pause when the player checks their bags or types a message.
      */
     @Inject(method = "isCursorLocked", at = @At("HEAD"), cancellable = true)
     private void onIsCursorLocked(CallbackInfoReturnable<Boolean> cir) {
@@ -78,7 +82,12 @@ public class MouseMixin {
             FarmingConfig cfg = JustFarming.getConfig();
             boolean enabledInGui = cfg != null && cfg.macroEnabledInGui;
             if (!enabledInGui && client.currentScreen != null) {
-                // macroEnabledInGui disabled + any screen open → let vanilla return false
+                // Inventory and chat never block the macro – keep game inputs alive.
+                if (MacroManager.isNonBlockingScreen(client.currentScreen)) {
+                    cir.setReturnValue(true);
+                    return;
+                }
+                // Other screens with macroEnabledInGui disabled → let vanilla return false.
                 return;
             }
             cir.setReturnValue(true);
