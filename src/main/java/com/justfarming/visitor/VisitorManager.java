@@ -165,6 +165,16 @@ public class VisitorManager {
     private static final double INTERACT_RADIUS = 3.5;
 
     /**
+     * Radius (blocks) within which a visitor NPC is detected for immediate
+     * interaction during the behindPoint navigation phase.  When the player
+     * comes within this distance of any visitor while navigating toward the
+     * behindPoint, the macro interacts with that visitor directly instead of
+     * continuing to walk.  Corresponds to roughly half a block on each side
+     * of the visitor's position.
+     */
+    private static final double VISITOR_DETECT_RADIUS = 0.5;
+
+    /**
      * Maximum angular error (degrees) between the player's current yaw/pitch and
      * the visitor's direction before the macro will send the interact packet.
      * Requiring the camera to be aimed within this threshold ensures the player
@@ -776,7 +786,22 @@ public class VisitorManager {
                             .distanceTo(behindPoint);
                     boolean reached  = behindDist <= BEHIND_POINT_REACH_DIST;
                     boolean timedOut = (now - behindPointStartTime) >= BEHIND_POINT_TIMEOUT_MS;
-                    if (reached || timedOut) {
+
+                    // Detect any visitor within VISITOR_DETECT_RADIUS during navigation
+                    // and interact with them immediately instead of walking past.
+                    Entity nearbyVisitor = findVisitorWithinRadius(player, VISITOR_DETECT_RADIUS);
+                    if (nearbyVisitor != null) {
+                        if (nearbyVisitor != currentVisitor) {
+                            // Push the original target back to the front of the queue
+                            // so it is visited after the nearby one.
+                            pendingVisitors.add(0, currentVisitor);
+                            pendingVisitors.remove(nearbyVisitor);
+                            currentVisitor = nearbyVisitor;
+                            visitorPos = new Vec3d(nearbyVisitor.getX(), nearbyVisitor.getY(), nearbyVisitor.getZ());
+                        }
+                        behindPoint = null;
+                        behindPointStartTime = 0;
+                    } else if (reached || timedOut) {
                         if (timedOut && !reached) {
                             LOGGER.info("[JustFarming-Visitors] Behind-point not reached in {}ms; skipping.", BEHIND_POINT_TIMEOUT_MS);
                         }
@@ -1139,6 +1164,31 @@ public class VisitorManager {
             });
         }
         // Single visitor: no reordering needed.
+    }
+
+    /**
+     * Returns the first visitor in {@link #pendingVisitors} (or equal to
+     * {@link #currentVisitor}) that is within {@code radius} blocks of the
+     * player's feet position, or {@code null} if none is within range.
+     *
+     * @param player the local player
+     * @param radius maximum Euclidean distance (blocks) to consider
+     * @return a nearby alive visitor entity, or {@code null}
+     */
+    private Entity findVisitorWithinRadius(ClientPlayerEntity player, double radius) {
+        double px = player.getX(), py = player.getY(), pz = player.getZ();
+        for (Entity v : pendingVisitors) {
+            if (v == null || !v.isAlive()) continue;
+            double dx = v.getX() - px, dy = v.getY() - py, dz = v.getZ() - pz;
+            if (Math.sqrt(dx * dx + dy * dy + dz * dz) <= radius) return v;
+        }
+        if (currentVisitor != null && currentVisitor.isAlive()) {
+            double dx = currentVisitor.getX() - px,
+                   dy = currentVisitor.getY() - py,
+                   dz = currentVisitor.getZ() - pz;
+            if (Math.sqrt(dx * dx + dy * dy + dz * dz) <= radius) return currentVisitor;
+        }
+        return null;
     }
 
     /**
