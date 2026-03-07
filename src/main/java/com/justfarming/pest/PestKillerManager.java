@@ -14,7 +14,6 @@ import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Queue;
 import java.util.Random;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -65,11 +64,11 @@ public class PestKillerManager {
 
     /**
      * Scan timeout (ms) used after at least one pest has been killed on the
-     * current plot.  Raised from 1 s to 2.5 s so that the last remaining pest,
-     * which may temporarily fall outside the client's entity-render range while
-     * the player is flying, is not missed due to an overly short scan window.
+     * current plot.  Kept short so the macro moves to the next plot almost
+     * immediately once no pests remain; the entity detector refreshes every
+     * tick (50 ms) so a few hundred milliseconds is more than enough.
      */
-    private static final long SCAN_TIMEOUT_AFTER_KILL_MS = 2500;
+    private static final long SCAN_TIMEOUT_AFTER_KILL_MS = 500;
 
     /** Fallback kill radius (blocks) used when the config value is not set. */
     private static final double KILL_RADIUS = 5.0;
@@ -109,6 +108,13 @@ public class PestKillerManager {
 
     /** Distance (blocks) at which the player starts slowing down near the pest. */
     private static final double BRAKE_RADIUS = 10.0;
+
+    /**
+     * Minimum vertical offset (blocks) below the player's eye level at which a
+     * pest is considered to be "below" the player and reachable through floor
+     * blocks via the vacuum right-click ability.
+     */
+    private static final double PEST_BELOW_THRESHOLD = 1.0;
 
     /** Pre-compiled pattern for stripping Minecraft/Hypixel colour-code sequences (§X). */
     private static final Pattern COLOR_CODE_PATTERN = Pattern.compile("§.");
@@ -298,13 +304,12 @@ public class PestKillerManager {
     private int   randomExtra = 0;
 
     /**
-     * Queue of infested plot names still to be visited this run.  Populated by
-     * {@link #start(Collection)} and consumed one-by-one in the SCANNING state
-     * when no pests are found on the current plot.  The first plot is removed
-     * from the queue before TELEPORTING is entered; each subsequent entry is
-     * dequeued when the scan for the previous plot times out with no pests.
+     * Remaining infested plot names to visit this run.  Stored as a
+     * {@link LinkedList} so individual entries (closest plot) can be removed
+     * by name, not just from the head.  Populated by {@link #start(Collection)}
+     * and consumed one-by-one as each plot is cleared.
      */
-    private final Queue<String> remainingPlots = new LinkedList<>();
+    private final LinkedList<String> remainingPlots = new LinkedList<>();
 
     // Target pest
     private PestEntityDetector.PestEntity currentPest = null;
@@ -789,22 +794,45 @@ public class PestKillerManager {
 
         remainingPlots.clear();
         if (pestPlots != null) {
-            // Sort plots numerically so the visit order is predictable.
+            // Collect valid plot names.
             java.util.List<String> sorted = new java.util.ArrayList<>();
             for (String p : pestPlots) {
                 if (p != null && !p.isBlank()) sorted.add(p);
             }
-            sorted.sort((a, b) -> {
-                try { return Integer.compare(Integer.parseInt(a), Integer.parseInt(b)); }
-                catch (NumberFormatException e) {
-                    LOGGER.warn("[Just Farming-PestKiller] Non-numeric plot name '{}' or '{}'; using string sort.", a, b);
-                    return a.compareTo(b);
-                }
-            });
+            // Sort plots by distance to the player's current position so the
+            // macro always visits the closest infested plot first.
+            ClientPlayerEntity startPlayer = client.player;
+            if (startPlayer != null) {
+                final double px = startPlayer.getX();
+                final double pz = startPlayer.getZ();
+                sorted.sort((a, b) -> {
+                    double ax = GardenPlot.getCentreX(a), az = GardenPlot.getCentreZ(a);
+                    double bx = GardenPlot.getCentreX(b), bz = GardenPlot.getCentreZ(b);
+                    if (!Double.isNaN(ax) && !Double.isNaN(az)
+                            && !Double.isNaN(bx) && !Double.isNaN(bz)) {
+                        double da = Math.sqrt((px - ax) * (px - ax) + (pz - az) * (pz - az));
+                        double db = Math.sqrt((px - bx) * (px - bx) + (pz - bz) * (pz - bz));
+                        return Double.compare(da, db);
+                    }
+                    // Fallback: numeric sort for unknown plot names.
+                    try { return Integer.compare(Integer.parseInt(a), Integer.parseInt(b)); }
+                    catch (NumberFormatException e) { return a.compareTo(b); }
+                });
+            } else {
+                // No player available – fall back to numeric order.
+                sorted.sort((a, b) -> {
+                    try { return Integer.compare(Integer.parseInt(a), Integer.parseInt(b)); }
+                    catch (NumberFormatException e) {
+                        LOGGER.warn("[Just Farming-PestKiller] Non-numeric plot name '{}' or '{}'; "
+                                + "using string sort.", a, b);
+                        return a.compareTo(b);
+                    }
+                });
+            }
             remainingPlots.addAll(sorted);
         }
 
-        String firstPlot = remainingPlots.poll(); // remove and use the first plot
+        String firstPlot = pollClosestPlot(); // pick closest to player
         currentPlotName = firstPlot;
 
         long base = config != null && config.pestKillerTeleportDelay > 0
@@ -961,7 +989,7 @@ public class PestKillerManager {
                     } else if (!remainingPlots.isEmpty()) {
                         // Pests on this plot have been cleared; move on to the next
                         // infested plot rather than returning to the farm immediately.
-                        teleportToNextPlot(remainingPlots.poll());
+                        teleportToNextPlot(pollClosestPlot());
                     } else {
                         LOGGER.info("[Just Farming-PestKiller] No pests found after scanning all plots; "
                                 + "returning to farm.");
@@ -995,7 +1023,7 @@ public class PestKillerManager {
                         vacuumParticleTracker.stopTracking();
                         // Try next plot or return.
                         if (!remainingPlots.isEmpty()) {
-                            teleportToNextPlot(remainingPlots.poll());
+                            teleportToNextPlot(pollClosestPlot());
                         } else {
                             returnToFarm();
                         }
@@ -1028,7 +1056,7 @@ public class PestKillerManager {
                     } else {
                         LOGGER.info("[Just Farming-PestKiller] No particle trail; trying next plot.");
                         if (!remainingPlots.isEmpty()) {
-                            teleportToNextPlot(remainingPlots.poll());
+                            teleportToNextPlot(pollClosestPlot());
                         } else {
                             returnToFarm();
                         }
@@ -1069,7 +1097,7 @@ public class PestKillerManager {
                     LOGGER.info("[Just Farming-PestKiller] Particle-trail follow timed out.");
                     releaseMovementKeys();
                     if (!remainingPlots.isEmpty()) {
-                        teleportToNextPlot(remainingPlots.poll());
+                        teleportToNextPlot(pollClosestPlot());
                     } else {
                         returnToFarm();
                     }
@@ -1093,18 +1121,23 @@ public class PestKillerManager {
                 }
                 Vec3d pestPos = currentPest.position();
                 double dist = player.getEyePos().distanceTo(pestPos);
-                // Also check horizontal distance so the player enters KILLING state when
-                // flying directly above a pest (vertical offset inflates the 3D distance
-                // beyond the kill radius even though the pest is reachable).
-                // Require the vertical distance to also be within approachRadius so the
-                // player descends to pest level before attempting to vacuum – kills from
-                // too far above the pest will miss even when horizDist is small.
                 double horizDist = horizontalDistance(player.getX(), player.getZ(), pestPos.x, pestPos.z);
                 double vertDist = Math.abs(player.getEyePos().y - pestPos.y);
                 // When a previous kill attempt timed out, fly to within CLOSE_APPROACH_RADIUS
-                // instead of the full vacuum range so line-of-sight and range are both optimal.
+                // instead of the full vacuum range so range is optimal.
                 double approachRadius = closeApproachNeeded ? CLOSE_APPROACH_RADIUS : getEffectiveKillRadius();
-                if (dist <= approachRadius || (horizDist <= approachRadius && vertDist <= approachRadius)) {
+                // The vacuum right-click ability works through blocks, so the player does not
+                // need to physically descend into the crop field to kill a pest below.
+                // Allow entering the kill state when:
+                //   (a) within approachRadius in 3D distance, OR
+                //   (b) within approachRadius in both horizontal AND vertical distance, OR
+                //   (c) pest is below the player and within horizontal kill range – the
+                //       vacuum beam reaches downward through floor blocks.
+                boolean pestBelow = pestPos.y < player.getEyePos().y - PEST_BELOW_THRESHOLD;
+                boolean killable = dist <= approachRadius
+                        || (horizDist <= approachRadius && vertDist <= approachRadius)
+                        || (pestBelow && horizDist <= approachRadius);
+                if (killable) {
                     releaseMovementKeys();
                     resetAotvState();
                     closeApproachNeeded = false;
@@ -1154,11 +1187,24 @@ public class PestKillerManager {
                 // dist beyond the 1.5× exit threshold while the pest is still in range).
                 double horizDist = horizontalDistance(player.getX(), player.getZ(), pestPos.x, pestPos.z);
                 double vertDist = Math.abs(player.getEyePos().y - pestPos.y);
+                // The vacuum right-click works through blocks from above.  Don't exit kill
+                // state when the pest is directly below – keep right-clicking downward.
+                boolean pestBelow = pestPos.y < player.getEyePos().y - PEST_BELOW_THRESHOLD;
                 // Exit kill state if the pest is out of range in 3D distance AND
                 // either horizontal OR vertical distance exceeds the kill radius, so
                 // the player will re-approach from the correct height and angle.
-                if (dist > getEffectiveKillRadius() * 1.5
-                        && (horizDist > getEffectiveKillRadius() || vertDist > getEffectiveKillRadius())) {
+                // When the pest is below, only exit if both 3D and horizontal distance
+                // are out of range (vertical out-of-range is acceptable since the
+                // vacuum beam kills through blocks from above).
+                boolean outOfRange;
+                if (pestBelow) {
+                    outOfRange = dist > getEffectiveKillRadius() * 1.5
+                            && horizDist > getEffectiveKillRadius();
+                } else {
+                    outOfRange = dist > getEffectiveKillRadius() * 1.5
+                            && (horizDist > getEffectiveKillRadius() || vertDist > getEffectiveKillRadius());
+                }
+                if (outOfRange) {
                     if (client.options != null) client.options.useKey.setPressed(false);
                     pestAimOffsetUpdateTime = 0; // reset drift on next approach
                     enterState(State.FLYING_TO_PEST);
@@ -1563,6 +1609,42 @@ public class PestKillerManager {
             }
         }
         return nearest;
+    }
+
+    /**
+     * Removes and returns the plot in {@link #remainingPlots} whose centre is
+     * closest to the player's current XZ position.  Falls back to
+     * {@link java.util.LinkedList#poll()} (head of queue) when the player is
+     * unavailable or no plot centre can be computed.
+     *
+     * <p>Calling this instead of {@code remainingPlots.poll()} ensures that the
+     * macro always travels to the nearest infested plot next, minimising travel
+     * time between plots.
+     */
+    private String pollClosestPlot() {
+        if (remainingPlots.isEmpty()) return null;
+        ClientPlayerEntity player = client.player;
+        if (player == null) return remainingPlots.poll();
+
+        double px = player.getX();
+        double pz = player.getZ();
+        String closest = null;
+        double minDist = Double.MAX_VALUE;
+        for (String plot : remainingPlots) {
+            double cx = GardenPlot.getCentreX(plot);
+            double cz = GardenPlot.getCentreZ(plot);
+            if (Double.isNaN(cx) || Double.isNaN(cz)) {
+                if (closest == null) closest = plot; // keep as fallback
+                continue;
+            }
+            double d = Math.sqrt((px - cx) * (px - cx) + (pz - cz) * (pz - cz));
+            if (d < minDist) {
+                minDist = d;
+                closest = plot;
+            }
+        }
+        if (closest != null) remainingPlots.remove(closest);
+        return closest;
     }
 
     /**
@@ -2126,18 +2208,22 @@ public class PestKillerManager {
      *
      * <p>Priority order:
      * <ol>
+     *   <li>{@link FarmingConfig#pestKillerVacuumRange} when manually set (&gt; 0) –
+     *       the user's distance-slider setting always takes highest priority so
+     *       the configured range is respected exactly.</li>
      *   <li>Auto-detected range from the equipped vacuum's display name (see
      *       {@link #VACUUM_RANGES}).</li>
-     *   <li>{@link FarmingConfig#pestKillerVacuumRange} when manually set (&gt; 0).</li>
      *   <li>Hardcoded fallback {@link #KILL_RADIUS} (5 blocks).</li>
      * </ol>
      */
     private double getEffectiveKillRadius() {
-        if (detectedVacuumRange > 0) {
-            return detectedVacuumRange;
-        }
+        // User-configured value takes highest priority – respects the in-game
+        // distance slider setting.
         if (config != null && config.pestKillerVacuumRange > 0) {
             return config.pestKillerVacuumRange;
+        }
+        if (detectedVacuumRange > 0) {
+            return detectedVacuumRange;
         }
         return KILL_RADIUS;
     }

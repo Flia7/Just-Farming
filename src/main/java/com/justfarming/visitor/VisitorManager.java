@@ -2329,44 +2329,50 @@ public class VisitorManager {
             return;
         }
         int slotCount = handler.getRows() * 9;
+
+        // Find the "Accept Offer" slot – only its lore contains the items the visitor
+        // is asking for.  Scanning every slot would accidentally pick up NPC names,
+        // reward-item text, and other unrelated lore as requirements.
+        ItemStack acceptOfferStack = null;
         for (int i = 0; i < slotCount; i++) {
             ItemStack stack = handler.getSlot(i).getStack();
             if (stack.isEmpty()) continue;
-
-            LoreComponent lore = stack.getOrDefault(
-                    DataComponentTypes.LORE, LoreComponent.DEFAULT);
-            List<Text> lines = lore.lines();
-
-            // Check whether this item's lore contains an "Items Required" section.
-            boolean hasRequiredSection = lines.stream().anyMatch(l -> {
-                String s = stripFormatting(l.getString()).toLowerCase();
-                return s.contains("items required") || s.startsWith("required:");
-            });
-
-            if (hasRequiredSection) {
-                // Section-aware parse: only extract lines from the required section.
-                boolean inRequired = false;
-                for (Text line : lines) {
-                    String stripped = stripFormatting(line.getString());
-                    String lower    = stripped.toLowerCase();
-                    if (lower.contains("items required") || lower.startsWith("required:")) {
-                        inRequired = true;
-                        continue;
-                    }
-                    if (lower.contains("reward") || lower.contains("you will receive")
-                            || lower.contains("you'll receive")) {
-                        inRequired = false;
-                    }
-                    if (inRequired) {
-                        tryAddRequirement(stripped);
-                    }
-                }
-            } else {
-                // Fallback: only look at the item's display name, never lore lines.
-                // This avoids treating reward-item lore as requirements.
-                tryAddRequirement(stripFormatting(stack.getName().getString()));
+            String name = stripFormatting(stack.getName().getString()).toLowerCase();
+            if (name.contains("accept offer") || name.equals("accept")
+                    || name.contains("confirm offer")) {
+                acceptOfferStack = stack;
+                break;
             }
         }
+
+        if (acceptOfferStack == null) {
+            LOGGER.info("[Just Farming-Visitors] Could not find 'Accept Offer' slot in visitor menu; "
+                    + "skipping requirement parse.");
+        } else {
+            LoreComponent lore = acceptOfferStack.getOrDefault(
+                    DataComponentTypes.LORE, LoreComponent.DEFAULT);
+            List<Text> lines = lore.lines();
+            // Extract only the lines in the "Items Required" section of the
+            // Accept Offer lore (everything between "Items Required" and the
+            // "Reward"/"You will receive" header).
+            boolean inRequired = false;
+            for (Text line : lines) {
+                String stripped = stripFormatting(line.getString());
+                String lower    = stripped.toLowerCase();
+                if (lower.contains("items required") || lower.startsWith("required:")) {
+                    inRequired = true;
+                    continue;
+                }
+                if (lower.contains("reward") || lower.contains("you will receive")
+                        || lower.contains("you'll receive")) {
+                    inRequired = false;
+                }
+                if (inRequired) {
+                    tryAddRequirement(stripped);
+                }
+            }
+        }
+
         if (!pendingRequirements.isEmpty()) {
             LOGGER.info("[Just Farming-Visitors] Visitor requires: {}", pendingRequirements);
             // Check max-visitor-price limit.
