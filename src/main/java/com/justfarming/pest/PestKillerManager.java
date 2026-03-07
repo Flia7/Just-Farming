@@ -1751,12 +1751,21 @@ public class PestKillerManager {
         Vec3d eye = player.getEyePos();
         double dist = eye.distanceTo(effectiveTarget);
 
-        // Suppress forward movement when camera is still rotating toward the target
+        // Horizontal (XZ-plane) distance to the target, used to detect the
+        // "pest directly below" case where the camera yaw is undefined.
+        double horizDistToTarget = Math.sqrt(
+                Math.pow(effectiveTarget.x - eye.x, 2) +
+                Math.pow(effectiveTarget.z - eye.z, 2));
+
+        // Suppress forward movement when camera is still rotating toward the target,
+        // UNLESS the target is almost directly below (horizDist < 1.5) in which
+        // case the yaw is undefined and we should not gate on alignment.
         float yawError = targetYaw - player.getYaw();
         while (yawError >  180f) yawError -= 360f;
         while (yawError < -180f) yawError += 360f;
 
-        boolean shouldFly = Math.abs(yawError) <= MAX_FLY_YAW_ERROR_DEGREES;
+        boolean directlyBelow = horizDistToTarget < 1.5 && effectiveTarget.y < eye.y - 1.0;
+        boolean shouldFly = directlyBelow || Math.abs(yawError) <= MAX_FLY_YAW_ERROR_DEGREES;
 
         // Slow down when close to the pest
         if (shouldFly && dist < BRAKE_RADIUS) {
@@ -1774,10 +1783,13 @@ public class PestKillerManager {
         // vertical oscillation near garden crops.  The jump key is therefore used
         // only when the target is genuinely above the player (dy > 1.5), and the
         // sneak key is suppressed near the ground to prevent landing on crops.
+        // Exception: when the pest is almost directly below, the sneak key is always
+        // allowed to descend regardless of ground proximity – otherwise the player
+        // would hover above a ground-level pest with no movement keys pressed.
         double dy = effectiveTarget.y - eye.y;
         boolean isNearGround = hasGroundBelow(player);
         boolean shouldJump  = dy > 1.5;
-        boolean shouldSneak = !isNearGround && dy < -1.0; // descend only when safely above ground
+        boolean shouldSneak = (!isNearGround || directlyBelow) && dy < -1.0;
 
         // ── Stuck detection ─────────────────────────────────────────────────
         if (lastProgressPos == null) {

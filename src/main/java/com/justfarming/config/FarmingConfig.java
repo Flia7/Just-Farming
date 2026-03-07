@@ -100,6 +100,13 @@ public class FarmingConfig {
     public int inventoryOverlayY = 60;
 
     /**
+     * Scale multiplier for the inventory HUD overlay.
+     * 1.0 = native pixel size (16 px per slot icon).
+     * Range: 0.5–3.0.
+     */
+    public float inventoryOverlayScale = 1.0f;
+
+    /**
      * When {@code true}, the macro will only start (and will auto-stop) when
      * the player is detected to be in the Hypixel Skyblock Garden.
      */

@@ -2404,6 +2404,7 @@ public class VisitorManager {
      * <ul>
      *   <li>{@code 64x Wheat}  / {@code 64 Wheat}</li>
      *   <li>{@code Wheat x64}  / {@code Wheat ×64}</li>
+     *   <li>{@code Enchanted Hay Bale} (no quantity prefix → amount 1)</li>
      * </ul>
      */
     private static VisitorRequirement parseRequirementLine(String line) {
@@ -2429,7 +2430,9 @@ public class VisitorManager {
                 if (!name.isEmpty() && amount > 0) return new VisitorRequirement(name, amount);
             } catch (NumberFormatException ignored) {}
         }
-        return null;
+
+        // Fallback: no quantity prefix at all → Hypixel shows just the item name when amount is 1
+        return new VisitorRequirement(clean, 1);
     }
 
     /** Strip Minecraft color/format codes (§x) and leading/trailing whitespace. */
