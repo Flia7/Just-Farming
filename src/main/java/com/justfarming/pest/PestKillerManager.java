@@ -373,8 +373,11 @@ public class PestKillerManager {
     /**
      * Minimum cooldown (ms) between successive AOTV/AOTE fires so the mod
      * does not spam the ability while the player is still mid-flight.
+     * Kept short (400 ms) because the {@link #PEST_AOTV_WAIT_MS} post-sequence
+     * pause already covers the server-processing time; re-triggering quickly
+     * lets the player continuously teleport toward the plot without stopping.
      */
-    private static final long   PEST_AOTV_COOLDOWN_MS  = 2000L;
+    private static final long   PEST_AOTV_COOLDOWN_MS  = 400L;
 
     /**
      * Assumed teleport distance (blocks) per AOTV/AOTE use when the lore
@@ -384,9 +387,11 @@ public class PestKillerManager {
 
     /**
      * Safety cap on the number of right-clicks fired in a single AOTV/AOTE
-     * sequence.  Prevents runaway loops if the distance is very large.
+     * sequence.  Set to 25 to cover worst-case garden distances (≈ 200 blocks
+     * / 8 blocks per hop) so the player teleports all the way to the plot
+     * centre in a single sequence without stopping to fly.
      */
-    private static final int    PEST_AOTV_MAX_CLICKS    = 8;
+    private static final int    PEST_AOTV_MAX_CLICKS    = 25;
 
     /**
      * Minimum clicks per second used when randomising the inter-click delay for
@@ -1343,6 +1348,9 @@ public class PestKillerManager {
         player.setYaw(pestAotvTargetYaw);
         player.setPitch(0f);
         player.getInventory().setSelectedSlot(pestAotvSlot);
+        // Keep flying forward toward the target while teleporting so the player
+        // continuously closes the gap rather than hovering in place.
+        if (client.options != null) client.options.forwardKey.setPressed(true);
 
         // ── Phase 2: multi-click spam ───────────────────────────────────────────
         if (pestAotvAllClicksDoneTime == 0L) {
