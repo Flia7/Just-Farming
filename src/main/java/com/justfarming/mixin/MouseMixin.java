@@ -46,12 +46,17 @@ public class MouseMixin {
      * Minecraft's automatic cursor re-lock (which normally fires when a screen
      * closes or focus is regained). This lets the user interact with other
      * windows on their desktop while the macro keeps running.
+     *
+     * <p>The suppression is also active while the farming macro is paused waiting
+     * for the visitor or pest-killer routine to finish, so the cursor stays
+     * unlocked throughout the entire rewarp–visit–return cycle.
      */
     @Inject(method = "lockCursor", at = @At("HEAD"), cancellable = true)
     private void onLockCursor(CallbackInfo ci) {
         MacroManager mm = JustFarming.getMacroManager();
         FarmingConfig cfg = JustFarming.getConfig();
-        if (mm != null && cfg != null && mm.isRunning() && cfg.unlockedMouseEnabled) {
+        if (mm != null && cfg != null && cfg.unlockedMouseEnabled
+                && (mm.isRunning() || mm.isWaitingForVisitors() || mm.isWaitingForPestKiller())) {
             ci.cancel();
         }
     }

@@ -78,6 +78,16 @@ public class VisitorManager {
      */
     private static final long BAZAAR_WAIT_MS = 1500;
 
+    /**
+     * Minimum time (ms) to wait after the visitor menu opens before parsing its
+     * slot contents.  This floor ensures all slot-data packets sent by the server
+     * after the screen-open packet have arrived, even when the user configures a
+     * very short (or zero) action delay.  Without this guard the parse can run
+     * while slots are still empty, producing zero requirements and causing the
+     * macro to skip the bazaar step.
+     */
+    private static final long VISITOR_MENU_MIN_PARSE_DELAY_MS = 500;
+
     /** Timeout for the sign-editor screen to appear after clicking "Buy Instantly" (ms). */
     private static final long ENTERING_AMOUNT_TIMEOUT_MS = 3000;
 
@@ -719,11 +729,16 @@ public class VisitorManager {
                 if (positionAnchored) {
                     // Already reached the first visitor's position – stand still and
                     // aim at the anchor point for all subsequent visitor interactions.
+                    // Only send the interact packet once the visitor NPC has actually
+                    // arrived within interact range; do not click blindly while the
+                    // visitor is still far away or hasn't spawned at the barn yet.
                     releaseMovementKeys();
-                    fastRotateActive = true;
+                    boolean withinRange = dist <= INTERACT_RADIUS;
+                    fastRotateActive = withinRange;
+                    float rotationSpeed = withinRange ? FAST_LOOK_DEGREES_PER_SECOND : SMOOTH_LOOK_DEGREES_PER_SECOND;
                     Vec3d lookTarget = anchorLookPos != null ? anchorLookPos : visitorPos;
-                    lookAt(player, lookTarget, FAST_LOOK_DEGREES_PER_SECOND);
-                    if (isAimedAtTarget(player) && now >= interactCooldownUntil) {
+                    lookAt(player, lookTarget, rotationSpeed);
+                    if (withinRange && isAimedAtTarget(player) && now >= interactCooldownUntil) {
                         fastRotateActive = false;
                         interactWithEntity(player, currentVisitor);
                         interactCooldownUntil = now + INTERACT_COOLDOWN_MS + randomExtra150;
@@ -763,11 +778,12 @@ public class VisitorManager {
 
             case READING_VISITOR_MENU -> {
                 if (client.currentScreen instanceof HandledScreen<?> screen) {
-                    // Wait the action delay before parsing so that all slot-data packets
-                    // sent by the server after the screen-open packet have time to arrive.
+                    // Wait the longer of (actionDelay, VISITOR_MENU_MIN_PARSE_DELAY_MS)
+                    // before parsing so that all slot-data packets sent by the server
+                    // after the screen-open packet have time to arrive.
                     // Without this guard the parse can run while slots are still empty,
                     // producing zero requirements and causing the macro to skip bazaar.
-                    if (now - stateEnteredAt >= currentActionDelay) {
+                    if (now - stateEnteredAt >= Math.max(currentActionDelay, VISITOR_MENU_MIN_PARSE_DELAY_MS)) {
                         if (isCurrentVisitorBlacklisted()) {
                             // Visitor is blacklisted – click "Refuse Offer" so the server
                             // records the decline, then close the menu and move on.
