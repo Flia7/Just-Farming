@@ -720,15 +720,38 @@ public class VisitorManager {
             "Master Tactician Funk", "Mayor Aatrox", "Mayor Cole", "Mayor Diana",
             "Mayor Diaz", "Mayor Finnegan", "Mayor Foxy", "Mayor Marina", "Mayor Paul",
             "Moby", "Odawa", "Old Man Garry", "Old Shaman Nyko", "Ophelia", "Oringo",
-            "Pearl Dealer", "Pest Wrangler", "Pest Wrangler?", "Pete", "Plumber Joe",
-            "Puzzler", "Queen Mismyla", "Queen Nyx", "Ravenous Rhino",
-            "Resident Neighbor", "Resident Snooty", "Rhys", "Romero", "Royal Resident",
-            "Rusty", "Ryan", "Ryu", "Sargwyn", "Scout Scardius", "Seymour", "Shaggy",
+            "Pamela", "Pearl Dealer", "Pest Wrangler", "Pest Wrangler?", "Pete",
+            "Phillip", "Plumber Joe", "Puzzler", "Queen Mismyla", "Queen Nyx",
+            "Ravenous Rhino", "Resident Neighbor", "Resident Snooty", "Rhys", "Romero",
+            "Royal Resident", "Rusty", "Ryan", "Ryu", "Sam", "Sargwyn",
+            "Scout Scardius", "Seymour", "Shaggy",
             "Sherry", "Shifty", "Sirius", "Spaceman", "Spider Tamer", "St. Jerry",
             "Stella", "Tammy", "Tarwen", "Terry", "The Trapper", "Tia the Fairy",
             "Tom", "Tomioka", "Trevor", "Trinity", "Tyashoi Alchemist", "Tyzzo",
             "Vargul", "Vex", "Vincent", "Vinyl Collector", "Weaponsmith", "Wizard",
             "Xalx", "Zog"
+    );
+
+    /**
+     * Names of NPCs that are permanently present in the Hypixel SkyBlock Garden
+     * barn area <em>and</em> can also appear as visitors.  When an entity with
+     * one of these names is found during a scan its raw (unstripped) custom name
+     * must start with {@code "§6"} (gold, no bold) to be treated as a visitor.
+     *
+     * <p>In Hypixel SkyBlock, active visitor NPCs show their name in plain gold
+     * ({@code §6Name}), while the same characters acting as permanent resident
+     * NPCs use a different colour or bold formatting ({@code §6§lName},
+     * {@code §eNpc}, etc.).  Checking the raw prefix prevents the macro from
+     * navigating to, and attempting to trade with, these resident NPCs when they
+     * are not in visitor mode.
+     *
+     * <p>If you observe that a legitimate visitor is being skipped, enable DEBUG
+     * logging and look for the log line
+     * {@code "Skipping garden-resident NPC … raw='…'"} to verify the raw name
+     * format and adjust this check accordingly.
+     */
+    private static final Set<String> GARDEN_RESIDENT_NPC_NAMES = Set.of(
+            "Sam", "Jacob", "Anita", "Phillip", "Pamela"
     );
 
     // ── Constructor ──────────────────────────────────────────────────────────
@@ -964,6 +987,15 @@ public class VisitorManager {
                             // detectAndConfigureAotv (toward V5 at safe pitch).
                             aotvTeleportFired = false;
                             lastSmoothLookTime = 0;
+                            // Prime targetYaw/targetPitch to the AOTV direction NOW so that
+                            // onRenderTick() starts rotating the camera toward the correct
+                            // aim point from the very first render frame.  Without this,
+                            // there is a window of one or more render frames (between this
+                            // enterState call and the first onTick handling of USING_AOTV)
+                            // where targetYaw still points at the old stale direction,
+                            // producing a visible "wrong-direction then snap" camera jerk.
+                            targetYaw   = aotvTeleportYaw;
+                            targetPitch = aotvTeleportPitch;
                             LOGGER.info("[Just Farming-Visitors] Found {} visitor(s). AOTV detected; "
                                     + "rotating to safe angle and teleporting toward V5 to trade V5→V1.",
                                     pendingVisitors.size() + 1);
@@ -1460,10 +1492,10 @@ public class VisitorManager {
         client.world.getEntitiesByClass(LivingEntity.class, searchBox,
                         e -> {
                             if (e.getCustomName() == null || e instanceof PlayerEntity) return false;
-                            String name = stripFormatting(e.getCustomName().getString());
-                            if (!KNOWN_VISITOR_NAMES.contains(name)) return false;
+                            if (!isKnownVisitorEntity(e)) return false;
                             if (completedVisitorIds.contains(e.getId())) {
-                                LOGGER.info("[Just Farming-Visitors] Skipping already-completed visitor: {}", name);
+                                LOGGER.info("[Just Farming-Visitors] Skipping already-completed visitor: {}",
+                                        stripFormatting(e.getCustomName().getString()));
                                 return false;
                             }
                             // Blacklisted visitors are included so the routine can navigate
@@ -1484,6 +1516,42 @@ public class VisitorManager {
             });
         }
         // Single visitor: no reordering needed.
+    }
+
+    /**
+     * Returns {@code true} when {@code entity} should be treated as an active
+     * visitor NPC for the purposes of pathfinding and NPC-avoidance logic.
+     *
+     * <p>For most visitor names the check is a simple membership test in
+     * {@link #KNOWN_VISITOR_NAMES}.  For the small subset of names listed in
+     * {@link #GARDEN_RESIDENT_NPC_NAMES} an additional raw-name format check is
+     * applied: the custom name must start with {@code "§6"} (plain gold) but
+     * <em>not</em> with {@code "§6§l"} (gold-bold), because permanent resident
+     * NPCs use bold or a different colour while active visitor instances use
+     * plain gold.
+     *
+     * <p>If you observe that a legitimate visitor is being skipped, enable DEBUG
+     * logging and look for the log line
+     * {@code "Skipping garden-resident NPC … raw='…'"} to verify the raw name
+     * format and adjust this check accordingly.
+     *
+     * @param entity a living entity with a non-null custom name
+     * @return {@code true} if the entity should be treated as an active visitor
+     */
+    private static boolean isKnownVisitorEntity(LivingEntity entity) {
+        if (entity.getCustomName() == null) return false;
+        String rawName = entity.getCustomName().getString();
+        String name    = stripFormatting(rawName);
+        if (!KNOWN_VISITOR_NAMES.contains(name)) return false;
+        if (GARDEN_RESIDENT_NPC_NAMES.contains(name)) {
+            boolean visitorMode = rawName.startsWith("§6") && !rawName.startsWith("§6§l");
+            if (!visitorMode) {
+                LOGGER.debug("[Just Farming-Visitors] Skipping garden-resident NPC '{}' "
+                        + "(not in visitor mode, raw='{}')", name, rawName);
+            }
+            return visitorMode;
+        }
+        return true;
     }
 
     /**
@@ -2085,8 +2153,7 @@ public class VisitorManager {
                 e -> e != currentVisitor
                         && !(e instanceof PlayerEntity)
                         && e.getCustomName() != null
-                        && KNOWN_VISITOR_NAMES.contains(
-                                stripFormatting(e.getCustomName().getString())))
+                        && isKnownVisitorEntity(e))
                 .isEmpty();
     }
 

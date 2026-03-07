@@ -206,11 +206,19 @@ public class PestKillerManager {
     private static final long WARP_COMMAND_WAIT_MS = 3000;
 
     /**
-     * Y coordinate (blocks) to target when flying to a plot centre.
-     * 80 is a comfortable height above most crops while still being within
-     * entity-scan range of ground-level pests.
+     * Base Y coordinate (blocks) to target when flying to a plot centre.
+     * 77 is a comfortable height above all crops while remaining within
+     * entity-scan range of ground-level pests.  The actual target height is
+     * randomised to {@code PLOT_CENTRE_Y_BASE + [0, PLOT_CENTRE_Y_RANGE)}
+     * (i.e. 77–80) on every plot visit to look more human-like.
      */
-    private static final double PLOT_CENTRE_Y = 80.0;
+    private static final double PLOT_CENTRE_Y_BASE  = 77.0;
+
+    /**
+     * Random range (blocks) added on top of {@link #PLOT_CENTRE_Y_BASE} when
+     * computing the per-visit flight height.  Results in 77, 78, 79, or 80.
+     */
+    private static final int    PLOT_CENTRE_Y_RANGE = 4;
 
     /**
      * Horizontal distance (blocks) from the computed plot centre at which the
@@ -433,10 +441,11 @@ public class PestKillerManager {
 
     /**
      * Minimum Y coordinate the player must be at before the AOTV/AOTE sequence
-     * will start.  Ensures the player is already flying and above crop height
-     * on the garden plots before teleporting, avoiding collisions with crops.
+     * will start.  Set to match {@link #PLOT_CENTRE_Y_BASE} (77) so teleports
+     * only fire once the player is at the safe cruising height where no crop
+     * blocks can be built, avoiding mid-air collisions during teleportation.
      */
-    private static final double PEST_AOTV_MIN_FLY_Y     = 72.0;
+    private static final double PEST_AOTV_MIN_FLY_Y     = 77.0;
 
     /**
      * If any detected pest is within this distance (blocks) of the player,
@@ -850,10 +859,11 @@ public class PestKillerManager {
                         double cx = GardenPlot.getCentreX(currentPlotName);
                         double cz = GardenPlot.getCentreZ(currentPlotName);
                         if (!Double.isNaN(cx) && !Double.isNaN(cz)) {
-                            plotCentreTarget = new Vec3d(cx, PLOT_CENTRE_Y, cz);
+                            double flightY = PLOT_CENTRE_Y_BASE + random.nextInt(PLOT_CENTRE_Y_RANGE);
+                            plotCentreTarget = new Vec3d(cx, flightY, cz);
                             LOGGER.info("[Just Farming-PestKiller] Teleport wait elapsed; "
                                     + "flying to plot {} centre ({}, {}, {}).",
-                                    currentPlotName, (int) cx, (int) PLOT_CENTRE_Y, (int) cz);
+                                    currentPlotName, (int) cx, (int) flightY, (int) cz);
                             enterState(State.GOING_TO_PLOT_CENTER);
                             return;
                         }
@@ -1504,10 +1514,11 @@ public class PestKillerManager {
             double cx = GardenPlot.getCentreX(nextPlot);
             double cz = GardenPlot.getCentreZ(nextPlot);
             if (!Double.isNaN(cx) && !Double.isNaN(cz)) {
-                plotCentreTarget = new Vec3d(cx, PLOT_CENTRE_Y, cz);
+                double flightY = PLOT_CENTRE_Y_BASE + random.nextInt(PLOT_CENTRE_Y_RANGE);
+                plotCentreTarget = new Vec3d(cx, flightY, cz);
                 resetAotvState();
                 LOGGER.info("[Just Farming-PestKiller] Flying directly to plot {} centre ({}, {}, {}).",
-                        nextPlot, (int) cx, (int) PLOT_CENTRE_Y, (int) cz);
+                        nextPlot, (int) cx, (int) flightY, (int) cz);
                 enterState(State.GOING_TO_PLOT_CENTER);
                 return;
             }
