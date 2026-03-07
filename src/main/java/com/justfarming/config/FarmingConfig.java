@@ -78,6 +78,27 @@ public class FarmingConfig {
      */
     public boolean macroEnabledInGui = false;
 
+    // --- Inventory HUD Overlay ---
+
+    /**
+     * When {@code true}, renders the player's main inventory (27 slots, excluding
+     * the hotbar) directly on the HUD so items can be monitored without opening
+     * a screen.
+     */
+    public boolean inventoryOverlayEnabled = false;
+
+    /**
+     * Horizontal pixel offset of the inventory overlay's top-left corner
+     * from the left edge of the screen.  0 = screen left edge.
+     */
+    public int inventoryOverlayX = 0;
+
+    /**
+     * Vertical pixel offset of the inventory overlay's top-left corner
+     * from the top edge of the screen.  0 = screen top edge.
+     */
+    public int inventoryOverlayY = 60;
+
     /**
      * When {@code true}, the macro will only start (and will auto-stop) when
      * the player is detected to be in the Hypixel Skyblock Garden.

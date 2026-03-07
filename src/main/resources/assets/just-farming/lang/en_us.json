@@ -17,6 +17,7 @@
   "gui.just-farming.garden_only_label": "Garden Only:",
   "gui.just-farming.squeaky_mousemat_label": "Squeaky Mousemat:",
   "gui.just-farming.macro_enabled_in_gui_label": "Macro Enabled in GUI:",
+  "gui.just-farming.inventory_overlay_label": "Inventory HUD Overlay:",
   "gui.just-farming.set_rewarp": "Set Rewarp Here",
   "gui.just-farming.close": "Close",
   "gui.just-farming.status_running": "Status: RUNNING",

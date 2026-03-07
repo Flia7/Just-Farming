@@ -5,6 +5,7 @@ import com.justfarming.gui.FarmingConfigScreen;
 import com.justfarming.pest.PestDetector;
 import com.justfarming.pest.PestEntityDetector;
 import com.justfarming.pest.PestKillerManager;
+import com.justfarming.render.InventoryHudRenderer;
 import com.justfarming.render.OverlayRenderer;
 import com.justfarming.visitor.VisitorManager;
 import net.fabricmc.api.ClientModInitializer;
@@ -12,6 +13,7 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallba
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
@@ -49,6 +51,7 @@ public class JustFarming implements ClientModInitializer {
     private static PestEntityDetector pestEntityDetector;
     private static VisitorManager visitorManager;
     private static PestKillerManager pestKillerManager;
+    private static InventoryHudRenderer inventoryHudRenderer;
     /** {@code true} when the farming macro was running before the pest killer started. */
     private static boolean pestKillerShouldResumeMacro = false;
 
@@ -75,6 +78,9 @@ public class JustFarming implements ClientModInitializer {
                 net.minecraft.client.MinecraftClient.getInstance(), config, pestEntityDetector);
         macroManager.setVisitorManager(visitorManager);
         macroManager.setPestKillerManager(pestKillerManager, pestDetector);
+
+        // Create inventory HUD renderer
+        inventoryHudRenderer = new InventoryHudRenderer(config);
 
         // Register keybindings
         toggleMacroKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
@@ -288,6 +294,11 @@ public class JustFarming implements ClientModInitializer {
                             "§c[Just Farming] Not in Garden – macro stopped."), false);
                 }
             }
+        });
+
+        // Register HUD render callback for the inventory overlay.
+        HudRenderCallback.EVENT.register((drawContext, renderTickCounter) -> {
+            inventoryHudRenderer.render(drawContext);
         });
 
         // Register world render event for pest plot overlay.

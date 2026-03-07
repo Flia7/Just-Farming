@@ -207,18 +207,26 @@ public class PestKillerManager {
 
     /**
      * Base Y coordinate (blocks) to target when flying to a plot centre.
-     * 77 is a comfortable height above all crops while remaining within
+     * 80 keeps the player comfortably above all crops while remaining within
      * entity-scan range of ground-level pests.  The actual target height is
      * randomised to {@code PLOT_CENTRE_Y_BASE + [0, PLOT_CENTRE_Y_RANGE)}
-     * (i.e. 77–80) on every plot visit to look more human-like.
+     * (i.e. 80–85) on every plot visit to look more human-like.
      */
-    private static final double PLOT_CENTRE_Y_BASE  = 77.0;
+    private static final double PLOT_CENTRE_Y_BASE  = 80.0;
 
     /**
      * Random range (blocks) added on top of {@link #PLOT_CENTRE_Y_BASE} when
-     * computing the per-visit flight height.  Results in 77, 78, 79, or 80.
+     * computing the per-visit flight height.  {@code random.nextInt(6)} returns
+     * 0–5, producing actual heights 80, 81, 82, 83, 84, or 85.
      */
-    private static final int    PLOT_CENTRE_Y_RANGE = 4;
+    private static final int    PLOT_CENTRE_Y_RANGE = 6;
+
+    /**
+     * Maximum cruise altitude (blocks).  The pest killer never flies the player
+     * above this Y during plot-centre navigation; if the computed target is
+     * higher than this cap the Y is clamped to this value.
+     */
+    private static final double MAX_CRUISE_Y        = 85.0;
 
     /**
      * Horizontal distance (blocks) from the computed plot centre at which the
@@ -441,11 +449,11 @@ public class PestKillerManager {
 
     /**
      * Minimum Y coordinate the player must be at before the AOTV/AOTE sequence
-     * will start.  Set to match {@link #PLOT_CENTRE_Y_BASE} (77) so teleports
+     * will start.  Set to match {@link #PLOT_CENTRE_Y_BASE} (80) so teleports
      * only fire once the player is at the safe cruising height where no crop
      * blocks can be built, avoiding mid-air collisions during teleportation.
      */
-    private static final double PEST_AOTV_MIN_FLY_Y     = 77.0;
+    private static final double PEST_AOTV_MIN_FLY_Y     = 80.0;
 
     /**
      * If any detected pest is within this distance (blocks) of the player,
@@ -478,6 +486,8 @@ public class PestKillerManager {
     private long  pestAotvLastFireTime = 0L;
     /** Yaw angle (degrees) toward which the AOTV/AOTE is aimed for the current sequence. */
     private float pestAotvTargetYaw    = 0f;
+    /** Pitch angle (degrees) toward which the AOTV/AOTE is aimed for the current sequence. */
+    private float pestAotvTargetPitch  = 0f;
     /** Total number of right-clicks to fire in the current sequence (one per teleport hop). */
     private int   pestAotvTotalClicks       = 0;
     /** Number of right-clicks already completed in the current sequence. */
@@ -1274,6 +1284,7 @@ public class PestKillerManager {
         pestAotvSlot             = -1;
         pestAotvSeqStart         = 0L;
         pestAotvTargetYaw        = 0f;
+        pestAotvTargetPitch      = 0f;
         pestAotvTotalClicks      = 0;
         pestAotvClicksDone       = 0;
         pestAotvNextEventTime    = 0L;
@@ -1381,9 +1392,11 @@ public class PestKillerManager {
             int clicks = (int) Math.ceil(remainingDist / PEST_AOTV_TELEPORT_DIST);
             clicks = Math.min(clicks, PEST_AOTV_MAX_CLICKS);
 
-            // Compute the yaw toward the target.
+            // Compute the yaw and pitch toward the target so diagonal/downward
+            // teleports are possible when the pest is below the player.
             Vec3d eye  = player.getEyePos();
             pestAotvTargetYaw        = computeYawTo(eye, target);
+            pestAotvTargetPitch      = computePitchTo(eye, target);
             pestAotvSlot             = slot;
             pestAotvSeqStart         = now;
             pestAotvTotalClicks      = clicks;
@@ -1394,9 +1407,9 @@ public class PestKillerManager {
             lastSmoothLookTime = 0; // reset so camera rotation starts smoothly
             releaseMovementKeys();
             LOGGER.info("[Just Farming-PestKiller] AOTV sequence started: {} hop(s) toward "
-                    + "({}, {}, {}), yaw={}, dist={} blocks, approachRadius={} blocks.",
+                    + "({}, {}, {}), yaw={}, pitch={}, dist={} blocks, approachRadius={} blocks.",
                     clicks, (int) target.x, (int) target.y, (int) target.z,
-                    (int) pestAotvTargetYaw, (int) dist, (int) approachRadius);
+                    (int) pestAotvTargetYaw, (int) pestAotvTargetPitch, (int) dist, (int) approachRadius);
         }
 
         long elapsed = now - pestAotvSeqStart;
@@ -1404,18 +1417,22 @@ public class PestKillerManager {
         // ── Phase 1: smooth-rotate toward the target ────────────────────────────
         if (elapsed < PEST_AOTV_AIM_MS) {
             targetYaw   = pestAotvTargetYaw;
-            targetPitch = 0f;
+            targetPitch = pestAotvTargetPitch;
             releaseMovementKeys();
             return true;
         }
 
         // Keep aim locked for all phases after the initial rotation.
         player.setYaw(pestAotvTargetYaw);
-        player.setPitch(0f);
+        player.setPitch(pestAotvTargetPitch);
         player.getInventory().setSelectedSlot(pestAotvSlot);
         // Keep flying forward toward the target while teleporting so the player
         // continuously closes the gap rather than hovering in place.
-        if (client.options != null) client.options.forwardKey.setPressed(true);
+        // Sneak key is explicitly released so shift-descent never fires during AOTV use.
+        if (client.options != null) {
+            client.options.forwardKey.setPressed(true);
+            client.options.sneakKey.setPressed(false);
+        }
 
         // ── Phase 2: multi-click spam ───────────────────────────────────────────
         // Abort the sequence early if the player is now within 10 blocks of any
@@ -1720,11 +1737,19 @@ public class PestKillerManager {
             return;
         }
 
+        // Cap the effective target Y so the player never cruises above MAX_CRUISE_Y.
+        // When the target is higher than the cap the player flies horizontally at the
+        // cap altitude rather than climbing beyond it; if the target is at or below the
+        // cap the original Y is used unchanged (including descending toward low pests).
+        Vec3d effectiveTarget = (target.y > MAX_CRUISE_Y)
+                ? new Vec3d(target.x, MAX_CRUISE_Y, target.z)
+                : target;
+
         // Point camera at the target (includes pitch for vertical direction)
-        lookAt(player, target);
+        lookAt(player, effectiveTarget);
 
         Vec3d eye = player.getEyePos();
-        double dist = eye.distanceTo(target);
+        double dist = eye.distanceTo(effectiveTarget);
 
         // Suppress forward movement when camera is still rotating toward the target
         float yawError = targetYaw - player.getYaw();
@@ -1749,7 +1774,7 @@ public class PestKillerManager {
         // vertical oscillation near garden crops.  The jump key is therefore used
         // only when the target is genuinely above the player (dy > 1.5), and the
         // sneak key is suppressed near the ground to prevent landing on crops.
-        double dy = target.y - eye.y;
+        double dy = effectiveTarget.y - eye.y;
         boolean isNearGround = hasGroundBelow(player);
         boolean shouldJump  = dy > 1.5;
         boolean shouldSneak = !isNearGround && dy < -1.0; // descend only when safely above ground
@@ -1790,7 +1815,7 @@ public class PestKillerManager {
 
         boolean isStrafeActive = now < strafeEndTime && strafeDirection != 0;
 
-        // When the unstuck strafe is active and the target is above the player,
+        // When the unstuck strafe is active and the effective target is above the player,
         // also press jump so the player can climb over vertical obstacles that
         // are blocking forward progress rather than simply sliding sideways.
         boolean stuckClimbNeeded = isStrafeActive && dy > 0;
@@ -2018,6 +2043,24 @@ public class PestKillerManager {
         double dx = to.x - from.x;
         double dz = to.z - from.z;
         return (float) Math.toDegrees(Math.atan2(-dx, dz));
+    }
+
+    /**
+     * Computes the Minecraft pitch (degrees) from {@code from} to {@code to}.
+     *
+     * <p>In Minecraft convention, positive pitch = looking down, negative = up.
+     * The result is clamped to [−90, 90].
+     *
+     * @param from the source (eye) position
+     * @param to   the destination position
+     * @return pitch in degrees
+     */
+    private static float computePitchTo(Vec3d from, Vec3d to) {
+        double dx = to.x - from.x;
+        double dy = to.y - from.y;
+        double dz = to.z - from.z;
+        double distXZ = Math.sqrt(dx * dx + dz * dz);
+        return (float) Math.toDegrees(Math.atan2(-dy, distXZ));
     }
 
     /**
