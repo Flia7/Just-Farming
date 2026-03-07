@@ -156,6 +156,10 @@ public class FarmingConfigScreen extends Screen {
         this.macroManager   = macroManager;
         this.visitorManager = com.justfarming.JustFarming.getVisitorManager();
         this.pestKillerManager = com.justfarming.JustFarming.getPestKillerManager();
+        // Restore the last-used preset indicator from persistent config (0=Blatant, 1=Smart, 2=Custom).
+        this.presetMode = config.configPreset < PRESET_BLATANT ? PRESET_BLATANT
+                        : config.configPreset > PRESET_CUSTOM  ? PRESET_CUSTOM
+                        : config.configPreset;
     }
 
     @Override
@@ -860,6 +864,7 @@ public class FarmingConfigScreen extends Screen {
         config.pestKillerGoToNextPestDelay = pestKillerGoToNextPestSlider.getDelayValue();
         config.pestKillerVacuumRange    = pestKillerVacuumRangeSlider.getRangeValue();
         config.farmingToolHotbarSlot    = farmingToolSlotSlider.getSlotValue();
+        config.configPreset             = presetMode;
         macroManager.setConfig(config);
         if (visitorManager != null) visitorManager.setConfig(config);
         if (pestKillerManager != null) pestKillerManager.setConfig(config);
@@ -917,6 +922,7 @@ public class FarmingConfigScreen extends Screen {
     private void markPresetCustom() {
         if (presetMode != PRESET_CUSTOM) {
             presetMode = PRESET_CUSTOM;
+            config.configPreset = PRESET_CUSTOM;
             if (presetButton != null) {
                 presetButton.setMessage(getPresetButtonText());
             }
@@ -942,6 +948,7 @@ public class FarmingConfigScreen extends Screen {
     /** Apply the Blatant preset: all features enabled, 0 ms delays throughout. */
     private void applyBlatantPreset() {
         presetMode = PRESET_BLATANT;
+        config.configPreset                 = PRESET_BLATANT;
         config.globalRandomizationMs        = 0;
         config.laneSwapDelayMin             = 0;
         config.laneSwapDelayRandom          = 0;
@@ -981,6 +988,7 @@ public class FarmingConfigScreen extends Screen {
     /** Apply the Smart preset: human-like delays and a recommended default configuration. */
     private void applySmartPreset() {
         presetMode = PRESET_SMART;
+        config.configPreset                 = PRESET_SMART;
         config.globalRandomizationMs        = 150;
         config.laneSwapDelayMin             = 400;
         config.laneSwapDelayRandom          = 500;
@@ -1002,7 +1010,7 @@ public class FarmingConfigScreen extends Screen {
         config.pestEspEnabled               = true;
         config.pestTitleScale               = 0.5f;
         config.pestTracerEnabled            = true;
-        config.unlockedMouseEnabled         = false;
+        config.unlockedMouseEnabled         = true;
         config.gardenOnlyEnabled            = true;
         config.squeakyMousematEnabled       = true;
         config.macroEnabledInGui            = true;
