@@ -917,10 +917,14 @@ public class PestKillerManager {
                 }
                 Vec3d pestPos = currentPest.position();
                 double dist = player.getEyePos().distanceTo(pestPos);
+                // Also check horizontal distance so the player enters KILLING state when
+                // flying directly above a pest (vertical offset inflates the 3D distance
+                // beyond the kill radius even though the pest is reachable).
+                double horizDist = horizontalDistance(player.getX(), player.getZ(), pestPos.x, pestPos.z);
                 // When a previous kill attempt timed out, fly to within CLOSE_APPROACH_RADIUS
                 // instead of the full vacuum range so line-of-sight and range are both optimal.
                 double approachRadius = closeApproachNeeded ? CLOSE_APPROACH_RADIUS : getEffectiveKillRadius();
-                if (dist <= approachRadius) {
+                if (dist <= approachRadius || horizDist <= approachRadius) {
                     releaseMovementKeys();
                     closeApproachNeeded = false;
                     // Find vacuum before entering kill state
@@ -959,8 +963,13 @@ public class PestKillerManager {
 
                 Vec3d pestPos = currentPest.position();
                 double dist = player.getEyePos().distanceTo(pestPos);
-                // If the pest moved out of kill range, fly toward it again
-                if (dist > getEffectiveKillRadius() * 1.5) {
+                // Also check horizontal distance so we keep right-clicking when flying
+                // directly above a pest (vertical offset inflates 3D dist beyond the
+                // 1.5× exit threshold while the pest is still within vacuum range).
+                double horizDist = horizontalDistance(player.getX(), player.getZ(), pestPos.x, pestPos.z);
+                // Only exit kill state if the pest is out of range in both 3D and
+                // horizontally, ensuring right-clicking continues when above the pest.
+                if (dist > getEffectiveKillRadius() * 1.5 && horizDist > getEffectiveKillRadius()) {
                     if (client.options != null) client.options.useKey.setPressed(false);
                     pestAimOffsetUpdateTime = 0; // reset drift on next approach
                     enterState(State.FLYING_TO_PEST);
@@ -1605,6 +1614,24 @@ public class PestKillerManager {
             return config.pestKillerVacuumRange;
         }
         return KILL_RADIUS;
+    }
+
+    /**
+     * Returns the horizontal (XZ-plane) distance between two points.
+     * Used to determine proximity to a pest independently of vertical offset,
+     * so that the player can enter and stay in the kill state even when
+     * directly above a ground-level pest.
+     *
+     * @param x1 X coordinate of the first point
+     * @param z1 Z coordinate of the first point
+     * @param x2 X coordinate of the second point
+     * @param z2 Z coordinate of the second point
+     * @return Euclidean distance on the XZ plane
+     */
+    private static double horizontalDistance(double x1, double z1, double x2, double z2) {
+        double dx = x1 - x2;
+        double dz = z1 - z2;
+        return Math.sqrt(dx * dx + dz * dz);
     }
 
     private void returnToFarm() {

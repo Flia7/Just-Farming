@@ -333,6 +333,16 @@ public class VisitorManager {
      */
     private static final double AOTV_WALL_TRIGGER_DIST = 20.0;
 
+    /**
+     * Distance (blocks) from V1 at which the close-approach AOTV mode fires.
+     * When the player is within this range of V1 (the nearest visitor) and the
+     * path toward V5 is clear (see {@link #isPathClearToward}), the AOTV/AOTE
+     * teleport fires toward V5.  This threshold replaces {@link #INTERACT_RADIUS}
+     * in barn skins with tall decorative walls where the player can walk right
+     * up to V1 before teleporting over the internal wall.
+     */
+    private static final double AOTV_CLOSE_APPROACH_DIST = 0.5;
+
     /** Pattern for parsing the teleport distance from AOTV/AOTE item lore. */
     private static final Pattern AOTV_TELEPORT_PATTERN =
             Pattern.compile("teleport\\s+(\\d+)\\s+blocks", Pattern.CASE_INSENSITIVE);
@@ -890,12 +900,18 @@ public class VisitorManager {
 
                 // ── AOTV approach phase ──────────────────────────────────────────
                 // Walk toward V1 (nearest visitor) before firing the AOTV teleport.
-                // Two sub-cases are handled:
-                //   • Wall mode:    a 1-block-tall wall is detected ahead while
-                //                   approaching → teleport over it in the current
-                //                   walking direction.
-                //   • No-wall mode: the player reaches V1's position without hitting
-                //                   a wall → teleport toward the saved V5 position.
+                // Three sub-cases are handled:
+                //   • Wall mode:         a 1-block-tall wall is detected ahead →
+                //                         teleport over it in the current walking
+                //                         direction.
+                //   • Tall-wall mode:    a multi-block wall is ahead, or the player
+                //                         is within AOTV_CLOSE_APPROACH_DIST of V1 →
+                //                         fire toward V5 when the path is clear (no
+                //                         blocks in the crosshair direction).  Used for
+                //                         barn skins like pinwheel where walls are too
+                //                         tall to jump over.
+                //   • No-wall mode:      the player reaches V1's position without any
+                //                         wall → teleport toward the saved V5 position.
                 if (aotvApproachPhase && useAotv) {
                     float dirYaw = (float) Math.toDegrees(Math.atan2(
                             -(visitorPos.x - player.getX()), visitorPos.z - player.getZ()));
@@ -911,16 +927,29 @@ public class VisitorManager {
                         return;
                     }
 
+                    // Tall-wall mode: multi-block wall detected, or player is very close
+                    // to V1 (within AOTV_CLOSE_APPROACH_DIST).  Fire toward V5 only when
+                    // the path in that direction has no solid blocks (clear crosshair).
+                    boolean tallWall = !isOneBlockWallAhead(player, dirYaw) && isTallWallAhead(player, dirYaw);
+                    if ((tallWall && dist < AOTV_WALL_TRIGGER_DIST) || dist <= AOTV_CLOSE_APPROACH_DIST) {
+                        float v5Yaw = computeAotvV5Yaw(player);
+                        if (isPathClearToward(player, v5Yaw, 3)) {
+                            releaseMovementKeys();
+                            aotvTeleportYaw   = v5Yaw;
+                            aotvTeleportFired = false;
+                            LOGGER.info("[Just Farming-Visitors] AOTV tall-wall mode: clear path toward V5 at yaw {}; teleporting.",
+                                    (int) v5Yaw);
+                            enterState(State.USING_AOTV);
+                            return;
+                        }
+                        // Path not yet clear – keep walking toward V1; stuck detection
+                        // will adjust position until a clear angle is found.
+                    }
+
                     // No-wall mode: reached V1 → aim at V5 and teleport
                     if (dist <= INTERACT_RADIUS) {
                         releaseMovementKeys();
-                        if (aotvV5Pos != null) {
-                            Vec3d pp = new Vec3d(player.getX(), player.getY(), player.getZ());
-                            aotvTeleportYaw = (float) Math.toDegrees(Math.atan2(
-                                    -(aotvV5Pos.x - pp.x), aotvV5Pos.z - pp.z));
-                        } else {
-                            aotvTeleportYaw = player.getYaw();
-                        }
+                        aotvTeleportYaw   = computeAotvV5Yaw(player);
                         aotvTeleportFired = false;
                         LOGGER.info("[Just Farming-Visitors] AOTV no-wall mode: reached V1; aiming at V5 (yaw {}) to teleport.",
                                 (int) aotvTeleportYaw);
@@ -1035,6 +1064,9 @@ public class VisitorManager {
                             ? stripFormatting(currentVisitor.getCustomName().getString()) : "?";
                     LOGGER.info("[Just Farming-Visitors] AOTV teleport complete; navigating to '{}' next "
                             + "({} visitors remaining).", cvName, pendingVisitors.size());
+
+                    // Restore farming tool now that the AOTV teleport is done.
+                    restoreToFarmingTool(player);
 
                     enterState(State.NAVIGATING);
                 }
@@ -1469,6 +1501,114 @@ public class VisitorManager {
             }
         }
         return AOTV_DEFAULT_DISTANCE;
+    }
+
+    /**
+     * Restores the player's selected hotbar slot to their farming tool after
+     * the AOTV/AOTE teleport has fired.
+     *
+     * <p>Priority order mirrors {@link #start()}: configured slot first,
+     * then auto-detected farming tool, otherwise no change.
+     *
+     * @param player the local player
+     */
+    private void restoreToFarmingTool(ClientPlayerEntity player) {
+        if (player == null) return;
+        if (config.farmingToolHotbarSlot >= 0 && config.farmingToolHotbarSlot <= 8
+                && !player.getInventory().getStack(config.farmingToolHotbarSlot).isEmpty()) {
+            player.getInventory().setSelectedSlot(config.farmingToolHotbarSlot);
+            LOGGER.info("[Just Farming-Visitors] Restored farming tool slot {} after AOTV teleport.",
+                    config.farmingToolHotbarSlot);
+        } else if (config.farmingToolHotbarSlot < 0) {
+            for (int i = 0; i < 9; i++) {
+                ItemStack stack = player.getInventory().getStack(i);
+                if (PestKillerManager.isFarmingTool(stack)) {
+                    player.getInventory().setSelectedSlot(i);
+                    LOGGER.info("[Just Farming-Visitors] Restored farming tool '{}' at slot {} after AOTV teleport.",
+                            PestKillerManager.getCleanItemName(stack), i);
+                    break;
+                }
+            }
+        }
+    }
+
+    /**
+     * Computes the yaw angle (degrees) from the player's current position toward
+     * the saved V5 position ({@link #aotvV5Pos}).  Falls back to the player's
+     * current yaw when {@code aotvV5Pos} is {@code null}.
+     *
+     * @param player the local player
+     * @return yaw in degrees toward V5
+     */
+    private float computeAotvV5Yaw(ClientPlayerEntity player) {
+        if (aotvV5Pos != null) {
+            return (float) Math.toDegrees(Math.atan2(
+                    -(aotvV5Pos.x - player.getX()), aotvV5Pos.z - player.getZ()));
+        }
+        return player.getYaw();
+    }
+
+    /**
+     * Returns {@code true} when there is a solid wall of more than one block
+     * directly ahead of the player (i.e. solid blocks at both feet level
+     * <em>and</em> head level).  A 1-block-tall obstacle that could be cleared
+     * with a single jump returns {@code false} here; use
+     * {@link #isOneBlockWallAhead} for that case.
+     *
+     * <p>Used to detect the tall decorative walls found in some Hypixel SkyBlock
+     * barn skins (e.g. pinwheel) where the AOTV must be aimed at V5 and fired
+     * only when the crosshair direction is clear.
+     *
+     * @param player the local player
+     * @param yawDeg the horizontal direction to probe (Minecraft yaw degrees)
+     * @return {@code true} if solid blocks are present at both feet and head level
+     */
+    private boolean isTallWallAhead(ClientPlayerEntity player, double yawDeg) {
+        if (client.world == null) return false;
+        double yawRad = Math.toRadians(yawDeg);
+        double nextX  = player.getX() - Math.sin(yawRad) * PROBE_STEP;
+        double nextZ  = player.getZ() + Math.cos(yawRad) * PROBE_STEP;
+        int bx        = (int) Math.floor(nextX);
+        int bz        = (int) Math.floor(nextZ);
+        int feetY     = (int) Math.floor(player.getY());
+        BlockState feetState = client.world.getBlockState(new BlockPos(bx, feetY,     bz));
+        BlockState headState = client.world.getBlockState(new BlockPos(bx, feetY + 1, bz));
+        boolean feetWall = !feetState.isAir() && !isStepBlock(feetState);
+        boolean headWall = !headState.isAir() && !isStepBlock(headState);
+        return feetWall && headWall;
+    }
+
+    /**
+     * Returns {@code true} when the path in the given {@code yawDeg} direction
+     * is clear of solid blocks at both feet and head level for the first
+     * {@code numBlocks} block-steps ahead.
+     *
+     * <p>Used before firing the AOTV/AOTE teleport to verify that the teleport
+     * direction has no immediate wall obstruction, which would stop the
+     * teleport short of the intended destination.  A return value of {@code true}
+     * means the player can teleport successfully in that direction.
+     *
+     * @param player    the local player
+     * @param yawDeg    the horizontal aim direction (Minecraft yaw degrees)
+     * @param numBlocks number of block-steps to check ahead
+     * @return {@code true} when all checked positions are clear
+     */
+    private boolean isPathClearToward(ClientPlayerEntity player, double yawDeg, int numBlocks) {
+        if (client.world == null) return false;
+        double yawRad = Math.toRadians(yawDeg);
+        int feetY     = (int) Math.floor(player.getY());
+        BlockPos.Mutable probe = new BlockPos.Mutable();
+        for (int step = 1; step <= numBlocks; step++) {
+            double cx = player.getX() - Math.sin(yawRad) * step;
+            double cz = player.getZ() + Math.cos(yawRad) * step;
+            int bx    = (int) Math.floor(cx);
+            int bz    = (int) Math.floor(cz);
+            if (!client.world.getBlockState(probe.set(bx, feetY,     bz)).isAir()
+                    || !client.world.getBlockState(probe.set(bx, feetY + 1, bz)).isAir()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
