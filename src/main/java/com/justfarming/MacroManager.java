@@ -659,6 +659,14 @@ public class MacroManager {
                 }
             }
             case LANE_SWAP_WAITING -> {
+                // Release the attack key every tick during the lane-swap pause.
+                // shouldBreak() returns false for this state, so the mixin suppression
+                // is not active; keeping the attack key held would let vanilla's
+                // handleBlockBreaking() fire on whatever the crosshair happens to
+                // target during the pause (potentially an immature crop).
+                if (client.options != null) {
+                    client.options.attackKey.setPressed(false);
+                }
                 if (laneSwapPendingCustomFlip) {
                     // Custom-key flip: release all movement keys (existing behaviour).
                     releaseMovementKeys();
@@ -1015,6 +1023,11 @@ public class MacroManager {
                 if (cs != null) {
                     // Custom key mode: release movement keys and toggle the flip flag.
                     releaseMovementKeys();
+                    // Release the attack key so vanilla handleBlockBreaking cannot fire
+                    // while shouldBreak() is false during the lane-swap pause.
+                    if (client.options != null) {
+                        client.options.attackKey.setPressed(false);
+                    }
                     if (swapDelay > 0) {
                         laneSwapStartTime = System.currentTimeMillis();
                         laneSwapTargetDelay = swapDelay;
@@ -1066,6 +1079,9 @@ public class MacroManager {
                     client.options.backKey.setPressed(false);
                     client.options.leftKey.setPressed(laneSwapKeepLeft);
                     client.options.rightKey.setPressed(laneSwapKeepRight);
+                    // Release the attack key immediately so vanilla handleBlockBreaking
+                    // cannot fire while shouldBreak() is false during the pause.
+                    client.options.attackKey.setPressed(false);
                     laneSwapStartTime = System.currentTimeMillis();
                     laneSwapTargetDelay = swapDelay;
                     laneSwapPendingCustomFlip = false;

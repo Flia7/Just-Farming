@@ -75,6 +75,19 @@ public class PestKillerManager {
     private static final double KILL_RADIUS = 5.0;
 
     /**
+     * Failsafe duration (ms): if the pest has not been killed after holding
+     * right-click for this long, fly to within 2 blocks and try again.
+     */
+    private static final long KILL_FAILSAFE_MS = 5000L;
+
+    /**
+     * Close-approach distance (blocks) used for the {@link #KILL_FAILSAFE_MS}
+     * retry.  Getting this close to the pest maximises the chance of a clean
+     * vacuum hit and removes any lingering line-of-sight issues.
+     */
+    private static final double CLOSE_APPROACH_RADIUS = 2.0;
+
+    /**
      * Kill ranges (blocks) for each known Hypixel vacuum type, ordered from
      * most-specific to least-specific so that the first matching substring wins.
      * Values mirror the actual in-game vacuum ranges.
@@ -403,6 +416,14 @@ public class PestKillerManager {
      */
     private double detectedVacuumRange = -1.0;
 
+    /**
+     * When {@code true}, the next {@link State#FLYING_TO_PEST} approach uses
+     * {@link #CLOSE_APPROACH_RADIUS} as the arrival threshold instead of the full
+     * vacuum range.  Set after {@link #KILL_FAILSAFE_MS} ms of fruitless
+     * right-clicking so the player moves within guaranteed hit range.
+     */
+    private boolean closeApproachNeeded = false;
+
     // ── Plot-centre navigation ───────────────────────────────────────────────
 
     /** Name of the plot currently being visited (e.g. "4"), or {@code null}. */
@@ -502,6 +523,7 @@ public class PestKillerManager {
         pestAimOffset = Vec3d.ZERO;
         pestAimOffsetTarget = Vec3d.ZERO;
         pestAimOffsetUpdateTime = 0;
+        closeApproachNeeded = false;
         resetPlotState();
     }
 
@@ -524,6 +546,7 @@ public class PestKillerManager {
         pestAimOffset = Vec3d.ZERO;
         pestAimOffsetTarget = Vec3d.ZERO;
         pestAimOffsetUpdateTime = 0;
+        closeApproachNeeded = false;
         resetPlotState();
         enterState(State.IDLE);
     }
@@ -864,8 +887,12 @@ public class PestKillerManager {
                 }
                 Vec3d pestPos = currentPest.position();
                 double dist = player.getEyePos().distanceTo(pestPos);
-                if (dist <= getEffectiveKillRadius()) {
+                // When a previous kill attempt timed out, fly to within CLOSE_APPROACH_RADIUS
+                // instead of the full vacuum range so line-of-sight and range are both optimal.
+                double approachRadius = closeApproachNeeded ? CLOSE_APPROACH_RADIUS : getEffectiveKillRadius();
+                if (dist <= approachRadius) {
                     releaseMovementKeys();
+                    closeApproachNeeded = false;
                     // Find vacuum before entering kill state
                     findAndEquipVacuum(player);
                     // Reset drift state so the aim wanders freely from the first tick.
@@ -886,6 +913,7 @@ public class PestKillerManager {
                     // Pest was killed; brief configurable pause before scanning for more.
                     LOGGER.info("[JustFarming-PestKiller] Pest killed; scanning for remaining pests.");
                     releaseMovementKeys();
+                    closeApproachNeeded = false; // reset failsafe flag on successful kill
                     int goNextDelay = (config != null) ? config.pestKillerGoToNextPestDelay : 0;
                     pestKillWaitEnd = (goNextDelay > 0) ? now + goNextDelay : 0;
                     // Mark that at least one pest was killed on this plot so the scanner
@@ -905,6 +933,20 @@ public class PestKillerManager {
                 if (dist > getEffectiveKillRadius() * 1.5) {
                     if (client.options != null) client.options.useKey.setPressed(false);
                     pestAimOffsetUpdateTime = 0; // reset drift on next approach
+                    enterState(State.FLYING_TO_PEST);
+                    return;
+                }
+
+                // Failsafe: if the pest has not been killed after KILL_FAILSAFE_MS of
+                // continuous right-clicking, fly much closer and retry.  This handles
+                // edge cases where the player is at the edge of vacuum range or there
+                // is a slight line-of-sight obstruction.
+                if (now - stateEnteredAt >= KILL_FAILSAFE_MS) {
+                    LOGGER.info("[JustFarming-PestKiller] Kill failsafe triggered after {}ms; "
+                            + "flying closer to pest.", now - stateEnteredAt);
+                    if (client.options != null) client.options.useKey.setPressed(false);
+                    pestAimOffsetUpdateTime = 0;
+                    closeApproachNeeded = true;
                     enterState(State.FLYING_TO_PEST);
                     return;
                 }
@@ -1227,13 +1269,12 @@ public class PestKillerManager {
             shouldFly = (ticks % pulseStride == 0);
         }
 
-        // Vertical movement: jump to ascend when the pest is above.
-        // The sneak key is intentionally never pressed so the player always stays
-        // airborne.  When the pest is below, the camera pitches downward (set by
-        // lookAt above) and the forward + pitch-down motion carries the player
-        // diagonally toward the pest without risking a landing.
+        // Vertical movement: jump to ascend when the pest is above, or when there
+        // is a non-air block directly ahead in the path at foot or head height.
+        // This ensures the player always rises by at least one block to pass over
+        // any obstacle rather than flying into it and stalling.
         double dy = target.y - eye.y;
-        boolean shouldJump  = dy >  1.5;
+        boolean shouldJump  = dy > 1.5 || hasObstacleInPath(player, target);
         boolean shouldSneak = false; // never descend; camera pitch handles vertical direction
 
         // ── Stuck detection ─────────────────────────────────────────────────
@@ -1376,6 +1417,35 @@ public class PestKillerManager {
                 LOGGER.debug("[JustFarming-PestKiller] Ceiling avoidance complete; resuming normal pathfinding.");
             }
         }
+    }
+
+    /**
+     * Returns {@code true} if there is at least one non-air block at foot or
+     * head level 1.5 blocks ahead of the player in the horizontal direction
+     * toward {@code target}.
+     *
+     * <p>Used by {@link #flyToward} to trigger jumping one block higher whenever
+     * a non-air block would otherwise obstruct horizontal forward flight,
+     * ensuring the player always passes over obstacles rather than flying into
+     * them.  Any non-air block (including crops, fences, etc.) counts as an
+     * obstacle since the player cannot fly through it.
+     */
+    private boolean hasObstacleInPath(ClientPlayerEntity player, Vec3d target) {
+        if (client.world == null) return false;
+        double dx = target.x - player.getX();
+        double dz = target.z - player.getZ();
+        double horizDist = Math.sqrt(dx * dx + dz * dz);
+        if (horizDist < 0.5) return false; // already very close; skip check
+        // Unit vector in the horizontal direction toward the target
+        double nx = dx / horizDist;
+        double nz = dz / horizDist;
+        // Check 1.5 blocks ahead so the player has enough lead time to rise
+        // above the obstacle before reaching it.
+        int bx = (int) Math.floor(player.getX() + nx * 1.5);
+        int bz = (int) Math.floor(player.getZ() + nz * 1.5);
+        int by = (int) Math.floor(player.getY()); // feet Y
+        return !client.world.getBlockState(new BlockPos(bx, by,     bz)).isAir()
+            || !client.world.getBlockState(new BlockPos(bx, by + 1, bz)).isAir();
     }
 
     /** Aim the camera toward {@code target} using smooth interpolation. */
