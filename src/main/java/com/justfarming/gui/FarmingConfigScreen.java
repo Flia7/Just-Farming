@@ -97,8 +97,10 @@ public class FarmingConfigScreen extends Screen {
     private FlatBoolToggleWidget  squeakyMousematButton;
     private FlatBoolToggleWidget  macroEnabledInGuiButton;
     private FlatBoolToggleWidget  inventoryOverlayButton;
+    private FlatButtonWidget                  inventoryHudLocationButton;
     private InventoryOverlayXSlider           inventoryOverlayXSlider;
     private InventoryOverlayYSlider           inventoryOverlayYSlider;
+    private InventoryOverlayScaleSlider       inventoryOverlayScaleSlider;
 
     // ── Tab 3 – Delays widgets ────────────────────────────────────────────────
     private GlobalRandomSlider            globalRandomSlider;
@@ -400,6 +402,19 @@ public class FarmingConfigScreen extends Screen {
                 "Adjust the X/Y sliders below to change its position.")));
         y += bh + pad;
 
+        inventoryHudLocationButton = new FlatButtonWidget(widgetX, y, bw, bh,
+                        Text.literal("Inventory HUD Location"),
+                        btn -> {
+                            applyConfig();
+                            if (this.client != null)
+                                this.client.setScreen(new InventoryHudLocationScreen(this, config));
+                        });
+        this.addDrawableChild(inventoryHudLocationButton);
+        inventoryHudLocationButton.setTooltip(Tooltip.of(Text.literal(
+                "Open the inventory HUD position editor.\n" +
+                "Drag the HUD to reposition it. Scroll to resize.")));
+        y += bh + pad;
+
         inventoryOverlayXSlider = new InventoryOverlayXSlider(widgetX, y, bw, bh,
                         config.inventoryOverlayX);
         this.addDrawableChild(inventoryOverlayXSlider);
@@ -412,6 +427,14 @@ public class FarmingConfigScreen extends Screen {
         this.addDrawableChild(inventoryOverlayYSlider);
         inventoryOverlayYSlider.setTooltip(Tooltip.of(Text.literal(
                 "Vertical position (Y) of the inventory overlay's top-left corner (pixels from top edge).")));
+        y += bh + pad;
+
+        inventoryOverlayScaleSlider = new InventoryOverlayScaleSlider(widgetX, y, bw, bh,
+                        config.inventoryOverlayScale);
+        this.addDrawableChild(inventoryOverlayScaleSlider);
+        inventoryOverlayScaleSlider.setTooltip(Tooltip.of(Text.literal(
+                "Scale multiplier for the inventory HUD overlay.\n" +
+                "1.0 = default size. Range: 0.5–3.0.")));
         tabContentHeights[2] = y + bh - contentAreaTopY + tabScrollOffsets[2];
 
         // ── Tab 3 – Delays ────────────────────────────────────────────────────
@@ -614,6 +637,7 @@ public class FarmingConfigScreen extends Screen {
         inventoryOverlayButton.setOnChange(markCustom);
         inventoryOverlayXSlider.setOnChange(markCustom);
         inventoryOverlayYSlider.setOnChange(markCustom);
+        inventoryOverlayScaleSlider.setOnChange(markCustom);
         // Tab 3
         globalRandomSlider.setOnChange(markCustom);
         laneSwapDelaySlider.setOnChange(markCustom);
@@ -676,9 +700,11 @@ public class FarmingConfigScreen extends Screen {
         gardenOnlyButton.visible      = t2 && inContentBounds(gardenOnlyButton);
         squeakyMousematButton.visible = t2 && inContentBounds(squeakyMousematButton);
         macroEnabledInGuiButton.visible = t2 && inContentBounds(macroEnabledInGuiButton);
-        inventoryOverlayButton.visible  = t2 && inContentBounds(inventoryOverlayButton);
-        inventoryOverlayXSlider.visible = t2 && inContentBounds(inventoryOverlayXSlider);
-        inventoryOverlayYSlider.visible = t2 && inContentBounds(inventoryOverlayYSlider);
+        inventoryOverlayButton.visible       = t2 && inContentBounds(inventoryOverlayButton);
+        inventoryHudLocationButton.visible    = t2 && inContentBounds(inventoryHudLocationButton);
+        inventoryOverlayXSlider.visible       = t2 && inContentBounds(inventoryOverlayXSlider);
+        inventoryOverlayYSlider.visible       = t2 && inContentBounds(inventoryOverlayYSlider);
+        inventoryOverlayScaleSlider.visible   = t2 && inContentBounds(inventoryOverlayScaleSlider);
 
         boolean t3 = activeTab == 3;
         globalRandomSlider.visible            = t3 && inContentBounds(globalRandomSlider);
@@ -889,6 +915,7 @@ public class FarmingConfigScreen extends Screen {
         config.inventoryOverlayEnabled = inventoryOverlayButton.getValue();
         config.inventoryOverlayX    = inventoryOverlayXSlider.getPositionValue();
         config.inventoryOverlayY    = inventoryOverlayYSlider.getPositionValue();
+        config.inventoryOverlayScale = inventoryOverlayScaleSlider.getScaleValue();
         config.visitorsEnabled          = visitorsEnabledButton.getValue();
         config.visitorsBuyFromBazaar    = visitorsBuyFromBazaarButton.getValue();
         config.visitorsActionDelay      = visitorsDelaySlider.getDelayValue();
@@ -1928,6 +1955,64 @@ public class FarmingConfigScreen extends Screen {
         @Override
         protected void updateMessage() {
             setMessage(Text.literal(String.format("Overlay Y: %d px", getPositionValue())));
+        }
+
+        @Override
+        public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
+            FlatButtonWidget.renderFlatSlider(context, getX(), getY(), getWidth(), getHeight(), value, getMessage());
+        }
+    }
+
+    /** Slider for the inventory overlay scale (0.5–3.0, step 0.1). */
+    private static class InventoryOverlayScaleSlider extends SliderWidget {
+
+        private static final float MIN = 0.5f;
+        private static final float MAX = 3.0f;
+        private static final int GLFW_KEY_LEFT  = 263;
+        private static final int GLFW_KEY_RIGHT = 262;
+
+        private Runnable onChange;
+
+        InventoryOverlayScaleSlider(int x, int y, int width, int height, float initialValue) {
+            super(x, y, width, height, Text.empty(),
+                    (double)(Math.max(MIN, Math.min(MAX, initialValue)) - MIN) / (MAX - MIN));
+            updateMessage();
+        }
+
+        void setOnChange(Runnable r) { this.onChange = r; }
+
+        float getScaleValue() {
+            float raw = MIN + (float) value * (MAX - MIN);
+            // Round to nearest 0.1
+            return Math.round(raw * 10f) / 10f;
+        }
+
+        @Override
+        protected void applyValue() {
+            float raw = MIN + (float) value * (MAX - MIN);
+            float snapped = Math.round(raw * 10f) / 10f;
+            snapped = Math.max(MIN, Math.min(MAX, snapped));
+            this.value = (snapped - MIN) / (MAX - MIN);
+            if (onChange != null) onChange.run();
+        }
+
+        @Override
+        public boolean keyPressed(net.minecraft.client.input.KeyInput input) {
+            if (input.key() == GLFW_KEY_LEFT || input.key() == GLFW_KEY_RIGHT) {
+                double step = 0.1 / (MAX - MIN);
+                this.value = (input.key() == GLFW_KEY_LEFT)
+                        ? Math.max(0.0, this.value - step)
+                        : Math.min(1.0, this.value + step);
+                applyValue();
+                updateMessage();
+                return true;
+            }
+            return super.keyPressed(input);
+        }
+
+        @Override
+        protected void updateMessage() {
+            setMessage(Text.literal(String.format("Inventory HUD Scale: %.1f", getScaleValue())));
         }
 
         @Override

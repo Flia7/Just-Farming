@@ -17,31 +17,32 @@ import net.minecraft.item.ItemStack;
  * <p>Position is controlled by {@link FarmingConfig#inventoryOverlayX} and
  * {@link FarmingConfig#inventoryOverlayY}, which specify the top-left corner
  * of the overlay in screen pixels (origin at screen top-left).
+ * Scale is controlled by {@link FarmingConfig#inventoryOverlayScale}.
  */
 public class InventoryHudRenderer {
 
-    /** Pixel size of one slot square (item icon). */
+    /** Pixel size of one slot square (item icon) at scale 1.0. */
     private static final int SLOT_SIZE = 16;
 
-    /** Pixel gap between adjacent slot icons. */
+    /** Pixel gap between adjacent slot icons at scale 1.0. */
     private static final int GAP = 2;
 
-    /** Combined stride (slot icon + gap) used for both X and Y spacing. */
+    /** Combined stride (slot icon + gap) used for both X and Y spacing at scale 1.0. */
     private static final int SLOT_SPACING = SLOT_SIZE + GAP;
 
     /** Number of item columns in the inventory grid. */
-    private static final int COLS = 9;
+    public static final int COLS = 9;
 
     /** Number of item rows in the inventory grid (one row per inventory row). */
-    private static final int ROWS = 3;
+    public static final int ROWS = 3;
 
-    /** Total rendered width of the overlay grid in pixels. */
-    private static final int GRID_W = COLS * SLOT_SPACING - GAP;
+    /** Total rendered width of the overlay grid in pixels at scale 1.0. */
+    public static final int GRID_W = COLS * SLOT_SPACING - GAP;
 
-    /** Total rendered height of the overlay grid in pixels. */
-    private static final int GRID_H = ROWS * SLOT_SPACING - GAP;
+    /** Total rendered height of the overlay grid in pixels at scale 1.0. */
+    public static final int GRID_H = ROWS * SLOT_SPACING - GAP;
 
-    /** Background padding around the item grid. */
+    /** Background padding around the item grid at scale 1.0. */
     private static final int BG_PAD = 3;
 
     /** Background colour (semi-transparent black). */
@@ -67,33 +68,73 @@ public class InventoryHudRenderer {
         ClientPlayerEntity player = mc.player;
         if (player == null) return;
 
-        // inventoryOverlayX / inventoryOverlayY specify the top-left corner of
-        // the entire overlay (including the background padding rectangle).
-        int bgX = config.inventoryOverlayX;
-        int bgY = config.inventoryOverlayY;
+        renderAt(context, mc, player, config.inventoryOverlayX, config.inventoryOverlayY,
+                config.inventoryOverlayScale);
+    }
+
+    /**
+     * Renders the inventory overlay at the given position and scale.
+     * Used both by {@link #render} and by {@link com.justfarming.gui.InventoryHudLocationScreen}.
+     */
+    public static void renderAt(DrawContext context, MinecraftClient mc,
+                                 ClientPlayerEntity player, int bgX, int bgY, float scaleIn) {
+        float scale = Math.max(0.25f, scaleIn);
+
+        int scaledGridW  = Math.round(GRID_W  * scale);
+        int scaledGridH  = Math.round(GRID_H  * scale);
+        int scaledBgPad  = Math.max(1, Math.round(BG_PAD * scale));
 
         // Draw a semi-transparent background behind the grid.
         context.fill(bgX, bgY,
-                bgX + GRID_W + 2 * BG_PAD,
-                bgY + GRID_H + 2 * BG_PAD,
+                bgX + scaledGridW + 2 * scaledBgPad,
+                bgY + scaledGridH + 2 * scaledBgPad,
                 BG_COLOR);
 
-        // Items are rendered inside the background, offset by BG_PAD.
-        int startX = bgX + BG_PAD;
-        int startY = bgY + BG_PAD;
+        // Items are rendered inside the background, offset by scaledBgPad.
+        int startX = bgX + scaledBgPad;
+        int startY = bgY + scaledBgPad;
+
+        int scaledSlotSpacing = Math.round(SLOT_SPACING * scale);
 
         // Render the 27 inventory slots (rows 1–3, Minecraft slot indices 9–35).
+        // Apply scale via the Matrix3x2fStack so item icons and count labels scale correctly.
+        var matrices = context.getMatrices();
+        matrices.pushMatrix();
+        matrices.translate(startX, startY);
+        matrices.scale(scale, scale);
         for (int row = 0; row < ROWS; row++) {
             for (int col = 0; col < COLS; col++) {
                 int slotIndex = 9 + (row * COLS) + col;
                 ItemStack stack = player.getInventory().getStack(slotIndex);
                 if (!stack.isEmpty()) {
-                    int itemX = startX + col * SLOT_SPACING;
-                    int itemY = startY + row * SLOT_SPACING;
+                    // Positions are in unscaled slot space (scale is applied via matrix)
+                    int itemX = col * SLOT_SPACING;
+                    int itemY = row * SLOT_SPACING;
                     context.drawItem(stack, itemX, itemY);
                     context.drawStackOverlay(mc.textRenderer, stack, itemX, itemY);
                 }
             }
         }
+        matrices.popMatrix();
+    }
+
+    /**
+     * Returns the total rendered width of the inventory overlay (background included)
+     * at the given scale, in screen pixels.
+     */
+    public static int getOverlayWidth(float scale) {
+        float s = Math.max(0.25f, scale);
+        int scaledBgPad = Math.max(1, Math.round(BG_PAD * s));
+        return Math.round(GRID_W * s) + 2 * scaledBgPad;
+    }
+
+    /**
+     * Returns the total rendered height of the inventory overlay (background included)
+     * at the given scale, in screen pixels.
+     */
+    public static int getOverlayHeight(float scale) {
+        float s = Math.max(0.25f, scale);
+        int scaledBgPad = Math.max(1, Math.round(BG_PAD * s));
+        return Math.round(GRID_H * s) + 2 * scaledBgPad;
     }
 }
