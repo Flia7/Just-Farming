@@ -1305,12 +1305,6 @@ public class PestKillerManager {
             shouldFly = (ticks % pulseStride == 0);
         }
 
-        // Vertical movement: jump to ascend when the pest is above, or when there
-        // is a non-air block directly ahead in the path at foot or head height.
-        // This ensures the player always rises by at least one block to pass over
-        // any obstacle rather than flying into it and stalling.
-        // Enable sneak (descend) when the pest is significantly below the player so
-        // the player actively drops toward pests on the ground rather than flying
         // In creative flight, vertical movement is driven entirely by camera pitch +
         // the forward key: pointing the camera up/down and pressing forward causes
         // genuine 3D diagonal movement.  Holding the jump key to "avoid the ground"

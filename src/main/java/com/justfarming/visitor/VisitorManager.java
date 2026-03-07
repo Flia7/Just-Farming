@@ -335,7 +335,29 @@ public class VisitorManager {
 
     /** Pattern for parsing the teleport distance from AOTV/AOTE item lore. */
     private static final Pattern AOTV_TELEPORT_PATTERN =
-            Pattern.compile("teleport\\s+(\\d+)\\s+blocks");
+            Pattern.compile("teleport\\s+(\\d+)\\s+blocks", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * Display-name substring (lower-case) for the Aspect of the Void sword.
+     * Matched case-insensitively against stripped item names in the hotbar.
+     */
+    private static final String AOTV_ITEM_NAME = "aspect of the void";
+
+    /**
+     * Display-name substring (lower-case) for the Aspect of the End sword.
+     * Matched case-insensitively against stripped item names in the hotbar.
+     */
+    private static final String AOTE_ITEM_NAME = "aspect of the end";
+
+    /**
+     * Maximum number of main-series visitors (V1–V5) involved in the
+     * reversed AOTV trading order.  Hypixel SkyBlock allows up to 5
+     * concurrent barn visitors, so the main series is at most 5 entries;
+     * since V1 is held separately as {@link #currentVisitor} during the
+     * approach phase, up to 4 additional visitors (V2–V5) remain in
+     * {@link #pendingVisitors} when the reversal is computed.
+     */
+    private static final int AOTV_MAIN_VISITOR_REVERSE_COUNT = 4;
 
     // ── State machine ────────────────────────────────────────────────────────
 
@@ -997,7 +1019,7 @@ public class VisitorManager {
                     // pendingVisitors currently holds [V2, V3, V4, V5, V6?…].
                     // currentVisitor is V1 (the approach target).
                     // Build the trading order: V5, V4, V3, V2, V1, V6…
-                    int mainCount = Math.min(4, pendingVisitors.size());
+                    int mainCount = Math.min(AOTV_MAIN_VISITOR_REVERSE_COUNT, pendingVisitors.size());
                     List<Entity> mainReversed = new ArrayList<>(pendingVisitors.subList(0, mainCount));
                     List<Entity> extra        = new ArrayList<>(pendingVisitors.subList(mainCount, pendingVisitors.size()));
                     Collections.reverse(mainReversed);          // [V5, V4, V3, V2]
@@ -1392,8 +1414,9 @@ public class VisitorManager {
         int foundSlot = findAotvSlot(player);
         if (foundSlot < 0) return;
 
-        // V5 = the farthest of the first five visitors (or the last if fewer than 5).
-        int v5Idx   = Math.min(4, pendingVisitors.size() - 1);
+        // V5 = the farthest of the first AOTV_MAIN_VISITOR_REVERSE_COUNT+1 visitors
+        // (or the last if fewer visitors are present).
+        int v5Idx   = Math.min(AOTV_MAIN_VISITOR_REVERSE_COUNT, pendingVisitors.size() - 1);
         Entity v5   = pendingVisitors.get(v5Idx);
         aotvV5Pos   = new Vec3d(v5.getX(), v5.getY(), v5.getZ());
 
@@ -1420,7 +1443,7 @@ public class VisitorManager {
             ItemStack stack = player.getInventory().getStack(i);
             if (stack.isEmpty()) continue;
             String name = stripFormatting(stack.getName().getString()).toLowerCase();
-            if (name.contains("aspect of the void") || name.contains("aspect of the end")) {
+            if (name.contains(AOTV_ITEM_NAME) || name.contains(AOTE_ITEM_NAME)) {
                 return i;
             }
         }
