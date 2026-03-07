@@ -1192,13 +1192,22 @@ public class VisitorManager {
             double progress    = walkLastProgressPos.distanceTo(playerPos);
             double distToTarget = playerPos.distanceTo(target);
             if (progress < WALK_MIN_PROGRESS_PER_INTERVAL && distToTarget > INTERACT_RADIUS + 0.5) {
-                // Alternate strafe direction on each successive crash (right, then left, …).
-                walkRecoveryDirection     = (walkRecoveryDirection == 1) ? -1 : 1;
-                walkRecoveryBackupEndTime = now + WALK_RECOVERY_BACKUP_MS;
-                walkRecoveryEndTime       = now + WALK_RECOVERY_BACKUP_MS + WALK_RECOVERY_STRAFE_MS;
-                LOGGER.debug("[Just Farming-Visitors] Stuck ({} blocks); backing up then strafing {}.",
-                        String.format("%.2f", progress),
-                        walkRecoveryDirection > 0 ? "right" : "left");
+                // If a 1-block-tall wall is directly ahead the player just needs to
+                // jump to clear it – suppress the backup+strafe recovery so it doesn't
+                // cause erratic camera rotations and backward movement.
+                if (!isOneBlockWallAhead(player, baseTargetYaw)) {
+                    // Alternate strafe direction on each successive crash (right, then left, …).
+                    walkRecoveryDirection     = (walkRecoveryDirection == 1) ? -1 : 1;
+                    walkRecoveryBackupEndTime = now + WALK_RECOVERY_BACKUP_MS;
+                    walkRecoveryEndTime       = now + WALK_RECOVERY_BACKUP_MS + WALK_RECOVERY_STRAFE_MS;
+                    LOGGER.debug("[Just Farming-Visitors] Stuck ({} blocks); backing up then strafing {}.",
+                            String.format("%.2f", progress),
+                            walkRecoveryDirection > 0 ? "right" : "left");
+                } else {
+                    LOGGER.debug("[Just Farming-Visitors] Stuck ({} blocks) but 1-block wall ahead; "
+                            + "skipping backup+strafe, jump will handle it.",
+                            String.format("%.2f", progress));
+                }
             }
             walkLastProgressPos       = playerPos;
             walkLastProgressCheckTime = now;

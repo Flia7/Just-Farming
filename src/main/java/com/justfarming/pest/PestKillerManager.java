@@ -297,6 +297,14 @@ public class PestKillerManager {
     private int   strafeDirection      = 0;
     /** Wall-clock time (ms) at which the current strafe manoeuvre ends; 0 = inactive. */
     private long  strafeEndTime        = 0;
+    /**
+     * Number of consecutive stuck checks where the player made essentially zero
+     * progress (< {@link #ZERO_PROGRESS_THRESHOLD} blocks).  When this reaches
+     * {@link #ZERO_PROGRESS_MAX_COUNT} the player is assumed to be stuck inside a
+     * block (a common side-effect of a bad {@code /tptoplot}) and the routine
+     * falls back to {@code /warp garden}.
+     */
+    private int   zeroProgressCount   = 0;
 
     // Double-jump flight activation
     /**
@@ -322,6 +330,18 @@ public class PestKillerManager {
     private static final long   STRAFE_DURATION_MS           = 600;
     /** Minimum distance to the target (blocks) below which stuck detection is skipped. */
     private static final double MIN_STUCK_CHECK_DIST         = 2.0;
+    /**
+     * Progress threshold (blocks) below which movement is treated as effectively
+     * zero (player is inside a solid block after a bad teleport).
+     */
+    private static final double ZERO_PROGRESS_THRESHOLD      = 0.05;
+    /**
+     * Number of consecutive zero-progress stuck checks before the routine gives
+     * up and falls back to {@code /warp garden} (skipping any remaining plot
+     * teleports).  Each check is {@link #STUCK_CHECK_INTERVAL_MS} apart, so
+     * three checks = ~4.5 seconds of no movement.
+     */
+    private static final int    ZERO_PROGRESS_MAX_COUNT      = 3;
 
     // ── Humanised pest-aim drift ─────────────────────────────────────────────
 
@@ -1032,6 +1052,7 @@ public class PestKillerManager {
             lastProgressCheckTime = 0;
             strafeEndTime        = 0;
             strafeDirection      = 0;
+            zeroProgressCount    = 0;
             doubleJumpStartTime  = 0;
             ceilingAvoidPhase    = 0;
             ceilingAvoidStartTime = 0;
@@ -1307,11 +1328,27 @@ public class PestKillerManager {
         if (now - lastProgressCheckTime >= STUCK_CHECK_INTERVAL_MS) {
             double progress = lastProgressPos.distanceTo(eye);
             if (progress < MIN_PROGRESS_PER_INTERVAL && dist > MIN_STUCK_CHECK_DIST) {
+                if (progress < ZERO_PROGRESS_THRESHOLD) {
+                    // Essentially zero movement – player may be stuck inside a solid
+                    // block (common after a bad /tptoplot).  Count consecutive zeroes
+                    // and fall back to /warp garden if it persists.
+                    zeroProgressCount++;
+                    if (zeroProgressCount >= ZERO_PROGRESS_MAX_COUNT) {
+                        LOGGER.info("[Just Farming-PestKiller] Player stuck in block (zero progress for {} checks); falling back to /warp garden.",
+                                zeroProgressCount);
+                        fallbackToWarpGarden();
+                        return;
+                    }
+                } else {
+                    zeroProgressCount = 0;
+                }
                 // Player has not moved enough – alternate strafe direction and hold it briefly
                 strafeDirection = (strafeDirection >= 0) ? -1 : 1;
                 strafeEndTime   = now + STRAFE_DURATION_MS;
                 LOGGER.debug("[Just Farming-PestKiller] Stuck (progress={} blocks); strafing {}.",
                         String.format("%.2f", progress), strafeDirection > 0 ? "right" : "left");
+            } else {
+                zeroProgressCount = 0;
             }
             lastProgressPos       = eye;
             lastProgressCheckTime = now;
@@ -1575,6 +1612,35 @@ public class PestKillerManager {
     private void returnToFarm() {
         returnWarpSentAt = 0;
         enterState(State.RETURNING);
+    }
+
+    /**
+     * Emergency fallback triggered when the player has made zero movement for
+     * several consecutive stuck-detection checks (indicating they are stuck inside
+     * a solid block after a bad {@code /tptoplot}).
+     *
+     * <p>Releases all movement keys, clears the remaining plot queue, sends
+     * {@code /warp garden}, and re-enters the {@link State#TELEPORTING} wait so
+     * the routine scans for pests at the garden spawn rather than attempting
+     * further plot teleports.
+     */
+    private void fallbackToWarpGarden() {
+        releaseMovementKeys();
+        remainingPlots.clear();
+        currentPlotName = null;
+        zeroProgressCount = 0;
+        lastProgressPos = null;
+        lastProgressCheckTime = 0;
+        strafeEndTime = 0;
+        strafeDirection = 0;
+        LOGGER.info("[Just Farming-PestKiller] Stuck-in-block fallback: sending /warp garden "
+                + "and scanning from garden (skipping remaining plot teleports).");
+        sendCommand("warp garden");
+        int afterTpDelay = (config != null && config.pestKillerAfterTeleportDelay >= 0)
+                ? config.pestKillerAfterTeleportDelay : (int) SCAN_WAIT_MS;
+        int globalRandom = (config != null) ? config.globalRandomizationMs : 0;
+        teleportWaitMs = afterTpDelay + random.nextInt(Math.max(1, globalRandom));
+        enterState(State.TELEPORTING);
     }
 
     private void sendCommand(String command) {

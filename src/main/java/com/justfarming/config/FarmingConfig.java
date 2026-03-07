@@ -301,6 +301,13 @@ public class FarmingConfig {
     public int visitorsMinCount = 1;
 
     /**
+     * Last-selected preset mode for the config GUI.
+     * 0 = Blatant, 1 = Smart, 2 = Custom (default).
+     * Persisted so re-opening the GUI shows the correct preset name.
+     */
+    public int configPreset = 2;
+
+    /**
      * Maximum total NPC sell value (in coins) of all items a visitor requests
      * before the visitor is automatically skipped.  Set to {@code 0} to disable
      * this check (no limit).
