@@ -26,8 +26,11 @@ import java.util.regex.Pattern;
  *   <li>Teleports to the first infested plot (via {@code /tptoplot <plot>}) or to
  *       the garden (via {@code /warp garden}), depending on
  *       {@link FarmingConfig#pestKillerWarpToPlot}.</li>
- *   <li>After the teleport delay, flies to the centre of the plot to maximise
- *       entity-scan radius.</li>
+ *   <li>After the teleport delay, flies to the plot centre at high altitude
+ *       (y ≈ 103–120, above all crop blocks) so AOTV/AOTE teleports travel
+ *       without obstruction.</li>
+ *   <li>Once horizontally over the plot centre (within 6 blocks), descends to
+ *       crop height (y ≈ 80–90) before scanning.</li>
  *   <li>Scans for pest entities via {@link PestEntityDetector}.  If any are
  *       found it flies directly to the nearest one.</li>
  *   <li>If no pests are detected at the plot centre, it left-clicks with the
@@ -37,9 +40,10 @@ import java.util.regex.Pattern;
  *   <li>Switches to a vacuum item in the hotbar (any item whose name contains
  *       "Vacuum", case-insensitive) and right-clicks while aiming at the pest.
  *       Right-clicking continues until the pest disappears from the entity list.</li>
- *   <li>When no pests remain on the current plot, teleports to the next infested
- *       plot (if any) and repeats steps 2–5 until all plots have been cleared.</li>
- *   <li>Sends {@code /warp garden} when all detected pests have been killed
+ *   <li>When no pests remain on the current plot, moves on to the next infested
+ *       plot (if any) and repeats steps 2–5 until all plots have been cleared
+ *       without returning to the garden between plots.</li>
+ *   <li>Sends {@code /warp garden} only once all detected pests have been killed
  *       and marks itself {@link State#DONE}.</li>
  * </ol>
  */
@@ -228,19 +232,45 @@ public class PestKillerManager {
     private static final int    PLOT_CENTRE_Y_RANGE = 6;
 
     /**
-     * Maximum cruise altitude (blocks).  The pest killer never flies the player
-     * above this Y during plot-centre navigation; if the computed target is
-     * higher than this cap the Y is clamped to this value.
+     * Base navigation altitude (blocks Y) used when flying horizontally toward
+     * a plot centre.  Flying above {@link GardenPlot#MAX_Y} (102) keeps the
+     * player clear of all crop blocks, making AOTV teleports unobstructed.
+     * The actual altitude is randomised to
+     * {@code NAV_ALTITUDE_BASE + [0, NAV_ALTITUDE_RANGE)} (103–120).
      */
-    private static final double MAX_CRUISE_Y        = 85.0;
+    private static final double NAV_ALTITUDE_BASE  = 103.0;
+
+    /**
+     * Random range (blocks) added on top of {@link #NAV_ALTITUDE_BASE} when
+     * computing the per-visit high-altitude navigation target.
+     * {@code random.nextInt(18)} produces altitudes 103–120.
+     */
+    private static final int    NAV_ALTITUDE_RANGE = 18;
+
+    /**
+     * Maximum cruise altitude (blocks).  The pest killer never flies the player
+     * above this Y during navigation; if the computed target is higher than this
+     * cap the Y is clamped to this value.  Set to 125 so it comfortably covers
+     * the high-altitude navigation range ({@link #NAV_ALTITUDE_BASE}–
+     * {@link #NAV_ALTITUDE_BASE}+{@link #NAV_ALTITUDE_RANGE}).
+     */
+    private static final double MAX_CRUISE_Y        = 125.0;
 
     /**
      * Horizontal distance (blocks) from the computed plot centre at which the
-     * {@link State#GOING_TO_PLOT_CENTER} state is considered complete.
-     * Set to 5 so the player must be within 5 blocks of the infected plot
-     * centre before scanning, preventing premature arrival at adjacent plots.
+     * {@link State#GOING_TO_PLOT_CENTER} state is considered to have arrived
+     * horizontally.  Set to 6 so the player must be within 6 blocks of the
+     * plot centre before descending to crop height.
      */
-    private static final double PLOT_CENTRE_ARRIVE_RADIUS = 5.0;
+    private static final double PLOT_CENTRE_ARRIVE_RADIUS = 6.0;
+
+    /**
+     * Vertical distance (blocks) from the descent target Y at which
+     * {@link State#DESCENDING_AT_PLOT} is considered complete and scanning
+     * may begin.  A tolerance of 5 blocks avoids over-shooting and matches
+     * the precision that creative-flight + camera-pitch naturally achieves.
+     */
+    private static final double DESCENT_ARRIVE_THRESHOLD = 5.0;
 
     /**
      * Maximum time (ms) to spend flying to the plot centre before giving up
@@ -276,8 +306,10 @@ public class PestKillerManager {
         PRE_TELEPORT_WAIT,
         /** Waiting for the server to teleport the player. */
         TELEPORTING,
-        /** Flying to the centre of the current infested plot. */
+        /** Flying to the centre of the current infested plot at high altitude. */
         GOING_TO_PLOT_CENTER,
+        /** Horizontally over the plot centre; descending to crop-height (y ≈ 80–90). */
+        DESCENDING_AT_PLOT,
         /** Looking for pest entities near the player. */
         SCANNING,
         /** Left-clicked vacuum; waiting for particle-trail data. */
@@ -869,6 +901,7 @@ public class PestKillerManager {
         if (state != State.FLYING_TO_PEST
                 && state != State.KILLING_PEST
                 && state != State.GOING_TO_PLOT_CENTER
+                && state != State.DESCENDING_AT_PLOT
                 && state != State.FOLLOWING_PARTICLES) return;
         ClientPlayerEntity player = client.player;
         if (player == null) return;
@@ -908,16 +941,16 @@ public class PestKillerManager {
 
             case TELEPORTING -> {
                 if (now - stateEnteredAt >= teleportWaitMs) {
-                    // After teleporting, fly to the plot centre to maximise the scan
-                    // radius before looking for pest entities.
+                    // After teleporting, fly at high altitude (above all crop blocks)
+                    // to the plot centre so AOTV can travel unobstructed.
                     if (currentPlotName != null) {
                         double cx = GardenPlot.getCentreX(currentPlotName);
                         double cz = GardenPlot.getCentreZ(currentPlotName);
                         if (!Double.isNaN(cx) && !Double.isNaN(cz)) {
-                            double flightY = PLOT_CENTRE_Y_BASE + random.nextInt(PLOT_CENTRE_Y_RANGE);
+                            double flightY = NAV_ALTITUDE_BASE + random.nextInt(NAV_ALTITUDE_RANGE);
                             plotCentreTarget = new Vec3d(cx, flightY, cz);
                             LOGGER.info("[Just Farming-PestKiller] Teleport wait elapsed; "
-                                    + "flying to plot {} centre ({}, {}, {}).",
+                                    + "flying to plot {} centre at high altitude ({}, {}, {}).",
                                     currentPlotName, (int) cx, (int) flightY, (int) cz);
                             enterState(State.GOING_TO_PLOT_CENTER);
                             return;
@@ -950,16 +983,20 @@ public class PestKillerManager {
                     return;
                 }
 
-                // Check horizontal distance only (ignore Y) so we don't overshoot
-                // vertically into a ceiling.
+                // Check horizontal distance only (ignore Y) so we arrive directly
+                // above the plot centre before descending.
                 double dx = player.getX() - plotCentreTarget.x;
                 double dz = player.getZ() - plotCentreTarget.z;
                 double horizDist = Math.sqrt(dx * dx + dz * dz);
                 if (horizDist <= PLOT_CENTRE_ARRIVE_RADIUS) {
-                    LOGGER.info("[Just Farming-PestKiller] Arrived at plot centre; scanning.");
+                    // Arrived horizontally at the plot centre; descend to crop height.
+                    double descentY = PLOT_CENTRE_Y_BASE + random.nextInt(PLOT_CENTRE_Y_RANGE);
+                    plotCentreTarget = new Vec3d(plotCentreTarget.x, descentY, plotCentreTarget.z);
+                    LOGGER.info("[Just Farming-PestKiller] Arrived over plot {} centre; "
+                            + "descending to y={}.", currentPlotName, (int) descentY);
                     releaseMovementKeys();
                     resetAotvState();
-                    enterState(State.SCANNING);
+                    enterState(State.DESCENDING_AT_PLOT);
                     return;
                 }
 
@@ -978,8 +1015,50 @@ public class PestKillerManager {
                 flyToward(player, plotCentreTarget);
             }
 
+            case DESCENDING_AT_PLOT -> {
+                // Check if pests are already visible while descending.
+                List<PestEntityDetector.PestEntity> pestsDA = pestEntityDetector.getDetectedPests();
+                if (!pestsDA.isEmpty()) {
+                    currentPest = pickNearestPest(player, pestsDA);
+                    if (currentPest != null) {
+                        LOGGER.info("[Just Farming-PestKiller] Pest detected while descending; "
+                                + "targeting directly.");
+                        releaseMovementKeys();
+                        resetAotvState();
+                        enterState(State.FLYING_TO_PEST);
+                        return;
+                    }
+                }
+
+                if (plotCentreTarget == null) {
+                    enterState(State.SCANNING);
+                    return;
+                }
+
+                // Arrived when within DESCENT_ARRIVE_THRESHOLD blocks of the descent target Y.
+                double distToDescentY = Math.abs(player.getY() - plotCentreTarget.y);
+                if (distToDescentY <= DESCENT_ARRIVE_THRESHOLD) {
+                    LOGGER.info("[Just Farming-PestKiller] Descended to y={} over plot {}; scanning.",
+                            (int) player.getY(), currentPlotName);
+                    releaseMovementKeys();
+                    resetAotvState();
+                    enterState(State.SCANNING);
+                    return;
+                }
+
+                // Timeout – start scanning from wherever we are.
+                if (now - stateEnteredAt >= GOING_TO_PLOT_CENTRE_TIMEOUT_MS) {
+                    LOGGER.info("[Just Farming-PestKiller] Timed out descending; scanning.");
+                    releaseMovementKeys();
+                    resetAotvState();
+                    enterState(State.SCANNING);
+                    return;
+                }
+
+                flyToward(player, plotCentreTarget);
+            }
+
             case SCANNING -> {
-                // Honour the post-kill wait before starting to scan for the next pest.
                 if (now < pestKillWaitEnd) return;
 
                 List<PestEntityDetector.PestEntity> pests = pestEntityDetector.getDetectedPests();
@@ -1308,7 +1387,7 @@ public class PestKillerManager {
         int globalRandom = (config != null) ? config.globalRandomizationMs : 0;
         randomExtra = random.nextInt(Math.max(1, globalRandom));
         if (next == State.FLYING_TO_PEST || next == State.GOING_TO_PLOT_CENTER
-                || next == State.FOLLOWING_PARTICLES) {
+                || next == State.FOLLOWING_PARTICLES || next == State.DESCENDING_AT_PLOT) {
             // Reset stuck detection so each new flight attempt starts fresh
             lastProgressPos      = null;
             lastProgressCheckTime = 0;
@@ -1590,12 +1669,12 @@ public class PestKillerManager {
         currentPlotName = nextPlot;
 
         // Without /tptoplot the player is already somewhere in the garden;
-        // fly directly toward the next plot centre rather than re-warping.
+        // fly directly toward the next plot centre at high altitude rather than re-warping.
         if (config != null && !config.pestKillerWarpToPlot && nextPlot != null) {
             double cx = GardenPlot.getCentreX(nextPlot);
             double cz = GardenPlot.getCentreZ(nextPlot);
             if (!Double.isNaN(cx) && !Double.isNaN(cz)) {
-                double flightY = PLOT_CENTRE_Y_BASE + random.nextInt(PLOT_CENTRE_Y_RANGE);
+                double flightY = NAV_ALTITUDE_BASE + random.nextInt(NAV_ALTITUDE_RANGE);
                 plotCentreTarget = new Vec3d(cx, flightY, cz);
                 resetAotvState();
                 LOGGER.info("[Just Farming-PestKiller] Flying directly to plot {} centre ({}, {}, {}).",

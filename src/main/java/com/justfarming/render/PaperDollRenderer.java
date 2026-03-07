@@ -21,17 +21,20 @@ import net.minecraft.client.network.ClientPlayerEntity;
  *   <li>Filled triangle arrows ▲ ▼ ◀ ▶ for WASD labels.</li>
  *   <li>Smooth per-key colour fading when pressed/released, using the same
  *       linear interpolation ({@code percentFaded}) approach as Canelex.</li>
- *   <li>LMB / RMB mouse buttons in a third row; LMB shows the live CPS count
- *       (packets sent, not just physical clicks).</li>
+ *   <li>LMB / RMB mouse buttons in a third row; LMB shows "L" when not
+ *       clicking and the live CPS count (packets sent, not just physical
+ *       clicks) while actively clicking.</li>
  * </ul>
  *
  * <pre>
  *   ┌──────────────────────────────────────┐  ┌──────────────────┐
- *   │  [slot]…[slot]  (3-row inv grid)     │  │   player model   │
- *   │  [slot]…[slot]                       │  ├──────────────────┤
- *   │  [slot]…[slot]                       │  │      [ ▲ ]       │  ← W
- *   └──────────────────────────────────────┘  │  [ ◀ ][ ▼ ][ ▶ ]│  ← A S D
- *                                             │  [ 7 LMB ][ RMB ]│  ← LMB(cps) RMB
+ *   │  [slot]…[slot]  (3-row inv grid)     │  │                  │  ↑
+ *   │  [slot]…[slot]                       │  │   player model   │  2/3
+ *   │  [slot]…[slot]                       │  │                  │  ↓
+ *   └──────────────────────────────────────┘  ├──────────────────┤
+ *                                             │      [ ▲ ]       │  ↑
+ *                                             │  [ ◀ ][ ▼ ][ ▶ ]│  1/3
+ *                                             │  [ L 7]  [ R ]   │  ↓
  *                                             └──────────────────┘
  * </pre>
  *
@@ -100,6 +103,13 @@ public class PaperDollRenderer {
     /** Minimum font scale so labels remain readable at very small HUD scales. */
     private static final float MIN_FONT_SCALE = 0.3f;
 
+    /**
+     * Minimum keystroke-section scale factor.  Prevents individual key boxes
+     * from becoming too small to render legibly when the inventory HUD is
+     * displayed at very low scale values.
+     */
+    private static final float MIN_KEYSTROKE_SCALE = 0.2f;
+
     // ── State ─────────────────────────────────────────────────────────────────
 
     private final FarmingConfig config;
@@ -135,8 +145,13 @@ public class PaperDollRenderer {
 
         int panelW = Math.round(PANEL_W   * scale);
         int panelH = invH;   // same height as the inventory HUD
-        int ksH    = Math.round(KS_HEIGHT * scale);
-        int modelH = panelH - ksH;
+
+        // Player model gets 2/3 of the panel height; keystrokes get the remaining 1/3.
+        int modelH = (panelH * 2) / 3;
+        int ksH    = panelH - modelH;
+
+        // Compute a keystroke-section scale so the 3 key rows fit in the 1/3 height.
+        float ksScale = Math.max(MIN_KEYSTROKE_SCALE, (float) ksH / KS_HEIGHT);
 
         int panelX = invHudX + invW + Math.round(PANEL_GAP * scale);
         int panelY = invHudY;
@@ -168,7 +183,7 @@ public class PaperDollRenderer {
         context.fill(panelX, sepY, panelX + panelW, sepY + 1, 0x20FFFFFF);
 
         // ── Keystrokes section ────────────────────────────────────────────────
-        renderKeystrokes(context, mc.textRenderer, panelX, sepY + 1, panelW, ksH - 1, scale);
+        renderKeystrokes(context, mc.textRenderer, panelX, sepY + 1, panelW, ksH - 1, ksScale);
     }
 
     // ── Private rendering helpers ─────────────────────────────────────────────
@@ -247,16 +262,19 @@ public class PaperDollRenderer {
     }
 
     /**
-     * Draws the LMB button.  The button label is the current CPS count as a
-     * plain number (e.g. "7"), making CPS immediately readable.
+     * Draws the LMB button.  The button shows "L" when not clicking; when
+     * actively clicking it shows the live CPS count so click speed is
+     * immediately readable (packets sent + physical clicks, via
+     * {@link KeystrokesTracker#getLmbCps()}).
      */
     private void drawLmbKey(DrawContext context, TextRenderer tr,
                              int x, int y, int w, int h,
                              KeystrokesTracker tracker, long now) {
         int bg  = tracker.getKeyBgColor  (KeystrokesTracker.KEY_LMB, BG_PRESSED,  BG_RELEASED,  now);
         int txt = tracker.getKeyTextColor(KeystrokesTracker.KEY_LMB, TXT_PRESSED, TXT_RELEASED, now);
-        String cpsStr = String.valueOf(tracker.getLmbCps());
-        drawKeyBox(context, tr, x, y, w, h, cpsStr, bg, txt);
+        int cps = tracker.getLmbCps();
+        String label = cps > 0 ? String.valueOf(cps) : "L";
+        drawKeyBox(context, tr, x, y, w, h, label, bg, txt);
     }
 
     /**
