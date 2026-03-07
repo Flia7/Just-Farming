@@ -1,4 +1,4 @@
-# FLIA
+# Just-Farming
 
 > A Hypixel Skyblock Garden automation mod for **Fabric 1.21.10**.
 
