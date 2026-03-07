@@ -1241,9 +1241,9 @@ public class VisitorManager {
                     } else {
                         startAcceptingOffer();
                     }
-                } else if ((skipCurrentVisitorDueToBlacklist || skipCurrentVisitorDueToPrice)
+                } else if ((skipCurrentVisitorDueToBlacklist || skipCurrentVisitorDueToPrice || postAccept)
                         && now - stateEnteredAt > currentActionDelay + 1500L) {
-                    // Fallback: the visitor menu did not auto-close after "Refuse Offer".
+                    // Fallback: the visitor menu did not auto-close after "Accept/Refuse Offer".
                     // Force-close it so the routine can continue to the next visitor.
                     player.closeHandledScreen();
                 }
@@ -1423,10 +1423,12 @@ public class VisitorManager {
                             player.closeHandledScreen();
                             nextVisitor();
                         } else {
-                            // Close after accepting; mark that the next CLOSING_MENU
-                            // should move to the next visitor, not re-enter accepting.
+                            // Do NOT close the screen: the server auto-closes the visitor
+                            // menu after "Accept Offer" is processed, just like "Refuse Offer".
+                            // Sending a close packet immediately after the click can cause the
+                            // server to discard the accept click.  CLOSING_MENU will
+                            // force-close with a fallback timeout if the server does not do so.
                             postAccept = true;
-                            player.closeHandledScreen();
                             enterState(State.CLOSING_MENU);
                         }
                     } else {
