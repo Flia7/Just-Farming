@@ -329,9 +329,11 @@ public class PestKillerManager {
      * Maximum radius (blocks) of the camera-aim drift applied during
      * {@link State#KILLING_PEST}.  The camera aims at a point within this sphere
      * around the pest rather than locking exactly on it, producing more natural
-     * looking camera movement.
+     * looking camera movement.  This radius scales linearly down to 0 over
+     * {@link #KILL_FAILSAFE_MS} seconds as a failsafe so the crosshair
+     * converges onto the pest if it has not been killed after that time.
      */
-    private static final double PEST_AIM_DRIFT_RADIUS     = 1.5;
+    private static final double PEST_AIM_DRIFT_RADIUS     = 5.0;
 
     /**
      * Base interval (ms) between drift-target updates during
@@ -952,14 +954,19 @@ public class PestKillerManager {
                 }
 
                 // Humanised camera aim: keep the aim point within PEST_AIM_DRIFT_RADIUS of
-                // the pest rather than locking exactly onto it.  Periodically pick a new
-                // random target offset and smoothly interpolate toward it so the camera
-                // drifts naturally without any sudden jumps.
+                // the pest rather than locking exactly onto it.  The effective radius scales
+                // linearly from PEST_AIM_DRIFT_RADIUS down to 0 over KILL_FAILSAFE_MS seconds
+                // so that the crosshair gradually converges onto the pest as a failsafe if it
+                // has not been killed yet.  Periodically pick a new random target offset and
+                // smoothly interpolate toward it so the camera drifts naturally.
+                long timeInKillState = now - stateEnteredAt;
+                double effectiveDriftRadius = PEST_AIM_DRIFT_RADIUS
+                        * Math.max(0.0, 1.0 - (double) timeInKillState / KILL_FAILSAFE_MS);
                 if (now >= pestAimOffsetUpdateTime) {
-                    // Pick a new random target inside the drift sphere using spherical coords.
+                    // Pick a new random target inside the effective drift sphere.
                     double elevation = (random.nextDouble() - 0.5) * Math.PI;
                     double azimuth   = random.nextDouble() * 2.0 * Math.PI;
-                    double radius    = random.nextDouble() * PEST_AIM_DRIFT_RADIUS;
+                    double radius    = random.nextDouble() * effectiveDriftRadius;
                     pestAimOffsetTarget = new Vec3d(
                             Math.cos(elevation) * Math.cos(azimuth) * radius,
                             Math.sin(elevation) * radius,
@@ -1273,9 +1280,12 @@ public class PestKillerManager {
         // is a non-air block directly ahead in the path at foot or head height.
         // This ensures the player always rises by at least one block to pass over
         // any obstacle rather than flying into it and stalling.
+        // Enable sneak (descend) when the pest is significantly below the player so
+        // the player actively drops toward pests on the ground rather than flying
+        // horizontally above them.
         double dy = target.y - eye.y;
         boolean shouldJump  = dy > 1.5 || hasObstacleInPath(player, target);
-        boolean shouldSneak = false; // never descend; camera pitch handles vertical direction
+        boolean shouldSneak = dy < -1.0; // descend when target is significantly below
 
         // ── Stuck detection ─────────────────────────────────────────────────
         if (lastProgressPos == null) {

@@ -289,6 +289,15 @@ public class VisitorManager {
      */
     private static final long   WALK_RECOVERY_STRAFE_MS         = 600L;
 
+    /**
+     * Minimum cooldown (ms) between successive jump-to-clear-wall presses.
+     * Prevents continuously triggering jumps with Jump Boost active, which
+     * would launch the player far above the barn area.  The player only jumps
+     * when a full block (non-stair/slab) is directly blocking forward progress,
+     * and at most once per this interval.
+     */
+    private static final long   WALK_JUMP_COOLDOWN_MS           = 1500L;
+
     // ── State machine ────────────────────────────────────────────────────────
 
     /** Internal states of the visitor routine. */
@@ -394,6 +403,12 @@ public class VisitorManager {
      * {@code 0} means no strafe recovery is active.
      */
     private long  walkRecoveryEndTime         = 0;
+    /**
+     * Wall-clock time (ms) of the last jump triggered to clear a blocking wall.
+     * Used as a cooldown so the player does not continuously jump when a solid
+     * block is ahead (which would launch the player far above with Jump Boost).
+     */
+    private long  walkLastJumpTime            = 0;
 
     // Stair-entry vertical navigation state
     // Visitor tracking
@@ -565,6 +580,7 @@ public class VisitorManager {
         walkRecoveryDirection = 0;
         walkRecoveryBackupEndTime = 0;
         walkRecoveryEndTime = 0;
+        walkLastJumpTime = 0;
         fastRotateActive = false;
         disableFlightStartTime = 0;
         enterState(State.IDLE);
@@ -612,6 +628,7 @@ public class VisitorManager {
         midRunRescanPerformed = false;
         positionAnchored  = false;
         anchorLookPos     = null;
+        walkLastJumpTime  = 0;
         long base = Math.max(0, config.visitorsTeleportDelay);
         teleportWaitMs = base + random.nextInt((int) TELEPORT_EXTRA_RANDOM_MS + 1)
                 + random.nextInt(Math.max(1, config.globalRandomizationMs));
@@ -1057,6 +1074,7 @@ public class VisitorManager {
             walkRecoveryDirection     = 0;
             walkRecoveryBackupEndTime = 0;
             walkRecoveryEndTime       = 0;
+            walkLastJumpTime          = 0;
         }
         LOGGER.info("[Flia-Visitors] -> {}", next);
     }
@@ -1276,11 +1294,19 @@ public class VisitorManager {
         }
 
         // Apply movement keys.
-        // Jump key is intentionally NEVER pressed: at Jump Boost X+ the vertical
-        // impulse would launch the player off the barn area.  Minecraft's auto-step
-        // handles stair traversal without any jump input.
+        // Jump key is pressed only when a solid full-block wall (non-stair/slab) directly
+        // blocks forward progress and the jump cooldown has elapsed.  Minecraft's auto-step
+        // handles stair and slab traversal without any jump, so we avoid unnecessary jumps
+        // that would launch the player with Jump Boost active.
+        boolean shouldJump = false;
+        if (!isRecoveryActive && now - walkLastJumpTime >= WALK_JUMP_COOLDOWN_MS) {
+            shouldJump = isJumpableWallAhead(player, chosenYaw);
+            if (shouldJump) {
+                walkLastJumpTime = now;
+            }
+        }
         client.options.forwardKey.setPressed(shouldWalk);
-        client.options.jumpKey.setPressed(false);
+        client.options.jumpKey.setPressed(shouldJump);
         client.options.backKey.setPressed(false);
         client.options.leftKey.setPressed(isRecoveryActive && walkRecoveryDirection < 0);
         client.options.rightKey.setPressed(isRecoveryActive && walkRecoveryDirection > 0);
@@ -1300,6 +1326,34 @@ public class VisitorManager {
                 || state.getBlock() instanceof SlabBlock
                 || state.getBlock() instanceof CarpetBlock
                 || state.getBlock() instanceof AbstractPressurePlateBlock;
+    }
+
+    /**
+     * Returns {@code true} when there is a solid full-block wall (non-stair, non-slab,
+     * non-air) at the player's feet level or head level directly ahead in the given
+     * {@code yawDeg} direction.
+     *
+     * <p>This is used to decide whether to press the jump key.  Stair and slab
+     * blocks are excluded because Minecraft's auto-step code handles them without
+     * any jump input; pressing jump over a stair would launch the player
+     * unnecessarily high (especially with Jump Boost active).
+     */
+    private boolean isJumpableWallAhead(ClientPlayerEntity player, double yawDeg) {
+        if (client.world == null) return false;
+        double yawRad = Math.toRadians(yawDeg);
+        double probeStep = PROBE_STEP; // check one probe-step ahead
+        double nextX = player.getX() - Math.sin(yawRad) * probeStep;
+        double nextZ = player.getZ() + Math.cos(yawRad) * probeStep;
+        int bx = (int) Math.floor(nextX);
+        int bz = (int) Math.floor(nextZ);
+        int feetY = (int) Math.floor(player.getY());
+        BlockState feetState = client.world.getBlockState(new BlockPos(bx, feetY, bz));
+        BlockState headState = client.world.getBlockState(new BlockPos(bx, feetY + 1, bz));
+        // A full block (not air, not stair/slab step-over) at feet or head level
+        // requires a jump to clear.
+        boolean feetWall = !feetState.isAir() && !isStepBlock(feetState);
+        boolean headWall = !headState.isAir() && !isStepBlock(headState);
+        return feetWall || headWall;
     }
 
     /**
@@ -1698,6 +1752,12 @@ public class VisitorManager {
 
     private void nextVisitor() {
         currentVisitor = null;
+        // Reset the position anchor so the player walks to each new visitor rather
+        // than standing at the first visitor's position.  This also fixes the bug
+        // where the second (and later) visitors are never interacted with because
+        // positionAnchored prevents any movement toward them.
+        positionAnchored = false;
+        anchorLookPos = null;
 
         if (!pendingVisitors.isEmpty()) {
             currentVisitor = pendingVisitors.remove(0);
