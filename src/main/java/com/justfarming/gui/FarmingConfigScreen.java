@@ -96,6 +96,9 @@ public class FarmingConfigScreen extends Screen {
     private FlatBoolToggleWidget  gardenOnlyButton;
     private FlatBoolToggleWidget  squeakyMousematButton;
     private FlatBoolToggleWidget  macroEnabledInGuiButton;
+    private FlatBoolToggleWidget  inventoryOverlayButton;
+    private InventoryOverlayXSlider           inventoryOverlayXSlider;
+    private InventoryOverlayYSlider           inventoryOverlayYSlider;
 
     // ── Tab 3 – Delays widgets ────────────────────────────────────────────────
     private GlobalRandomSlider            globalRandomSlider;
@@ -135,7 +138,7 @@ public class FarmingConfigScreen extends Screen {
 
     // ── Section-label Y positions (set in init, used in render) ───────────────
     private int sectionCropY, actionSeparatorY;
-    private int sectionPestsY, sectionMiscY, miscSeparatorY;
+    private int sectionPestsY, sectionMiscY, miscSeparatorY, sectionInvOverlayY;
     private int sectionGlobalRandomY, sectionLaneSwapY, sectionRewarpDelayY, sectionMousematDelayY, sectionVisitorDelaysY, sectionPestKillerDelaysY;
     private int sectionVisitorsY;
     private int sectionVisitorFiltersY;
@@ -383,6 +386,32 @@ public class FarmingConfigScreen extends Screen {
                 "When enabled, the macro continues moving and breaking blocks\n" +
                 "even while any GUI (including this screen) is open.\n" +
                 "Removes the brief pause when opening or closing a screen.")));
+        y += bh + pad + gap;
+
+        sectionInvOverlayY = y;
+        y += sLH;
+
+        inventoryOverlayButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
+                        Text.translatable("gui.just-farming.inventory_overlay_label"),
+                        config.inventoryOverlayEnabled);
+        this.addDrawableChild(inventoryOverlayButton);
+        inventoryOverlayButton.setTooltip(Tooltip.of(Text.literal(
+                "Show your main inventory (27 slots) as a HUD overlay.\n" +
+                "Adjust the X/Y sliders below to change its position.")));
+        y += bh + pad;
+
+        inventoryOverlayXSlider = new InventoryOverlayXSlider(widgetX, y, bw, bh,
+                        config.inventoryOverlayX);
+        this.addDrawableChild(inventoryOverlayXSlider);
+        inventoryOverlayXSlider.setTooltip(Tooltip.of(Text.literal(
+                "Horizontal position of the inventory overlay (pixels from left edge).")));
+        y += bh + pad;
+
+        inventoryOverlayYSlider = new InventoryOverlayYSlider(widgetX, y, bw, bh,
+                        config.inventoryOverlayY);
+        this.addDrawableChild(inventoryOverlayYSlider);
+        inventoryOverlayYSlider.setTooltip(Tooltip.of(Text.literal(
+                "Vertical position of the inventory overlay (pixels from bottom edge).")));
         tabContentHeights[2] = y + bh - contentAreaTopY + tabScrollOffsets[2];
 
         // ── Tab 3 – Delays ────────────────────────────────────────────────────
@@ -582,6 +611,9 @@ public class FarmingConfigScreen extends Screen {
         gardenOnlyButton.setOnChange(markCustom);
         squeakyMousematButton.setOnChange(markCustom);
         macroEnabledInGuiButton.setOnChange(markCustom);
+        inventoryOverlayButton.setOnChange(markCustom);
+        inventoryOverlayXSlider.setOnChange(markCustom);
+        inventoryOverlayYSlider.setOnChange(markCustom);
         // Tab 3
         globalRandomSlider.setOnChange(markCustom);
         laneSwapDelaySlider.setOnChange(markCustom);
@@ -644,6 +676,9 @@ public class FarmingConfigScreen extends Screen {
         gardenOnlyButton.visible      = t2 && inContentBounds(gardenOnlyButton);
         squeakyMousematButton.visible = t2 && inContentBounds(squeakyMousematButton);
         macroEnabledInGuiButton.visible = t2 && inContentBounds(macroEnabledInGuiButton);
+        inventoryOverlayButton.visible  = t2 && inContentBounds(inventoryOverlayButton);
+        inventoryOverlayXSlider.visible = t2 && inContentBounds(inventoryOverlayXSlider);
+        inventoryOverlayYSlider.visible = t2 && inContentBounds(inventoryOverlayYSlider);
 
         boolean t3 = activeTab == 3;
         globalRandomSlider.visible            = t3 && inContentBounds(globalRandomSlider);
@@ -741,6 +776,8 @@ public class FarmingConfigScreen extends Screen {
                 drawSectionLabel(context, "Misc", sectionMiscY);
             if (yInContentBounds(miscSeparatorY))
                 context.fill(contentX + 16, miscSeparatorY, winR - 16, miscSeparatorY + 1, COL_SEP);
+            if (yInContentBounds(sectionInvOverlayY))
+                drawSectionLabel(context, "Inventory Overlay", sectionInvOverlayY);
         } else if (activeTab == 3) {
             if (yInContentBounds(sectionGlobalRandomY))
                 drawSectionLabel(context, "Global Randomization", sectionGlobalRandomY);
@@ -849,6 +886,9 @@ public class FarmingConfigScreen extends Screen {
         config.gardenOnlyEnabled    = gardenOnlyButton.getValue();
         config.squeakyMousematEnabled = squeakyMousematButton.getValue();
         config.macroEnabledInGui    = macroEnabledInGuiButton.getValue();
+        config.inventoryOverlayEnabled = inventoryOverlayButton.getValue();
+        config.inventoryOverlayX    = inventoryOverlayXSlider.getPositionValue();
+        config.inventoryOverlayY    = inventoryOverlayYSlider.getPositionValue();
         config.visitorsEnabled          = visitorsEnabledButton.getValue();
         config.visitorsBuyFromBazaar    = visitorsBuyFromBazaarButton.getValue();
         config.visitorsActionDelay      = visitorsDelaySlider.getDelayValue();
@@ -1776,6 +1816,118 @@ public class FarmingConfigScreen extends Screen {
         @Override
         protected void updateMessage() {
             setMessage(Text.literal(String.format("Vacuum Range: %d blocks", getRangeValue())));
+        }
+
+        @Override
+        public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
+            FlatButtonWidget.renderFlatSlider(context, getX(), getY(), getWidth(), getHeight(), value, getMessage());
+        }
+    }
+
+    /** Slider for the inventory overlay horizontal position (0–1920 px from left edge). */
+    private static class InventoryOverlayXSlider extends SliderWidget {
+
+        private static final int MIN = 0;
+        private static final int MAX = 1920;
+        private static final int GLFW_KEY_LEFT  = 263;
+        private static final int GLFW_KEY_RIGHT = 262;
+
+        private Runnable onChange;
+
+        InventoryOverlayXSlider(int x, int y, int width, int height, int initialValue) {
+            super(x, y, width, height, Text.empty(),
+                    (double)(Math.max(MIN, Math.min(MAX, initialValue)) - MIN) / (MAX - MIN));
+            updateMessage();
+        }
+
+        void setOnChange(Runnable r) { this.onChange = r; }
+
+        int getPositionValue() {
+            return MIN + (int) Math.round(value * (MAX - MIN));
+        }
+
+        @Override
+        protected void applyValue() {
+            int steps = MAX - MIN;
+            int rawInt = MIN + (int) Math.round(this.value * steps);
+            rawInt = Math.max(MIN, Math.min(MAX, rawInt));
+            this.value = (double)(rawInt - MIN) / steps;
+            if (onChange != null) onChange.run();
+        }
+
+        @Override
+        public boolean keyPressed(net.minecraft.client.input.KeyInput input) {
+            if (input.key() == GLFW_KEY_LEFT || input.key() == GLFW_KEY_RIGHT) {
+                double step = 5.0 / (MAX - MIN);
+                this.value = (input.key() == GLFW_KEY_LEFT)
+                        ? Math.max(0.0, this.value - step)
+                        : Math.min(1.0, this.value + step);
+                applyValue();
+                updateMessage();
+                return true;
+            }
+            return super.keyPressed(input);
+        }
+
+        @Override
+        protected void updateMessage() {
+            setMessage(Text.literal(String.format("Overlay X: %d px", getPositionValue())));
+        }
+
+        @Override
+        public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
+            FlatButtonWidget.renderFlatSlider(context, getX(), getY(), getWidth(), getHeight(), value, getMessage());
+        }
+    }
+
+    /** Slider for the inventory overlay vertical position (0–1080 px from bottom edge). */
+    private static class InventoryOverlayYSlider extends SliderWidget {
+
+        private static final int MIN = 0;
+        private static final int MAX = 1080;
+        private static final int GLFW_KEY_LEFT  = 263;
+        private static final int GLFW_KEY_RIGHT = 262;
+
+        private Runnable onChange;
+
+        InventoryOverlayYSlider(int x, int y, int width, int height, int initialValue) {
+            super(x, y, width, height, Text.empty(),
+                    (double)(Math.max(MIN, Math.min(MAX, initialValue)) - MIN) / (MAX - MIN));
+            updateMessage();
+        }
+
+        void setOnChange(Runnable r) { this.onChange = r; }
+
+        int getPositionValue() {
+            return MIN + (int) Math.round(value * (MAX - MIN));
+        }
+
+        @Override
+        protected void applyValue() {
+            int steps = MAX - MIN;
+            int rawInt = MIN + (int) Math.round(this.value * steps);
+            rawInt = Math.max(MIN, Math.min(MAX, rawInt));
+            this.value = (double)(rawInt - MIN) / steps;
+            if (onChange != null) onChange.run();
+        }
+
+        @Override
+        public boolean keyPressed(net.minecraft.client.input.KeyInput input) {
+            if (input.key() == GLFW_KEY_LEFT || input.key() == GLFW_KEY_RIGHT) {
+                double step = 5.0 / (MAX - MIN);
+                this.value = (input.key() == GLFW_KEY_LEFT)
+                        ? Math.max(0.0, this.value - step)
+                        : Math.min(1.0, this.value + step);
+                applyValue();
+                updateMessage();
+                return true;
+            }
+            return super.keyPressed(input);
+        }
+
+        @Override
+        protected void updateMessage() {
+            setMessage(Text.literal(String.format("Overlay Y: %d px", getPositionValue())));
         }
 
         @Override
