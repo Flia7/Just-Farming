@@ -396,16 +396,16 @@ public class PestKillerManager {
     /**
      * Minimum clicks per second used when randomising the inter-click delay for
      * AOTV/AOTE sequences.  Together with {@link #PEST_AOTV_MAX_CPS} this gives a
-     * tight 5–6 CPS range that is fast but still looks human-like.
+     * tight 7–8 CPS range that is fast but still looks human-like.
      */
-    private static final int    PEST_AOTV_MIN_CPS       = 5;
+    private static final int    PEST_AOTV_MIN_CPS       = 7;
 
     /**
      * Maximum clicks per second used when randomising the inter-click delay.
      * Together with {@link #PEST_AOTV_MIN_CPS} the effective rate varies between
-     * 5 and {@value} CPS, producing fast but human-like clicking behaviour.
+     * 7 and {@value} CPS, producing fast but human-like clicking behaviour.
      */
-    private static final int    PEST_AOTV_MAX_CPS       = 6;
+    private static final int    PEST_AOTV_MAX_CPS       = 8;
 
     /**
      * Inclusive size of the CPS range ({@link #PEST_AOTV_MAX_CPS} −
@@ -420,6 +420,21 @@ public class PestKillerManager {
      * on the garden plots before teleporting, avoiding collisions with crops.
      */
     private static final double PEST_AOTV_MIN_FLY_Y     = 72.0;
+
+    /**
+     * If any detected pest is within this distance (blocks) of the player,
+     * the AOTV/AOTE teleport sequence will not start (or will be aborted if
+     * already running).  Prevents the macro from teleporting when the player
+     * is already next to a pest and can kill it via normal flight + right-click.
+     */
+    private static final double PEST_AOTV_NEAR_PEST_SKIP_DIST = 10.0;
+
+    /**
+     * Minimum start delay (ms) applied to {@link #preTeleportWaitMs} on every
+     * {@link #start} call.  Ensures there is always at least 1 second of
+     * motionless waiting after the command is issued before the first teleport.
+     */
+    private static final long   PEST_START_DELAY_MS     = 1000L;
 
     // ── AOTE/AOTV fields ─────────────────────────────────────────────────────
 
@@ -759,7 +774,8 @@ public class PestKillerManager {
         long base = config != null && config.pestKillerTeleportDelay > 0
                 ? config.pestKillerTeleportDelay : 0;
         int globalRandom = (config != null) ? config.globalRandomizationMs : 0;
-        preTeleportWaitMs = base + random.nextInt(Math.max(1, globalRandom));
+        preTeleportWaitMs = Math.max(PEST_START_DELAY_MS,
+                base + random.nextInt(Math.max(1, globalRandom)));
 
         enterState(State.PRE_TELEPORT_WAIT);
     }
@@ -1302,6 +1318,15 @@ public class PestKillerManager {
             double dist = player.getEyePos().distanceTo(target);
             if (dist <= PEST_AOTV_TRIGGER_DIST) return false;
 
+            // Don't start if any detected pest is already within 10 blocks of the
+            // player – close enough to reach via normal flight without teleporting.
+            Vec3d eyePos = player.getEyePos();
+            for (PestEntityDetector.PestEntity nearPest : pestEntityDetector.getDetectedPests()) {
+                if (eyePos.distanceTo(nearPest.position()) <= PEST_AOTV_NEAR_PEST_SKIP_DIST) {
+                    return false;
+                }
+            }
+
             // Find AOTV/AOTE in the hotbar.
             int slot = findAotvSlotForPest(player);
             if (slot < 0) return false;
@@ -1353,6 +1378,23 @@ public class PestKillerManager {
         if (client.options != null) client.options.forwardKey.setPressed(true);
 
         // ── Phase 2: multi-click spam ───────────────────────────────────────────
+        // Abort the sequence early if the player is now within 10 blocks of any
+        // detected pest – there is no need to teleport further.
+        if (pestAotvAllClicksDoneTime == 0L) {
+            Vec3d eyeNow = player.getEyePos();
+            for (PestEntityDetector.PestEntity nearPest : pestEntityDetector.getDetectedPests()) {
+                if (eyeNow.distanceTo(nearPest.position()) <= PEST_AOTV_NEAR_PEST_SKIP_DIST) {
+                    LOGGER.info("[Just Farming-PestKiller] AOTV sequence aborted: pest within {} blocks.",
+                            PEST_AOTV_NEAR_PEST_SKIP_DIST);
+                    if (client.options != null) client.options.useKey.setPressed(false);
+                    pestAotvLastFireTime = now;
+                    resetAotvState();
+                    if (vacuumSlot >= 0) player.getInventory().setSelectedSlot(vacuumSlot);
+                    return false;
+                }
+            }
+        }
+
         if (pestAotvAllClicksDoneTime == 0L) {
             if (pestAotvClickHeld) {
                 // Release the use-key once the brief hold duration has elapsed.
