@@ -1180,6 +1180,7 @@ public class VisitorManager {
                     // Without this guard the parse can run while slots are still empty,
                     // producing zero requirements and causing the macro to skip bazaar.
                     if (now - stateEnteredAt >= Math.max(currentActionDelay, VISITOR_MENU_MIN_PARSE_DELAY_MS)) {
+                        boolean declining = false;
                         if (isCurrentVisitorBlacklisted()) {
                             // Visitor is blacklisted – click "Refuse Offer" so the server
                             // records the decline, then close the menu and move on.
@@ -1191,16 +1192,23 @@ public class VisitorManager {
                                 completedVisitorIds.add(currentVisitor.getId());
                             }
                             skipCurrentVisitorDueToBlacklist = true;
+                            declining = true;
                         } else {
                             parseVisitorMenu(screen);
                             if (skipCurrentVisitorDueToPrice) {
                                 // Price limit exceeded – click "Decline Offer" in the GUI
                                 // before closing the menu so the server records the decline.
                                 tryClickDeclineOffer(screen);
+                                declining = true;
                             }
                         }
-                        // Close the screen before opening the bazaar (or accepting)
-                        player.closeHandledScreen();
+                        if (!declining) {
+                            // Close the screen before opening the bazaar (or accepting).
+                            player.closeHandledScreen();
+                        }
+                        // When declining, do NOT close immediately: let the server close the
+                        // screen after processing the Refuse Offer click.  CLOSING_MENU will
+                        // force-close with a fallback timeout if the server does not do so.
                         enterState(State.CLOSING_MENU);
                     }
                 } else {
@@ -1233,6 +1241,11 @@ public class VisitorManager {
                     } else {
                         startAcceptingOffer();
                     }
+                } else if ((skipCurrentVisitorDueToBlacklist || skipCurrentVisitorDueToPrice || postAccept)
+                        && now - stateEnteredAt > currentActionDelay + 1500L) {
+                    // Fallback: the visitor menu did not auto-close after "Accept/Refuse Offer".
+                    // Force-close it so the routine can continue to the next visitor.
+                    player.closeHandledScreen();
                 }
             }
 
@@ -1410,10 +1423,12 @@ public class VisitorManager {
                             player.closeHandledScreen();
                             nextVisitor();
                         } else {
-                            // Close after accepting; mark that the next CLOSING_MENU
-                            // should move to the next visitor, not re-enter accepting.
+                            // Do NOT close the screen: the server auto-closes the visitor
+                            // menu after "Accept Offer" is processed, just like "Refuse Offer".
+                            // Sending a close packet immediately after the click can cause the
+                            // server to discard the accept click.  CLOSING_MENU will
+                            // force-close with a fallback timeout if the server does not do so.
                             postAccept = true;
-                            player.closeHandledScreen();
                             enterState(State.CLOSING_MENU);
                         }
                     } else {

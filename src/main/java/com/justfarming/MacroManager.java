@@ -827,6 +827,19 @@ public class MacroManager {
         switch (mousematPhase) {
             case 0 -> {
                 if (mousematActionTime == 0) {
+                    // Re-verify rotation: if the player is already aimed at the target
+                    // yaw/pitch (e.g. after /warp garden returned them to the garden
+                    // already facing the correct direction), skip the mousemat entirely.
+                    // This avoids a spurious ability-use when no realignment is needed.
+                    float desiredYaw   = config.getEffectiveYaw(config.selectedCrop);
+                    float desiredPitch = config.getEffectivePitch(config.selectedCrop);
+                    float yawDiff   = Math.abs(normalizeAngleDiff(player.getYaw()   - desiredYaw));
+                    float pitchDiff = Math.abs(normalizeAngleDiff(player.getPitch() - desiredPitch));
+                    if (yawDiff <= 2.0f && pitchDiff <= 2.0f) {
+                        LOGGER.info("[Just Farming] Already aimed at target yaw/pitch – skipping Squeaky Mousemat.");
+                        state = MacroState.ALIGNING_ROTATION;
+                        return;
+                    }
                     // First tick in this state: find the Squeaky Mousemat.
                     int mousematSlot = -1;
                     for (int i = 0; i < 9; i++) {
@@ -1189,8 +1202,8 @@ public class MacroManager {
     }
 
     /**
-     * Directly attacks the block at the crosshair target via the interaction
-     * manager.
+     * Directly attacks the block the player is currently looking at via the
+     * interaction manager.
      *
      * <p>This is the sole block-break driver when the macro is active.
      * {@code MinecraftClientMixin} suppresses vanilla's
@@ -1202,16 +1215,20 @@ public class MacroManager {
      * no-ops until the block changes.  {@code swingHand} is only called when
      * {@code attackBlock} confirms the action was processed.
      *
-     * <p>{@code client.crosshairTarget} is used as the authoritative block
-     * selection instead of a separate raycast so that the macro only ever
-     * breaks blocks that the game itself considers the player to be looking at.
-     * This prevents breaking small-hitbox blocks (e.g. immature Cocoa Beans)
-     * that are not highlighted in the player's crosshair even when the macro's
-     * camera is aimed at the same yaw/pitch.</p>
+     * <p>A fresh {@code player.raycast()} call is used each tick rather than
+     * reading the cached {@code client.crosshairTarget} because the crosshair
+     * target is computed at the <em>start</em> of the render frame, before
+     * {@link #onRenderTick()} updates the camera rotation.  Using the stale
+     * cached value could cause the macro to target a block in the old camera
+     * direction, breaking crops that a player looking at the current yaw/pitch
+     * would never hit.  A fresh raycast always reflects the current look
+     * direction set by the rotation code.</p>
      */
     public void directBreakBlock() {
         if (client.interactionManager == null || client.world == null || client.player == null) return;
-        if (!(client.crosshairTarget instanceof BlockHitResult blockHit)) return;
+        double reach = client.player.getAttributeValue(EntityAttributes.BLOCK_INTERACTION_RANGE);
+        HitResult hit = client.player.raycast(reach, 1.0f, false);
+        if (!(hit instanceof BlockHitResult blockHit)) return;
         BlockPos pos = blockHit.getBlockPos();
         if (!client.world.getBlockState(pos).isAir()) {
             boolean attacked = client.interactionManager.attackBlock(pos, blockHit.getSide());
