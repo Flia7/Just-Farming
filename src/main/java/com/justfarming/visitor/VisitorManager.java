@@ -292,6 +292,15 @@ public class VisitorManager {
     private static final float MIN_WALK_YAW_ERROR_DEGREES = 15f;
 
     /**
+     * Minimum cosine/sine magnitude for a forward or strafe component to be
+     * considered "dominant enough" to press the corresponding key in
+     * {@link #pressKeysTowardNoRotate}.  A value of 0.3 corresponds to roughly
+     * ±72° from the axis, giving a comfortable dead-zone that avoids jittery
+     * key toggling when the target is almost exactly to the side.
+     */
+    private static final double APPROACH_KEY_THRESHOLD = 0.3;
+
+    /**
      * Vanilla-default player walk-speed attribute value.
      * Used as a baseline to measure how much faster the player is moving on
      * Hypixel SkyBlock (due to Speed buffs from armour, pets, enchants, etc.).
@@ -976,12 +985,9 @@ public class VisitorManager {
                         releaseMovementKeys();
                         aotvTeleportYaw   = dirYaw;
                         aotvTeleportFired = false;
-                        // Prime camera rotation immediately so onRenderTick() begins
-                        // rotating toward the correct target from the very first frame
-                        // after the state transition (avoids a direction-flip snap).
-                        targetYaw        = aotvTeleportYaw;
-                        targetPitch      = 0f;
-                        fastRotateActive = true;
+                        // Reset smooth-look timestamp so Phase 1 of USING_AOTV starts
+                        // rotating from the current (frozen) camera position cleanly.
+                        lastSmoothLookTime = 0;
                         LOGGER.info("[Just Farming-Visitors] AOTV wall mode: 1-block wall detected at yaw {}; teleporting.",
                                 (int) dirYaw);
                         enterState(State.USING_AOTV);
@@ -998,10 +1004,9 @@ public class VisitorManager {
                             releaseMovementKeys();
                             aotvTeleportYaw   = v5Yaw;
                             aotvTeleportFired = false;
-                            // Prime camera rotation immediately (see wall-mode comment above).
-                            targetYaw        = aotvTeleportYaw;
-                            targetPitch      = 0f;
-                            fastRotateActive = true;
+                            // Reset smooth-look timestamp so Phase 1 of USING_AOTV starts
+                            // rotating from the current (frozen) camera position cleanly.
+                            lastSmoothLookTime = 0;
                             LOGGER.info("[Just Farming-Visitors] AOTV tall-wall mode: clear path toward V5 at yaw {}; teleporting.",
                                     (int) v5Yaw);
                             enterState(State.USING_AOTV);
@@ -1016,19 +1021,24 @@ public class VisitorManager {
                         releaseMovementKeys();
                         aotvTeleportYaw   = computeAotvV5Yaw(player);
                         aotvTeleportFired = false;
-                        // Prime camera rotation immediately (see wall-mode comment above).
-                        targetYaw        = aotvTeleportYaw;
-                        targetPitch      = 0f;
-                        fastRotateActive = true;
+                        // Reset smooth-look timestamp so Phase 1 of USING_AOTV starts
+                        // rotating from the current (frozen) camera position cleanly.
+                        lastSmoothLookTime = 0;
                         LOGGER.info("[Just Farming-Visitors] AOTV no-wall mode: reached V1; aiming at V5 (yaw {}) to teleport.",
                                 (int) aotvTeleportYaw);
                         enterState(State.USING_AOTV);
                         return;
                     }
 
-                    // Still walking toward V1
+                    // Still walking toward V1 – freeze the camera so it never accidentally
+                    // points at V1 and triggers an interaction.  Steer by decomposing the
+                    // angle to V1 into forward/back and strafe key presses relative to the
+                    // current look direction; rotation only begins once the AOTV direction
+                    // is detected and USING_AOTV takes over.
                     fastRotateActive = false;
-                    walkToward(player, visitorPos);
+                    targetYaw   = player.getYaw();   // prevent onRenderTick from rotating
+                    targetPitch = player.getPitch(); // prevent onRenderTick from rotating
+                    pressKeysTowardNoRotate(player, visitorPos);
                     return;
                 }
 
@@ -1723,6 +1733,42 @@ public class VisitorManager {
             }
         }
         return true;
+    }
+
+    /**
+     * Steers the player toward {@code target} without rotating the camera.
+     *
+     * <p>Used during the AOTV approach phase so the camera stays frozen at
+     * its current position (preventing accidental interaction with visitor NPCs)
+     * while the player still moves toward V1.  The direction to the target is
+     * decomposed into forward/back and left/right key presses relative to the
+     * player's <em>current</em> look direction; no {@code targetYaw} or
+     * {@code smoothRotateCamera} calls are made.
+     *
+     * @param player the local player
+     * @param target the position to move toward
+     */
+    private void pressKeysTowardNoRotate(ClientPlayerEntity player, Vec3d target) {
+        if (client.options == null) return;
+        Vec3d eye = player.getEyePos();
+        double dx = target.x - eye.x;
+        double dz = target.z - eye.z;
+        // Yaw toward the target (Minecraft convention: 0°=south, 90°=west).
+        float toTargetYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
+        // Angular difference from current look direction, normalised to [-180, 180].
+        float delta = toTargetYaw - player.getYaw();
+        while (delta >  180f) delta -= 360f;
+        while (delta < -180f) delta += 360f;
+        // Decompose into forward/strafe components.
+        double rad     = Math.toRadians(delta);
+        double fwd     = Math.cos(rad);   // >0 = forward, <0 = backward
+        double side    = Math.sin(rad);   // >0 = right,   <0 = left
+        client.options.forwardKey.setPressed(fwd  >  APPROACH_KEY_THRESHOLD);
+        client.options.backKey.setPressed(   fwd  < -APPROACH_KEY_THRESHOLD);
+        client.options.rightKey.setPressed(  side >  APPROACH_KEY_THRESHOLD);
+        client.options.leftKey.setPressed(   side < -APPROACH_KEY_THRESHOLD);
+        // Jump to clear any 1-block wall directly in the current look direction.
+        client.options.jumpKey.setPressed(isOneBlockWallAhead(player, player.getYaw()));
     }
 
     /**
