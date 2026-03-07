@@ -139,6 +139,17 @@ public class JustFarming implements ClientModInitializer {
                                 .then(literal("pest")
                                         .executes(ctx -> {
                                             if (!pestKillerManager.isActive()) {
+                                                net.minecraft.client.network.ClientPlayerEntity cmdPlayer =
+                                                        ctx.getSource().getPlayer();
+                                                // Abort if no vacuum is in the hotbar.
+                                                if (cmdPlayer != null
+                                                        && !PestKillerManager.hasVacuumInHotbar(cmdPlayer)) {
+                                                    cmdPlayer.sendMessage(
+                                                            net.minecraft.text.Text.literal(
+                                                                    "§c[Just Farming] No vacuum detected in hotbar, pest killer disabled"),
+                                                            false);
+                                                    return 1;
+                                                }
                                                 pestKillerShouldResumeMacro = macroManager.isRunning();
                                                 if (macroManager.isRunning()) {
                                                     macroManager.stop();

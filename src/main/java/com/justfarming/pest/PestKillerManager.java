@@ -161,6 +161,23 @@ public class PestKillerManager {
     }
 
     /**
+     * Returns {@code true} if the player's hotbar (slots 0–8) contains at
+     * least one item whose display name contains "vacuum" (case-insensitive).
+     *
+     * @param player the local player to check; must not be {@code null}
+     * @return {@code true} when a vacuum item is found in the hotbar
+     */
+    public static boolean hasVacuumInHotbar(ClientPlayerEntity player) {
+        for (int i = 0; i < 9; i++) {
+            ItemStack stack = player.getInventory().getStack(i);
+            if (!stack.isEmpty() && getCleanItemName(stack).toLowerCase().contains("vacuum")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Camera rotation speed (degrees per second) used when pointing the camera
      * at a pest entity.  Running at render frequency (~60 FPS) produces fine
      * steps of ~1.5° per frame while keeping total angular speed human-like.
@@ -1059,11 +1076,15 @@ public class PestKillerManager {
                 // Also check horizontal distance so the player enters KILLING state when
                 // flying directly above a pest (vertical offset inflates the 3D distance
                 // beyond the kill radius even though the pest is reachable).
+                // Require the vertical distance to also be within approachRadius so the
+                // player descends to pest level before attempting to vacuum – kills from
+                // too far above the pest will miss even when horizDist is small.
                 double horizDist = horizontalDistance(player.getX(), player.getZ(), pestPos.x, pestPos.z);
+                double vertDist = Math.abs(player.getEyePos().y - pestPos.y);
                 // When a previous kill attempt timed out, fly to within CLOSE_APPROACH_RADIUS
                 // instead of the full vacuum range so line-of-sight and range are both optimal.
                 double approachRadius = closeApproachNeeded ? CLOSE_APPROACH_RADIUS : getEffectiveKillRadius();
-                if (dist <= approachRadius || horizDist <= approachRadius) {
+                if (dist <= approachRadius || (horizDist <= approachRadius && vertDist <= approachRadius)) {
                     releaseMovementKeys();
                     resetAotvState();
                     closeApproachNeeded = false;
@@ -1108,13 +1129,16 @@ public class PestKillerManager {
 
                 Vec3d pestPos = currentPest.position();
                 double dist = player.getEyePos().distanceTo(pestPos);
-                // Also check horizontal distance so we keep right-clicking when flying
-                // directly above a pest (vertical offset inflates 3D dist beyond the
-                // 1.5× exit threshold while the pest is still within vacuum range).
+                // Also check horizontal and vertical distances so we keep right-clicking
+                // when flying directly above or near a pest (vertical offset inflates 3D
+                // dist beyond the 1.5× exit threshold while the pest is still in range).
                 double horizDist = horizontalDistance(player.getX(), player.getZ(), pestPos.x, pestPos.z);
-                // Only exit kill state if the pest is out of range in both 3D and
-                // horizontally, ensuring right-clicking continues when above the pest.
-                if (dist > getEffectiveKillRadius() * 1.5 && horizDist > getEffectiveKillRadius()) {
+                double vertDist = Math.abs(player.getEyePos().y - pestPos.y);
+                // Exit kill state if the pest is out of range in 3D distance AND
+                // either horizontal OR vertical distance exceeds the kill radius, so
+                // the player will re-approach from the correct height and angle.
+                if (dist > getEffectiveKillRadius() * 1.5
+                        && (horizDist > getEffectiveKillRadius() || vertDist > getEffectiveKillRadius())) {
                     if (client.options != null) client.options.useKey.setPressed(false);
                     pestAimOffsetUpdateTime = 0; // reset drift on next approach
                     enterState(State.FLYING_TO_PEST);
@@ -1311,6 +1335,12 @@ public class PestKillerManager {
             if (!player.getAbilities().flying) return false;
             if (player.getY() < PEST_AOTV_MIN_FLY_Y) return false;
 
+            // Do not start AOTV if the player is adjacent to a solid block –
+            // teleporting while next to a wall (e.g. the barn after /warp garden)
+            // can clip the player into the structure.  Let flyToward() move the
+            // player clear of the obstacle first.
+            if (isNearWall(player)) return false;
+
             // Respect the cooldown between successive sequence starts.
             if (now - pestAotvLastFireTime < PEST_AOTV_COOLDOWN_MS) return false;
 
@@ -1449,15 +1479,40 @@ public class PestKillerManager {
     }
 
     /**
-     * Teleports to {@code nextPlot} (or warps to the garden if
-     * {@link FarmingConfig#pestKillerWarpToPlot} is false), resets per-plot
-     * state, and enters {@link State#TELEPORTING}.
+     * Moves to {@code nextPlot}, resets per-plot state, and begins navigation.
+     *
+     * <p>When {@link FarmingConfig#pestKillerWarpToPlot} is {@code false} the
+     * player is already in the garden after the initial {@code /warp garden};
+     * in that case the routine flies directly to the next plot centre (using
+     * AOTV/AOTE if available) rather than issuing another {@code /warp garden}
+     * and paying the full round-trip teleport penalty.  If the plot centre
+     * cannot be computed (unknown plot name) the method falls back to the
+     * normal PRE_TELEPORT_WAIT path.
+     *
+     * <p>When {@link FarmingConfig#pestKillerWarpToPlot} is {@code true} the
+     * existing {@link State#PRE_TELEPORT_WAIT} → {@code /tptoplot} flow is used.
      */
     private void teleportToNextPlot(String nextPlot) {
         LOGGER.info("[Just Farming-PestKiller] No pests found on this plot; "
-                + "teleporting to next infested plot: {}.", nextPlot);
+                + "moving to next infested plot: {}.", nextPlot);
         resetPlotState();
         currentPlotName = nextPlot;
+
+        // Without /tptoplot the player is already somewhere in the garden;
+        // fly directly toward the next plot centre rather than re-warping.
+        if (config != null && !config.pestKillerWarpToPlot && nextPlot != null) {
+            double cx = GardenPlot.getCentreX(nextPlot);
+            double cz = GardenPlot.getCentreZ(nextPlot);
+            if (!Double.isNaN(cx) && !Double.isNaN(cz)) {
+                plotCentreTarget = new Vec3d(cx, PLOT_CENTRE_Y, cz);
+                resetAotvState();
+                LOGGER.info("[Just Farming-PestKiller] Flying directly to plot {} centre ({}, {}, {}).",
+                        nextPlot, (int) cx, (int) PLOT_CENTRE_Y, (int) cz);
+                enterState(State.GOING_TO_PLOT_CENTER);
+                return;
+            }
+        }
+
         long base = config != null && config.pestKillerTeleportDelay > 0
                 ? config.pestKillerTeleportDelay : 0;
         int globalRandom = (config != null) ? config.globalRandomizationMs : 0;
@@ -1894,6 +1949,32 @@ public class PestKillerManager {
         int by = (int) Math.floor(player.getY()); // feet Y
         return !client.world.getBlockState(new BlockPos(bx, by,     bz)).isAir()
             || !client.world.getBlockState(new BlockPos(bx, by + 1, bz)).isAir();
+    }
+
+    /**
+     * Returns {@code true} if there is at least one non-air block adjacent to
+     * the player in any of the four cardinal horizontal directions at foot or
+     * head level.
+     *
+     * <p>Used by {@link #handlePestAotvToward} to prevent firing AOTV/AOTE
+     * when the player has just warped and is standing next to a wall (e.g. the
+     * barn structure after {@code /warp garden}).  The player should first fly
+     * clear of the obstacle via {@link #flyToward} before teleporting.
+     */
+    private boolean isNearWall(ClientPlayerEntity player) {
+        if (client.world == null) return false;
+        int bx = (int) Math.floor(player.getX());
+        int bz = (int) Math.floor(player.getZ());
+        int by = (int) Math.floor(player.getY());
+        // Check all four cardinal directions at feet (by) and head (by+1) level.
+        int[][] dirs = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+        for (int[] dir : dirs) {
+            if (!client.world.getBlockState(new BlockPos(bx + dir[0], by,     bz + dir[1])).isAir()
+             || !client.world.getBlockState(new BlockPos(bx + dir[0], by + 1, bz + dir[1])).isAir()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Aim the camera toward {@code target} using smooth interpolation. */
