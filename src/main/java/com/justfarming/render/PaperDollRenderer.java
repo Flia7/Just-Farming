@@ -29,11 +29,11 @@ import net.minecraft.client.network.ClientPlayerEntity;
  * <pre>
  *   ┌──────────────────────────────────────┐  ┌──────────────────┐
  *   │  [slot]…[slot]  (3-row inv grid)     │  │                  │  ↑
- *   │  [slot]…[slot]                       │  │   player model   │  2/3
+ *   │  [slot]…[slot]                       │  │   player model   │  3/5
  *   │  [slot]…[slot]                       │  │                  │  ↓
  *   └──────────────────────────────────────┘  ├──────────────────┤
  *                                             │      [ ▲ ]       │  ↑
- *                                             │  [ ◀ ][ ▼ ][ ▶ ]│  1/3
+ *                                             │  [ ◀ ][ ▼ ][ ▶ ]│  2/5
  *                                             │  [ L 7]  [ R ]   │  ↓
  *                                             └──────────────────┘
  * </pre>
@@ -146,11 +146,11 @@ public class PaperDollRenderer {
         int panelW = Math.round(PANEL_W   * scale);
         int panelH = invH;   // same height as the inventory HUD
 
-        // Player model gets 2/3 of the panel height; keystrokes get the remaining 1/3.
-        int modelH = (panelH * 2) / 3;
+        // Player model gets 3/5 of the panel height; keystrokes get the remaining 2/5.
+        int modelH = (panelH * 3) / 5;
         int ksH    = panelH - modelH;
 
-        // Compute a keystroke-section scale so the 3 key rows fit in the 1/3 height.
+        // Compute a keystroke-section scale so the 3 key rows fit in the 2/5 height.
         float ksScale = Math.max(MIN_KEYSTROKE_SCALE, (float) ksH / KS_HEIGHT);
 
         int panelX = invHudX + invW + Math.round(PANEL_GAP * scale);
@@ -161,8 +161,8 @@ public class PaperDollRenderer {
                 InventoryHudRenderer.BG_COLOR);
 
         // ── Player model ──────────────────────────────────────────────────────
-        // Entity display size: 70% of the model area height; minimum 4 px.
-        int entitySize = Math.max(4, (int) (modelH * 0.70f));
+        // Entity display size: 45.5% (70% × 65%) of the model area height; minimum 4 px.
+        int entitySize = Math.max(4, (int) (modelH * 0.455f));
 
         // Mouse offsets control the entity's look direction within drawEntity.
         // mouseX=0 → face toward viewer; small negative mouseY → slight upward

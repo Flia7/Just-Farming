@@ -488,11 +488,14 @@ public class PestKillerManager {
 
     /**
      * Minimum Y coordinate the player must be at before the AOTV/AOTE sequence
-     * will start.  Set to match {@link #PLOT_CENTRE_Y_BASE} (80) so teleports
-     * only fire once the player is at the safe cruising height where no crop
-     * blocks can be built, avoiding mid-air collisions during teleportation.
+     * will start.  Set below the garden floor (≈ 68) so that AOTV fires as soon
+     * as the player activates creative flight after {@code /warp garden}, allowing
+     * the macro to teleport directly upward to the navigation altitude without
+     * waiting for normal creative flight to climb to Y = 80 first.
+     * The {@link #isNearWall} check still prevents teleporting through the garden
+     * barn or other structures immediately after the warp.
      */
-    private static final double PEST_AOTV_MIN_FLY_Y     = 80.0;
+    private static final double PEST_AOTV_MIN_FLY_Y     = 65.0;
 
     /**
      * If any detected pest is within this distance (blocks) of the player,
