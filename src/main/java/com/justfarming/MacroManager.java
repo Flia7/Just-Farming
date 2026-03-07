@@ -569,9 +569,7 @@ public class MacroManager {
                 if (config.visitorsEnabled && visitorManager != null) {
                     // Pest killer already sent /warp garden; visitors will /tptoplot barn.
                     waitingForVisitors = true;
-                    if (config.unlockedMouseEnabled && client.currentScreen == null) {
-                        client.mouse.lockCursor();
-                    }
+                    // Keep cursor in its current state (unlocked if unlockedMouseEnabled).
                     visitorManager.start();
                     LOGGER.info("[JustFarming] Pest killer done – visitor mode enabled, starting visitor routine.");
                 } else {
@@ -631,9 +629,9 @@ public class MacroManager {
                     state = MacroState.IDLE;
                     lastRotationTime = 0;
                     waitingForPestKiller = true;
-                    if (config.unlockedMouseEnabled && client.currentScreen == null) {
-                        client.mouse.lockCursor();
-                    }
+                    // When unlockedMouseEnabled is on, keep the cursor unlocked so the
+                    // user can still interact with other windows during the pest-killer
+                    // routine (the MouseMixin suppresses lockCursor while waiting).
                     pestKillerManager.start(new ArrayList<>(pestPlots));
                     LOGGER.info("[JustFarming] Pest killer enabled – stopping farming macro, starting pest killer routine.");
                 } else if (config.visitorsEnabled && visitorManager != null) {
@@ -643,9 +641,9 @@ public class MacroManager {
                     state = MacroState.IDLE;
                     lastRotationTime = 0;
                     waitingForVisitors = true;
-                    if (config.unlockedMouseEnabled && client.currentScreen == null) {
-                        client.mouse.lockCursor();
-                    }
+                    // When unlockedMouseEnabled is on, keep the cursor unlocked so the
+                    // user can still interact with other windows during the visitor
+                    // routine (the MouseMixin suppresses lockCursor while waiting).
                     visitorManager.start();
                     LOGGER.info("[JustFarming] Visitor mode enabled – stopping farming macro, starting visitor routine.");
                 } else {
@@ -1109,6 +1107,14 @@ public class MacroManager {
                         + random.nextLong(config.rewarpDelayRandom + 1)
                         + randomJitter();
                 state = MacroState.WARPING;
+                // Release all keys immediately so block-breaking stops on this same tick.
+                // directBreakBlock() must not run after we transition away from a movement
+                // state, because shouldBreak() is now false (state == WARPING) and vanilla
+                // handleBlockBreaking() is no longer suppressed by the mixin.  Without this
+                // early return, attackBlock() would fire once more on the transition tick,
+                // potentially targeting a block that is outside the expected farming area.
+                releaseKeys();
+                return;
             }
         }
 
