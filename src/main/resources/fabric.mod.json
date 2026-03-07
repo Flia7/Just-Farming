@@ -1,21 +1,21 @@
 {
   "schemaVersion": 1,
-  "id": "flia",
+  "id": "just-farming",
   "version": "${version}",
-  "name": "FLIA",
-  "description": "A Hypixel Skyblock farming macro with GUI for crop selection, keybinds, and automation.",
+  "name": "Just Farming",
+  "description": "Just Farming – a Hypixel Skyblock farming macro with GUI for crop selection, keybinds, and automation.",
   "authors": [],
   "contact": {},
   "license": "MIT",
-  "icon": "assets/flia/icon.png",
+  "icon": "assets/just-farming/icon.png",
   "environment": "client",
   "entrypoints": {
     "client": [
-      "com.flia.Flia"
+      "com.justfarming.JustFarming"
     ]
   },
   "mixins": [
-    "flia.mixins.json"
+    "just-farming.mixins.json"
   ],
   "depends": {
     "fabricloader": ">=0.17.2",
