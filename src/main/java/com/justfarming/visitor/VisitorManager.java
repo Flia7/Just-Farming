@@ -180,11 +180,10 @@ public class VisitorManager {
     private static final double INTERACT_RADIUS = 3.5;
 
     /**
-     * Radius (blocks) within which a visitor NPC is detected for immediate
-     * interaction during the behindPoint navigation phase.  When the player
-     * comes within this distance of any visitor while navigating toward the
-     * behindPoint, the macro interacts with that visitor directly instead of
-     * continuing to walk.
+     * Radius (blocks) within which a visitor NPC is detected for fast-rotation
+     * mode.  When the player comes within this distance of the current visitor,
+     * the camera switches to the faster {@link #FAST_LOOK_DEGREES_PER_SECOND}
+     * rotation rate so it aligns quickly for the interact packet.
      */
     private static final double VISITOR_DETECT_RADIUS = 1.8;
 
@@ -226,33 +225,7 @@ public class VisitorManager {
      */
     private static final double PROBE_STEP = 0.6;
 
-    /**
-     * Distance (blocks) past the farthest visitor to navigate before starting
-     * to process them.  The player approaches from behind the last visitor so
-     * they can then walk forward through the visitor queue naturally.
-     */
-    private static final double BEHIND_VISITOR_DIST = 1.5;
 
-    /**
-     * Fallback distances (blocks) tried in decreasing order when the primary
-     * {@link #BEHIND_VISITOR_DIST} behind-point turns out to be inside a wall.
-     * If all fallbacks are also blocked the behind-point is skipped entirely.
-     */
-    private static final double[] BEHIND_VISITOR_DIST_FALLBACKS = { 1.0, 0.5 };
-
-    /**
-     * How close (blocks) the player must get to the behind-point before it is
-     * considered reached and normal visitor navigation begins.
-     */
-    private static final double BEHIND_POINT_REACH_DIST = 1.5;
-
-    /**
-     * Maximum time (ms) to spend navigating toward the behind-point before
-     * giving up and proceeding directly to the first visitor.  Guards against
-     * a behind-point that is technically passable but effectively unreachable
-     * (e.g., separated from the player by a wall at a different angle).
-     */
-    private static final long BEHIND_POINT_TIMEOUT_MS = 5000;
 
     /**
      * Maximum angular error (degrees) between the player's current yaw and the
@@ -277,74 +250,6 @@ public class VisitorManager {
      * Hypixel SkyBlock (due to Speed buffs from armour, pets, enchants, etc.).
      */
     private static final double BASE_WALK_SPEED = 0.1;
-
-    // ── Stair-entry vertical navigation ──────────────────────────────────────
-
-    /**
-     * Minimum height difference (blocks) between the player and the target before
-     * stair-entry detection is activated.  Below this threshold the path is treated
-     * as flat (auto-step handles small rises/drops) so no stair search is needed.
-     */
-    private static final double STAIR_NAV_HEIGHT_THRESHOLD = 2.0;
-
-    /**
-     * Horizontal radius (blocks) to scan when searching for a staircase entry point.
-     * Covers the full width of the Hypixel SkyBlock barn area.
-     */
-    private static final int STAIR_SEARCH_RADIUS = 15;
-
-    /**
-     * How long (ms) to keep a cached stair-entry waypoint before recomputing it.
-     * Recomputing every tick would be expensive (up to ~14 000 block lookups);
-     * a 2-second cache keeps CPU usage low while still updating as the player moves.
-     */
-    private static final long STAIR_ENTRY_CACHE_MS = 2000L;
-
-    /**
-     * Maximum angular difference (degrees) between the direction toward the stair
-     * entry and the direction toward the ultimate target.  Stair entries that fall
-     * outside this cone are ignored so the pathfinder never walks away from the
-     * target to reach a staircase on the opposite side of the barn.
-     */
-    private static final float STAIR_FORWARD_CONE_DEGREES = 120f;
-
-    // ── Flat-terrain navigation waypoints ────────────────────────────────────
-
-    /**
-     * Horizontal radius (blocks) to scan when looking for a flat-terrain
-     * navigation waypoint.  Used when the direct path is blocked at the same
-     * Y-level and stair navigation is not active.
-     */
-    private static final int    NAV_WAYPOINT_RADIUS     = 8;
-
-    /**
-     * How long (ms) to keep a cached flat-terrain navigation waypoint before
-     * recomputing it.  A short cache keeps the waypoint responsive to changes
-     * in the player's position while avoiding expensive per-tick block scans.
-     */
-    private static final long   NAV_WAYPOINT_CACHE_MS   = 1500L;
-
-    /**
-     * Half-angle (degrees) of the forward cone searched for flat-terrain
-     * navigation waypoints.  Only blocks within this arc of the direct path
-     * toward the target are considered, preventing the pathfinder from turning
-     * away from the visitor to reach a waypoint behind a wall on the far side.
-     */
-    private static final float  NAV_WAYPOINT_CONE_DEG   = 90f;
-
-    /**
-     * Distance (blocks) at which a flat-terrain navigation waypoint is
-     * considered reached and normal visitor-directed navigation resumes.
-     */
-    private static final double NAV_WAYPOINT_REACH_DIST = 1.5;
-
-    /**
-     * Minimum horizontal distance (blocks) from the player to consider a
-     * candidate as a flat-terrain navigation waypoint.  Blocks too close to
-     * the player's current position are excluded so the waypoint always
-     * represents a meaningful forward step.
-     */
-    private static final double NAV_WAYPOINT_MIN_DIST   = 1.0;
 
     // ── Wall-crash / stuck recovery ──────────────────────────────────────────
 
@@ -481,28 +386,6 @@ public class VisitorManager {
     private long  walkRecoveryEndTime         = 0;
 
     // Stair-entry vertical navigation state
-    /**
-     * Cached stair-entry waypoint computed by {@link #findStairEntry}.
-     * {@code null} when no stair entry search has been performed yet or when
-     * vertical navigation is no longer needed.
-     */
-    private Vec3d cachedStairEntry     = null;
-    /** Wall-clock time (ms) when {@link #cachedStairEntry} was last computed. */
-    private long  cachedStairEntryTime = 0;
-
-    // Flat-terrain navigation waypoint state
-    /**
-     * Cached passable floor block used as an intermediate navigation target
-     * when the direct path to the visitor is blocked at the same height level.
-     * The player navigates to this "detected block" before rotating toward the
-     * distant visitor, preventing the pathfinder from getting stuck while
-     * simultaneously steering around a wall and turning toward the target.
-     * {@code null} when not active.
-     */
-    private Vec3d cachedNavWaypoint     = null;
-    /** Wall-clock time (ms) when {@link #cachedNavWaypoint} was last computed. */
-    private long  cachedNavWaypointTime = 0;
-
     // Visitor tracking
     private Entity       currentVisitor  = null;
     private final List<Entity> pendingVisitors = new ArrayList<>();
@@ -518,21 +401,6 @@ public class VisitorManager {
      * rescan finds no additional visitors.
      */
     private boolean midRunRescanPerformed = false;
-    /**
-     * When {@code true}, the routine is in the first {@link State#NAVIGATING}
-     * leg of this visitor visit.  Reserved for future use.
-     */
-    private boolean firstNavigationInRoutine = false;
-    /**
-     * Intermediate waypoint set to the nearest visitor's position.  The routine
-     * navigates here first (without trading) so the player arrives behind the
-     * visitor queue, then rotates and walks toward the farthest visitor to begin
-     * trading.  {@code null} when there is only one visitor or once the point
-     * has been reached.
-     */
-    private Vec3d behindPoint = null;
-    /** Wall-clock time (ms) when navigation toward {@link #behindPoint} began; 0 = not started. */
-    private long  behindPointStartTime = 0;
 
     // Item requirements extracted from the current visitor's menu
     private final List<VisitorRequirement> pendingRequirements = new ArrayList<>();
@@ -661,19 +529,14 @@ public class VisitorManager {
         postPurchase = false;
         skipCurrentVisitorDueToPrice = false;
         skipCurrentVisitorDueToBlacklist = false;
-        behindPoint = null;
-        behindPointStartTime = 0;
         returnWarpDelay = 0;
         returnWarpSentAt = 0;
         midRunRescanPerformed = false;
-        firstNavigationInRoutine = false;
         walkLastProgressPos = null;
         walkLastProgressCheckTime = 0;
         walkRecoveryDirection = 0;
         walkRecoveryBackupEndTime = 0;
         walkRecoveryEndTime = 0;
-        cachedStairEntry = null;
-        cachedStairEntryTime = 0;
         fastRotateActive = false;
         disableFlightStartTime = 0;
         enterState(State.IDLE);
@@ -706,8 +569,6 @@ public class VisitorManager {
         completedVisitorIds.clear();
         requirementIndex  = 0;
         currentVisitor    = null;
-        behindPoint       = null;
-        behindPointStartTime = 0;
         interactCooldownUntil = 0;
         postAccept        = false;
         postPurchase      = false;
@@ -721,9 +582,6 @@ public class VisitorManager {
         returnWarpDelay   = 0;
         returnWarpSentAt  = 0;
         midRunRescanPerformed = false;
-        firstNavigationInRoutine = true;
-        cachedStairEntry = null;
-        cachedStairEntryTime = 0;
         long base = config.visitorsTeleportDelay > 0
                 ? config.visitorsTeleportDelay : TELEPORT_WAIT_DEFAULT_MS;
         teleportWaitMs = base + random.nextInt((int) TELEPORT_EXTRA_RANDOM_MS + 1)
@@ -819,22 +677,7 @@ public class VisitorManager {
                         returnToFarm();
                     } else {
                         currentVisitor = pendingVisitors.remove(0);
-                        // Use the nearest visitor's position (last in the farthest-first
-                        // sorted list) as the navigation node.  The player first walks to
-                        // the nearest visitor without trading, then rotates and approaches
-                        // the farthest visitor to begin the acceptance sequence.
-                        if (!pendingVisitors.isEmpty()) {
-                            Entity nearestVisitor = pendingVisitors.get(pendingVisitors.size() - 1);
-                            behindPoint = new Vec3d(nearestVisitor.getX(), nearestVisitor.getY(), nearestVisitor.getZ());
-                        } else {
-                            behindPoint = null;
-                        }
-                        behindPointStartTime = 0;
-                        if (behindPoint != null) {
-                            LOGGER.info("[JustFarming-Visitors] Navigation node at nearest visitor's location: {}.",
-                                    String.format("%.1f, %.1f, %.1f", behindPoint.x, behindPoint.y, behindPoint.z));
-                        }
-                        LOGGER.info("[JustFarming-Visitors] Found {} visitor(s). Navigating farthest first.",
+                        LOGGER.info("[JustFarming-Visitors] Found {} visitor(s). Trading closest-first.",
                                 pendingVisitors.size() + 1);
                         enterState(State.NAVIGATING);
                     }
@@ -852,44 +695,6 @@ public class VisitorManager {
                 }
 
                 Vec3d visitorPos = new Vec3d(currentVisitor.getX(), currentVisitor.getY(), currentVisitor.getZ());
-                // Navigate to the behind-point first so the player approaches the
-                // visitor queue from the far end rather than walking through the line.
-                if (behindPoint != null) {
-                    // Start the timeout clock on the first tick we handle behindPoint.
-                    if (behindPointStartTime == 0) behindPointStartTime = now;
-                    double behindDist = new Vec3d(player.getX(), player.getY(), player.getZ())
-                            .distanceTo(behindPoint);
-                    boolean reached  = behindDist <= BEHIND_POINT_REACH_DIST;
-                    boolean timedOut = (now - behindPointStartTime) >= BEHIND_POINT_TIMEOUT_MS;
-
-                    // Detect any visitor within VISITOR_DETECT_RADIUS during navigation
-                    // and interact with them immediately instead of walking past.
-                    Entity nearbyVisitor = findVisitorWithinRadius(player, VISITOR_DETECT_RADIUS);
-                    if (nearbyVisitor != null) {
-                        if (nearbyVisitor != currentVisitor) {
-                            // Push the original target back to the front of the queue
-                            // so it is visited after the nearby one.
-                            pendingVisitors.add(0, currentVisitor);
-                            pendingVisitors.remove(nearbyVisitor);
-                            currentVisitor = nearbyVisitor;
-                            visitorPos = new Vec3d(nearbyVisitor.getX(), nearbyVisitor.getY(), nearbyVisitor.getZ());
-                        }
-                        behindPoint = null;
-                        behindPointStartTime = 0;
-                    } else if (reached || timedOut) {
-                        if (timedOut && !reached) {
-                            LOGGER.info("[JustFarming-Visitors] Behind-point not reached in {}ms; skipping.", BEHIND_POINT_TIMEOUT_MS);
-                        }
-                        behindPoint = null;
-                        behindPointStartTime = 0;
-                    } else {
-                        // Skip NPC avoidance: the path to the behind-point intentionally
-                        // passes through the line of visitors so we must not treat them
-                        // as obstacles here.
-                        walkToward(player, behindPoint, false);
-                        return;
-                    }
-                }
                 double dist = new Vec3d(player.getX(), player.getY(), player.getZ()).distanceTo(visitorPos);
                 if (dist <= INTERACT_RADIUS) {
                     releaseMovementKeys();
@@ -1204,10 +1009,6 @@ public class VisitorManager {
             walkRecoveryDirection     = 0;
             walkRecoveryBackupEndTime = 0;
             walkRecoveryEndTime       = 0;
-            // Reset flat-terrain navigation waypoint so it is recomputed for the
-            // new navigation leg rather than carrying over a stale target.
-            cachedNavWaypoint     = null;
-            cachedNavWaypointTime = 0;
         }
         LOGGER.info("[JustFarming-Visitors] -> {}", next);
     }
@@ -1223,12 +1024,13 @@ public class VisitorManager {
         return base + extra;
     }
 
-    /** Populate {@link #pendingVisitors} with NPC entities in range.
+    /**
+     * Populate {@link #pendingVisitors} with NPC entities in range.
      *
-     * <p>Visitors are sorted farthest-first so the initial acceptance sequence
-     * is V5 → V4 → V3 → V2 → V1.  After all initial visitors are processed a
-     * single end-of-queue rescan is performed; any 6th visitor found at that
-     * point is visited last (V6).
+     * <p>Visitors are sorted closest-first so the acceptance sequence starts
+     * with the nearest visitor (V1 → V2 → V3 → V4 → V5).  After all initial
+     * visitors are processed a single end-of-queue rescan is performed; any
+     * 6th visitor found at that point is visited last.
      */
     private void scanForVisitors(ClientPlayerEntity player) {
         pendingVisitors.clear();
@@ -1254,89 +1056,64 @@ public class VisitorManager {
         double px = player.getX(), py = player.getY(), pz = player.getZ();
 
         if (pendingVisitors.size() >= 2) {
-            // Sort farthest-first: process from the end of the visitor line
-            // toward the nearest so the sequence becomes [V5, V4, V3, V2, V1].
+            // Sort closest-first: trade with the nearest visitor first (V1, V2, V3, …).
             pendingVisitors.sort((a, b) -> {
                 double da = Math.pow(a.getX() - px, 2) + Math.pow(a.getY() - py, 2) + Math.pow(a.getZ() - pz, 2);
                 double db = Math.pow(b.getX() - px, 2) + Math.pow(b.getY() - py, 2) + Math.pow(b.getZ() - pz, 2);
-                return Double.compare(db, da); // descending: farthest first
+                return Double.compare(da, db); // ascending: closest first
             });
         }
         // Single visitor: no reordering needed.
     }
 
     /**
-     * Returns the first visitor in {@link #pendingVisitors} (or equal to
-     * {@link #currentVisitor}) that is within {@code radius} blocks of the
-     * player's feet position, or {@code null} if none is within range.
-     *
-     * @param player the local player
-     * @param radius maximum Euclidean distance (blocks) to consider
-     * @return a nearby alive visitor entity, or {@code null}
-     */
-    private Entity findVisitorWithinRadius(ClientPlayerEntity player, double radius) {
-        double px = player.getX(), py = player.getY(), pz = player.getZ();
-        double radiusSq = radius * radius;
-        for (Entity v : pendingVisitors) {
-            if (v == null || !v.isAlive()) continue;
-            double dx = v.getX() - px, dy = v.getY() - py, dz = v.getZ() - pz;
-            if (dx * dx + dy * dy + dz * dz <= radiusSq) return v;
-        }
-        if (currentVisitor != null && currentVisitor.isAlive()) {
-            double dx = currentVisitor.getX() - px,
-                   dy = currentVisitor.getY() - py,
-                   dz = currentVisitor.getZ() - pz;
-            if (dx * dx + dy * dy + dz * dz <= radiusSq) return currentVisitor;
-        }
-        return null;
-    }
-
-    /**
-     * Navigate one tick toward {@code target}, applying NPC avoidance.
-     * Convenience overload; equivalent to {@code walkToward(player, target, true)}.
-     */
-    private void walkToward(ClientPlayerEntity player, Vec3d target) {
-        walkToward(player, target, true);
-    }
-
-    /**
      * Navigate one tick toward {@code target}.
      *
-     * @param avoidNpcs when {@code true}, NPC entities other than
-     *                  {@link #currentVisitor} are treated as obstacles and the
-     *                  pathfinder steers around them.  Pass {@code false} when
-     *                  navigating to the {@link #behindPoint} so that the line of
-     *                  pending visitors does not block the path to the far end of
-     *                  the queue.
+     * <p>This simplified pathfinder is designed specifically for the Hypixel SkyBlock
+     * barn area and handles all SkyBlock movement buffs robustly:
+     * <ul>
+     *   <li><b>Speed buffs (lvl 1–10+):</b> The speed multiplier is read from the
+     *       player's {@code MOVEMENT_SPEED} attribute so every SkyBlock source
+     *       (Speed pet, armour stats, sugar cane enchants, potions, etc.) is
+     *       automatically accounted for at any level.  The camera rotation rate and
+     *       the yaw-error threshold both scale with the multiplier so the player
+     *       always faces the right direction before committing to forward movement,
+     *       even at extreme speeds.</li>
+     *   <li><b>Pulsed walking near the target:</b> Inside the braking zone the
+     *       forward key is pressed only every {@code ceil(speedMult)} ticks,
+     *       reducing the average velocity so the player stops at
+     *       {@link #INTERACT_RADIUS} without overshooting at Speed X or higher.</li>
+     *   <li><b>Jump Boost (lvl 1–10+):</b> The jump key is <em>never</em> pressed.
+     *       At Jump Boost X the server-side vertical impulse would fling the player
+     *       far above the barn; Minecraft's auto-step handles stair traversal
+     *       without any jump input.</li>
+     *   <li><b>Stuck detection:</b> If position progress drops below
+     *       {@link #WALK_MIN_PROGRESS_PER_INTERVAL} blocks per second the pathfinder
+     *       backs up briefly then strafes to escape the obstacle.</li>
+     *   <li><b>Smooth camera:</b> Rotation runs at render-frame frequency via
+     *       {@link #onRenderTick()} at a rate scaled by the speed multiplier so the
+     *       camera always keeps pace with the player's momentum.</li>
+     * </ul>
      */
-    private void walkToward(ClientPlayerEntity player, Vec3d target, boolean avoidNpcs) {
+    private void walkToward(ClientPlayerEntity player, Vec3d target) {
         if (client.options == null || client.world == null) return;
 
         long now = System.currentTimeMillis();
-        // Periodically re-randomise the walk-direction jitter for humanlike path variation.
-        // (random.nextFloat() * 2f - 1f) produces a uniform value in [-1, 1].
+
+        // Periodically re-randomise walk-direction jitter for humanlike path variation.
         if (now >= walkJitterNextUpdate) {
             walkJitter = (random.nextFloat() * 2f - 1f) * WALK_JITTER_MAX_DEGREES;
             walkJitterNextUpdate = now + WALK_JITTER_INTERVAL_MS;
         }
 
-        // Compute the direct yaw toward the target (pitch is unchanged by jitter).
+        // Direction from eye to target; keep pitch neutral during navigation.
         Vec3d eye = player.getEyePos();
         double dx = target.x - eye.x;
         double dz = target.z - eye.z;
-        double distXZ = Math.sqrt(dx * dx + dz * dz);
         float baseTargetYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
-        // Keep the camera looking straight ahead (pitch 0) while pathfinding.
-        // Computing pitch from the vertical angle to the visitor causes the camera
-        // to tilt up and down continuously when the player descends stairs, because
-        // the player's eye height changes rapidly relative to the (fixed) visitor
-        // position.  Pitch is set precisely by lookAt() when the player is close
-        // enough to interact, so a neutral pitch during navigation is correct.
         targetPitch = 0f;
 
-        // Compute how many times faster the player is moving compared to vanilla.
-        // This covers Speed-effect buffs, armour bonuses, and other SkyBlock modifiers
-        // that all ultimately manifest as a higher MOVEMENT_SPEED attribute value.
+        // Current SkyBlock speed multiplier (accounts for Speed buffs at any level).
         double speedMult = getSpeedMultiplier(player);
 
         // ── Stuck / wall-crash detection ──────────────────────────────────────
@@ -1349,14 +1126,11 @@ public class VisitorManager {
             double progress    = walkLastProgressPos.distanceTo(playerPos);
             double distToTarget = playerPos.distanceTo(target);
             if (progress < WALK_MIN_PROGRESS_PER_INTERVAL && distToTarget > INTERACT_RADIUS + 0.5) {
-                // Not making progress: start a crash-recovery sequence (back up, then strafe).
-                // Alternate strafe direction between crashes so we try both sides over time.
-                // Starting from 0 (no previous recovery), the first crash goes right (+1),
-                // subsequent crashes alternate: +1 → -1 → +1 → ...
+                // Alternate strafe direction on each successive crash (right, then left, …).
                 walkRecoveryDirection     = (walkRecoveryDirection == 1) ? -1 : 1;
                 walkRecoveryBackupEndTime = now + WALK_RECOVERY_BACKUP_MS;
                 walkRecoveryEndTime       = now + WALK_RECOVERY_BACKUP_MS + WALK_RECOVERY_STRAFE_MS;
-                LOGGER.debug("[JustFarming-Visitors] Stuck (progress={} blocks); backing up then strafing {}.",
+                LOGGER.debug("[JustFarming-Visitors] Stuck ({} blocks); backing up then strafing {}.",
                         String.format("%.2f", progress),
                         walkRecoveryDirection > 0 ? "right" : "left");
             }
@@ -1364,11 +1138,9 @@ public class VisitorManager {
             walkLastProgressCheckTime = now;
         }
 
-        // Phase 1 of crash-recovery: back up briefly so the player detaches from the wall.
+        // Phase 1 of crash-recovery: back up to detach from the wall.
         if (now < walkRecoveryBackupEndTime) {
             targetYaw = baseTargetYaw;
-            // Scale rotation speed by movement speed so the camera catches up quickly
-            // even at high SkyBlock movement speeds.
             smoothRotateCamera(player, SMOOTH_LOOK_DEGREES_PER_SECOND * (float) Math.max(1.0, speedMult));
             client.options.forwardKey.setPressed(false);
             client.options.backKey.setPressed(true);
@@ -1378,192 +1150,93 @@ public class VisitorManager {
             return;
         }
 
-        // Whether the strafe phase of crash-recovery is still active.
         boolean isRecoveryActive = now < walkRecoveryEndTime && walkRecoveryDirection != 0;
 
-        // Scale the probe-step with speed so we look further ahead when moving fast,
-        // giving enough reaction distance to stop before hitting a wall.
-        double probeStep = Math.min(PROBE_STEP * speedMult, 5.0);
-
-        // Shorter, fixed probe used exclusively for steer-angle decisions.
-        // Using the speed-scaled probe for rotation caused the camera to start
-        // turning before the player reached the obstacle (e.g. a barn entrance
-        // wall detected 4–5 blocks away), leading to over-rotation and the player
-        // heading in the wrong direction.  The near probe is deliberately kept at
-        // PROBE_STEP so steering only triggers when the obstacle is immediately
-        // ahead, while the larger probeStep is still used for braking/NPC avoidance.
+        // Scale the look-ahead probe with speed so we detect obstacles sooner when
+        // moving fast.  The near probe (steerProbeStep) is fixed at PROBE_STEP so
+        // steering decisions trigger only when an obstacle is immediately ahead.
+        double probeStep      = Math.min(PROBE_STEP * speedMult, 5.0);
         double steerProbeStep = PROBE_STEP;
 
-        // Detect whether the player is currently standing on a stair or slab block.
-        // On step surfaces, skipping the walk-direction jitter prevents the camera
-        // from rotating left and right unnecessarily while traversing a staircase.
+        // Suppress walk jitter on stair/slab surfaces to avoid unnecessary rotations.
         boolean onStepSurface = isStepBlock(client.world.getBlockState(playerFeetBlockPos(player)));
 
-        // ── Stair-entry vertical navigation ──────────────────────────────────
-        // When the target is at a significantly different height and the near path
-        // is blocked, scan for the closest staircase entry point and aim toward it.
-        // For ascending (target above player): aim for the lowest nearby stair block
-        // (the bottom/entry of the staircase).
-        // For descending (target below player): aim for the highest nearby stair block
-        // (the top/entry of the staircase).
-        // Only activate when the near path is actually blocked – on clear paths the
-        // normal isPathClear / steer-angle logic handles everything.
-        double heightDiff = target.y - player.getY();
-        if (Math.abs(heightDiff) > STAIR_NAV_HEIGHT_THRESHOLD
-                && !isPathClear(player, baseTargetYaw, steerProbeStep, avoidNpcs)) {
-            if (cachedStairEntry == null || now - cachedStairEntryTime > STAIR_ENTRY_CACHE_MS) {
-                cachedStairEntry     = findStairEntry(player, heightDiff > 0, baseTargetYaw);
-                cachedStairEntryTime = now;
-            }
-            if (cachedStairEntry != null) {
-                double sdx = cachedStairEntry.x - eye.x;
-                double sdz = cachedStairEntry.z - eye.z;
-                double stairDist = Math.sqrt(sdx * sdx + sdz * sdz);
-                // Only redirect when the stair entry is far enough to give a meaningful
-                // heading (very small distances would produce a near-zero direction vector).
-                if (stairDist > 1.5) {
-                    baseTargetYaw = (float) Math.toDegrees(Math.atan2(-sdx, sdz));
-                }
-            }
-        } else if (Math.abs(heightDiff) <= STAIR_NAV_HEIGHT_THRESHOLD) {
-            // No longer need vertical stair navigation; clear cached entry.
-            cachedStairEntry = null;
-        }
-
-        // ── Flat-terrain navigation waypoints ──────────────────────────────────
-        // When the near path is blocked at the same height level (stair navigation
-        // is not active), scan for the nearest passable floor block in the forward
-        // cone and redirect toward it.  The player navigates to this "detected
-        // block" before the camera rotates toward the distant visitor, preventing
-        // the pathfinder from getting stuck while simultaneously trying to steer
-        // around a wall and turn toward the target.
-        //
-        // isPathClear is checked every tick (even with a cached waypoint) so that
-        // the waypoint is discarded immediately once the path to the visitor clears,
-        // rather than persisting until the cache expires.
-        if (Math.abs(heightDiff) <= STAIR_NAV_HEIGHT_THRESHOLD
-                && !isPathClear(player, baseTargetYaw, steerProbeStep, avoidNpcs)) {
-            if (cachedNavWaypoint == null
-                    || now - cachedNavWaypointTime > NAV_WAYPOINT_CACHE_MS) {
-                cachedNavWaypoint     = findNavWaypoint(player, baseTargetYaw, avoidNpcs);
-                cachedNavWaypointTime = now;
-            }
-            if (cachedNavWaypoint != null) {
-                double wdx   = cachedNavWaypoint.x - eye.x;
-                double wdz   = cachedNavWaypoint.z - eye.z;
-                double wdist = Math.sqrt(wdx * wdx + wdz * wdz);
-                if (wdist <= NAV_WAYPOINT_REACH_DIST) {
-                    // Waypoint reached; discard it so normal navigation resumes.
-                    cachedNavWaypoint = null;
-                } else {
-                    // Redirect toward the waypoint so the camera rotates toward the
-                    // detected block instead of the distant visitor.
-                    baseTargetYaw = (float) Math.toDegrees(Math.atan2(-wdx, wdz));
-                }
-            }
-        } else {
-            // Path is clear, or height difference is too large (stair nav handles it);
-            // discard any cached flat-terrain waypoint.
-            cachedNavWaypoint = null;
-        }
-
-        // Try the direct path first; if clear, apply jitter for humanlike variation.
-        // Jitter is suppressed on stair/slab surfaces to avoid useless rotations.
-        // If the far probe detects a wall but the near probe is still clear, keep
-        // walking straight – the obstacle is not yet close enough to require a turn,
-        // and rotating early would send the player the wrong way before they reach
-        // it (the "rotates before passing the wall" bug).
-        // Only apply steer angles when the near path is also blocked so rotation
-        // happens at the last moment, preventing over-rotation on corners.
+        // ── Path selection ────────────────────────────────────────────────────
         boolean shouldWalk = false;
-        float chosenYaw = baseTargetYaw;
-        if (isPathClear(player, baseTargetYaw, probeStep, avoidNpcs)) {
-            // Far path is clear – walk with jitter.
+        float   chosenYaw  = baseTargetYaw;
+
+        if (isPathClear(player, baseTargetYaw, probeStep)) {
+            // Far path is clear – walk with humanlike jitter (suppressed on stairs).
             shouldWalk = true;
-            chosenYaw  = onStepSurface ? baseTargetYaw : baseTargetYaw + walkJitter; // skip jitter on stairs
-        } else if (isPathClear(player, baseTargetYaw, steerProbeStep, avoidNpcs)) {
-            // Far probe blocked but near path is clear: obstacle is not yet close.
-            // Continue straight without rotating; crash recovery will handle the
-            // case where the far obstacle is a genuine imminent wall rather than
-            // a temporary read (e.g. entrance-gap wall detected at a bad angle).
+            chosenYaw  = onStepSurface ? baseTargetYaw : baseTargetYaw + walkJitter;
+        } else if (isPathClear(player, baseTargetYaw, steerProbeStep)) {
+            // Far probe blocked but the immediate path is still open – the obstacle
+            // is not yet close enough to steer around.  Continue straight; crash
+            // recovery handles the case where it is a genuine imminent wall.
             shouldWalk = true;
             chosenYaw  = onStepSurface ? baseTargetYaw : baseTargetYaw + walkJitter;
         } else {
-            // Near path is blocked – steer around the immediate obstacle.
+            // Immediate path blocked – try progressive steer angles to find a gap.
             for (float steer : WALL_STEER_ANGLES) {
-                if (isPathClear(player, baseTargetYaw + steer, steerProbeStep, avoidNpcs)) {
+                if (isPathClear(player, baseTargetYaw + steer, steerProbeStep)) {
                     shouldWalk = true;
-                    chosenYaw  = baseTargetYaw + steer; // steer around the wall (no jitter)
+                    chosenYaw  = baseTargetYaw + steer;
                     break;
                 }
             }
-            // All path checks failed – force forward movement anyway so the pathfinder
-            // does not stand still indefinitely.  The player nudging forward helps
-            // escape edge cases where isPassable is overly conservative (e.g. standing
-            // just short of a stair step) and gets the player closer to visitors.
             if (!shouldWalk) {
+                // All angles blocked – nudge straight forward to escape edge cases
+                // where isPassable is overly conservative (e.g. on a stair lip).
                 shouldWalk = true;
                 chosenYaw  = baseTargetYaw;
             }
         }
 
-        // Aim camera toward the chosen direction using a speed-scaled rotation rate.
-        // At high SkyBlock movement speeds the player can overshoot a turn before a
-        // slow camera has finished rotating, so the rate scales with speedMult so the
-        // camera always keeps up with the player's momentum.
+        // ── Smooth camera rotation ────────────────────────────────────────────
+        // Scale rotation speed by the movement multiplier so the camera always
+        // keeps up with the player's momentum at any SkyBlock speed level.
         targetYaw = chosenYaw;
         smoothRotateCamera(player, SMOOTH_LOOK_DEGREES_PER_SECOND * (float) Math.max(1.0, speedMult));
 
+        // ── Speed-aware pulsed walking near the target ────────────────────────
+        // At SkyBlock Speed X+ the player covers multiple blocks per tick.  Pulse
+        // the forward key inside the braking zone to slow the approach naturally
+        // and stop at INTERACT_RADIUS without relying on precise braking distance.
         if (shouldWalk) {
-            // Speed-aware pulsed walking near the target.
-            //
-            // At high SkyBlock movement speeds the player can overshoot the visitor
-            // in a single tick.  Once inside the "braking zone" we only press the
-            // forward key every pulseStride ticks (proportional to speed), reducing
-            // the average forward velocity enough to stop precisely at INTERACT_RADIUS.
-            double dist = playerPos.distanceTo(target);
+            double dist         = playerPos.distanceTo(target);
             double brakingRadius = INTERACT_RADIUS + speedMult * 2.0;
             if (dist < brakingRadius) {
-                int pulseStride = Math.max(1, (int) Math.ceil(speedMult));
-                long ticks = client.world.getTime(); // world game-tick counter
+                int  pulseStride = Math.max(1, (int) Math.ceil(speedMult));
+                long ticks       = client.world.getTime();
                 shouldWalk = (ticks % pulseStride == 0);
             }
         }
 
-        // Suppress walking when the camera is still far from the chosen direction.
-        // The forward key moves the player in the direction they are currently looking,
-        // so pressing it while the camera is too far off-target would carry them in the
-        // wrong direction (e.g. away from the visitor or into a wall after rounding the
-        // behind-point).  At higher movement speeds (SkyBlock buffs) the allowable yaw
-        // error is tightened proportionally so the player always walks in precisely the
-        // right direction before committing to forward movement.
+        // ── Yaw-error gate ────────────────────────────────────────────────────
+        // Suppress forward movement until the camera is close enough to the chosen
+        // direction.  At higher SkyBlock speeds the threshold tightens so the
+        // player does not overshoot before the camera has finished turning.
         if (shouldWalk) {
             float yawError = chosenYaw - player.getYaw();
             while (yawError >  180f) yawError -= 360f;
             while (yawError < -180f) yawError += 360f;
-            // Scale the threshold down with speed: at 1× speed, allow up to
-            // MAX_WALK_YAW_ERROR_DEGREES; at higher speeds require tighter aim
-            // (floor of MIN_WALK_YAW_ERROR_DEGREES) so the player doesn't overshoot
-            // at extreme speeds.
-            float speedAwareYawThreshold = Math.max(MIN_WALK_YAW_ERROR_DEGREES,
+            float speedAwareThreshold = Math.max(MIN_WALK_YAW_ERROR_DEGREES,
                     MAX_WALK_YAW_ERROR_DEGREES / (float) Math.max(1.0, speedMult));
-            if (Math.abs(yawError) > speedAwareYawThreshold) {
+            if (Math.abs(yawError) > speedAwareThreshold) {
                 shouldWalk = false;
             }
         }
 
-        // Only walk forward when there is solid ground ahead and no wall blocking the path.
-        // Never trigger a jump – on Hypixel SkyBlock speed/jump buffs can reach level 10,
-        // so autonomous jumping causes erratic movement near visitor NPCs.
+        // Apply movement keys.
+        // Jump key is intentionally NEVER pressed: at Jump Boost X+ the vertical
+        // impulse would launch the player off the barn area.  Minecraft's auto-step
+        // handles stair traversal without any jump input.
         client.options.forwardKey.setPressed(shouldWalk);
         client.options.jumpKey.setPressed(false);
         client.options.backKey.setPressed(false);
-        // During the strafe phase of crash-recovery, press the appropriate strafe key
-        // alongside forward movement so the player slides around the obstacle.
         client.options.leftKey.setPressed(isRecoveryActive && walkRecoveryDirection < 0);
         client.options.rightKey.setPressed(isRecoveryActive && walkRecoveryDirection > 0);
     }
-
     /**
      * Returns {@code true} if {@code state} is a stair, slab, carpet, or
      * pressure-plate block.
@@ -1654,212 +1327,12 @@ public class VisitorManager {
     }
 
     /**
-     * Scans nearby blocks for a staircase entry point to use when vertical
-     * navigation is required.
-     *
-     * <p>When {@code goingUp} is {@code true}, the method returns the position
-     * of the <em>lowest</em> stair or slab block found within
-     * {@link #STAIR_SEARCH_RADIUS} horizontal blocks of the player (at the current
-     * Y level or above).  This is the bottom of the nearest staircase, i.e. the
-     * point the player must walk to in order to begin climbing.
-     *
-     * <p>When {@code goingUp} is {@code false}, the method returns the position
-     * of the <em>highest</em> stair or slab block found within the same horizontal
-     * radius (at the current Y level or below).  This is the top of the nearest
-     * staircase, i.e. the point the player must walk to in order to begin descending.
-     *
-     * <p>Only stair entries within {@link #STAIR_FORWARD_CONE_DEGREES} of the
-     * direct path toward the ultimate target ({@code targetYaw}) are considered, so
-     * the pathfinder never turns away from the target to find a staircase on the
-     * opposite side of the barn.
-     *
-     * @param player    the local player
-     * @param goingUp   {@code true} when the target is above the player
-     * @param targetYaw horizontal yaw (degrees) toward the ultimate navigation target
-     * @return position of the stair entry block (XZ-centred, at block Y), or
-     *         {@code null} if none was found within the search area
-     */
-    private Vec3d findStairEntry(ClientPlayerEntity player, boolean goingUp, float targetYaw) {
-        if (client.world == null) return null;
-        int px = (int) Math.floor(player.getX());
-        int py = (int) Math.floor(player.getY());
-        int pz = (int) Math.floor(player.getZ());
-
-        Vec3d best  = null;
-        int   bestY = goingUp ? Integer.MAX_VALUE : Integer.MIN_VALUE;
-
-        // Y range: scan upward from player's feet level when ascending, downward
-        // when descending.  The opposite bound equals the full height of the barn.
-        int yFrom = goingUp ? py : py - STAIR_SEARCH_RADIUS;
-        int yTo   = goingUp ? py + STAIR_SEARCH_RADIUS : py;
-
-        BlockPos.Mutable pos = new BlockPos.Mutable();
-        for (int dx = -STAIR_SEARCH_RADIUS; dx <= STAIR_SEARCH_RADIUS; dx++) {
-            for (int dz = -STAIR_SEARCH_RADIUS; dz <= STAIR_SEARCH_RADIUS; dz++) {
-                for (int y = yFrom; y <= yTo; y++) {
-                    pos.set(px + dx, y, pz + dz);
-                    if (!isStepBlock(client.world.getBlockState(pos))) continue;
-
-                    // Only consider blocks in the forward hemisphere relative to the
-                    // ultimate target direction so we never navigate away from the visitor.
-                    double sdx = (px + dx + 0.5) - player.getX();
-                    double sdz = (pz + dz + 0.5) - player.getZ();
-                    double dist = Math.sqrt(sdx * sdx + sdz * sdz);
-                    if (dist < 0.5) continue; // skip blocks directly under the player
-                    float stairYaw = (float) Math.toDegrees(Math.atan2(-sdx, sdz));
-                    float yawDiff  = stairYaw - targetYaw;
-                    while (yawDiff >  180f) yawDiff -= 360f;
-                    while (yawDiff < -180f) yawDiff += 360f;
-                    if (Math.abs(yawDiff) > STAIR_FORWARD_CONE_DEGREES) continue;
-
-                    if ((goingUp && y < bestY) || (!goingUp && y > bestY)) {
-                        bestY = y;
-                        best  = new Vec3d(px + dx + 0.5, y, pz + dz + 0.5);
-                    }
-                }
-            }
-        }
-        return best;
-    }
-
-    /**
-     * Scans nearby floor blocks for a passable intermediate navigation waypoint
-     * to use when the direct path toward the target is blocked on flat terrain.
-     *
-     * <p>Searches a {@link #NAV_WAYPOINT_RADIUS}-block horizontal radius around
-     * the player at the player's current feet Y-level, considering only positions
-     * within {@link #NAV_WAYPOINT_CONE_DEG} degrees of {@code targetYaw} to avoid
-     * routing the player away from the visitor.  Among the candidates, the nearest
-     * position that is both a valid standing spot
-     * (see {@link #isBehindPointPassable}) and has a clear immediate step toward
-     * it (see {@link #isPathClear}) is returned.
-     *
-     * @param player    the local player
-     * @param targetYaw horizontal yaw (degrees) toward the ultimate navigation target
-     * @param avoidNpcs whether to apply NPC-avoidance when checking the path
-     * @return the nearest suitable waypoint (XZ-centred, at player's feet Y), or
-     *         {@code null} if no passable block was found in the search area
-     */
-    private Vec3d findNavWaypoint(ClientPlayerEntity player, float targetYaw, boolean avoidNpcs) {
-        if (client.world == null) return null;
-        int px = (int) Math.floor(player.getX());
-        int py = (int) Math.floor(player.getY());
-        int pz = (int) Math.floor(player.getZ());
-
-        Vec3d  best     = null;
-        double bestDist = Double.MAX_VALUE;
-
-        for (int dx = -NAV_WAYPOINT_RADIUS; dx <= NAV_WAYPOINT_RADIUS; dx++) {
-            for (int dz = -NAV_WAYPOINT_RADIUS; dz <= NAV_WAYPOINT_RADIUS; dz++) {
-                double sdx  = (px + dx + 0.5) - player.getX();
-                double sdz  = (pz + dz + 0.5) - player.getZ();
-                double dist = Math.sqrt(sdx * sdx + sdz * sdz);
-                if (dist < NAV_WAYPOINT_MIN_DIST) continue; // skip the block occupied by the player
-
-                // Only blocks inside the forward cone toward the target.
-                float  wayYaw  = (float) Math.toDegrees(Math.atan2(-sdx, sdz));
-                float  yawDiff = wayYaw - targetYaw;
-                while (yawDiff >  180f) yawDiff -= 360f;
-                while (yawDiff < -180f) yawDiff += 360f;
-                if (Math.abs(yawDiff) > NAV_WAYPOINT_CONE_DEG) continue;
-
-                // The candidate must be a valid standing position at the player's Y level.
-                Vec3d candidate = new Vec3d(px + dx + 0.5, py, pz + dz + 0.5);
-                if (!isBehindPointPassable(candidate)) continue;
-
-                // The immediate step toward the candidate must be passable so the
-                // player can actually start walking toward it without hitting a wall.
-                if (!isPathClear(player, wayYaw, PROBE_STEP, avoidNpcs)) continue;
-
-                if (dist < bestDist) {
-                    bestDist = dist;
-                    best     = candidate;
-                }
-            }
-        }
-        return best;
-    }
-
-    /**
-     * Compute an auto-pathfinding behind-point just past {@code visitor}, on the
-     * far side from the player, so the pathfinder approaches the visitor queue
-     * from the rear before rotating to interact.
-     *
-     * <p>The point is placed {@link #BEHIND_VISITOR_DIST} blocks past the visitor
-     * along the player→visitor axis.  If that position is inside a wall the
-     * method tries the fallback distances in {@link #BEHIND_VISITOR_DIST_FALLBACKS}
-     * before giving up and returning {@code null}.
-     *
-     * @param player  the local player (used for the player position)
-     * @param visitor the target visitor NPC entity
-     * @return a passable behind-point, or {@code null} if none could be found
-     */
-    private Vec3d computeBehindPoint(ClientPlayerEntity player, Entity visitor) {
-        if (client.world == null) return null;
-        double px = player.getX(), py = player.getY(), pz = player.getZ();
-        double vx = visitor.getX(), vy = visitor.getY(), vz = visitor.getZ();
-        double dx = vx - px;
-        double dz = vz - pz;
-        double len = Math.sqrt(dx * dx + dz * dz);
-        if (len < 0.001) return null; // visitor on top of player – skip behind-point
-        // Normalised direction from player toward visitor
-        double nx = dx / len;
-        double nz = dz / len;
-        // Try the primary distance then each fallback
-        double[] distances = new double[1 + BEHIND_VISITOR_DIST_FALLBACKS.length];
-        distances[0] = BEHIND_VISITOR_DIST;
-        for (int i = 0; i < BEHIND_VISITOR_DIST_FALLBACKS.length; i++) {
-            distances[i + 1] = BEHIND_VISITOR_DIST_FALLBACKS[i];
-        }
-        for (double dist : distances) {
-            Vec3d candidate = new Vec3d(vx + nx * dist, vy, vz + nz * dist);
-            if (isBehindPointPassable(candidate)) {
-                return candidate;
-            }
-        }
-        return null; // no passable behind-point found; proceed directly to visitor
-    }
-
-    /**
-     * Returns {@code true} if {@code point} is a valid standing position:
-     * the block at the feet level must be air or a step block (stair/slab),
-     * the head level must be air, and there must be a solid floor one block below
-     * (or a step block at feet level, since stair/slab blocks provide their own
-     * surface — e.g. a visitor standing on stairs has {@code floor(y)} land on the
-     * stair block itself, making it the effective floor even though the block
-     * directly below is air).
-     * Used to verify that the computed behind-point is not embedded in a wall
-     * before the player is sent there.
-     */
-    private boolean isBehindPointPassable(Vec3d point) {
-        int bx = (int) Math.floor(point.x);
-        int by = (int) Math.floor(point.y);
-        int bz = (int) Math.floor(point.z);
-        BlockState floorState = client.world.getBlockState(new BlockPos(bx, by - 1, bz));
-        BlockState feetState  = client.world.getBlockState(new BlockPos(bx, by,     bz));
-        BlockState headState  = client.world.getBlockState(new BlockPos(bx, by + 1, bz));
-        // hasFloor: the block below is solid OR the feet block itself is a step surface
-        // (when floor(y) lands on a stair/slab, that stair/slab is the standing surface).
-        boolean hasFloor  = !floorState.isAir() || isStepBlock(feetState);
-        boolean feetClear = feetState.isAir()   || isStepBlock(feetState);
-        boolean headClear = headState.isAir();
-        return hasFloor && feetClear && headClear;
-    }
-
-    /**
      * Returns {@code true} if the path {@code probeStep} ahead in the given
-     * {@code yawDeg} direction is terrain-passable (see {@link #isPassable}) and,
-     * when {@code checkNpcs} is {@code true}, not obstructed by a non-target
-     * visitor NPC within {@link #NPC_AVOIDANCE_DIST}.
-     *
-     * <p>NPC checking is skipped (pass {@code false}) when navigating toward the
-     * {@link #behindPoint} so that the line of pending visitors does not falsely
-     * block the path toward the far end of the queue.
+     * {@code yawDeg} direction is terrain-passable (see {@link #isPassable}) and
+     * not obstructed by a non-target visitor NPC within {@link #NPC_AVOIDANCE_DIST}.
      */
-    private boolean isPathClear(ClientPlayerEntity player, double yawDeg, double probeStep,
-                                 boolean checkNpcs) {
+    private boolean isPathClear(ClientPlayerEntity player, double yawDeg, double probeStep) {
         if (!isPassable(player, yawDeg, probeStep)) return false;
-        if (!checkNpcs) return true;
         // Check at the farther of (probeStep, NPC_AVOIDANCE_DIST) so the look-ahead
         // covers the full avoidance radius even when probeStep is larger than it.
         double checkDist = Math.max(probeStep, NPC_AVOIDANCE_DIST);
@@ -1875,14 +1348,6 @@ public class VisitorManager {
                         && KNOWN_VISITOR_NAMES.contains(
                                 stripFormatting(e.getCustomName().getString())))
                 .isEmpty();
-    }
-
-    /**
-     * Convenience overload that always checks for NPC obstacles.
-     * Equivalent to {@code isPathClear(player, yawDeg, probeStep, true)}.
-     */
-    private boolean isPathClear(ClientPlayerEntity player, double yawDeg, double probeStep) {
-        return isPathClear(player, yawDeg, probeStep, true);
     }
 
     /**
@@ -2184,8 +1649,6 @@ public class VisitorManager {
     }
 
     private void nextVisitor() {
-        behindPoint = null; // behind-point only applies to the first (farthest) visitor
-        behindPointStartTime = 0;
         currentVisitor = null;
 
         if (!pendingVisitors.isEmpty()) {
@@ -2194,9 +1657,8 @@ public class VisitorManager {
             enterState(State.NAVIGATING);
         } else {
             // End-of-queue rescan: after all initially-found visitors are processed,
-            // scan once more for any 6th visitor who spawned late at the far end of
-            // the line.  This keeps the visit order V5 → V4 → V3 → V2 → V1 → V6
-            // (V6 is handled last, after the player has walked back toward the queue).
+            // scan once more for any 6th visitor who spawned during the run.
+            // The 6th visitor is visited last (closest-first within the new scan).
             if (!midRunRescanPerformed && client.player != null) {
                 midRunRescanPerformed = true;
                 scanForVisitors(client.player);
