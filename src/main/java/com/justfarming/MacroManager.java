@@ -105,6 +105,13 @@ public class MacroManager {
     /** Extra wait (ms) after the second press before declaring the sequence complete. */
     private static final long DISABLE_FLIGHT_DONE_MS  = 200L;
 
+    /**
+     * Delay (ms) inserted before any movement when the macro is started via
+     * {@code /just farm}.  Gives the player 1 second of motionless time after
+     * issuing the command before the macro begins rotating or walking.
+     */
+    private static final long FARM_START_DELAY_MS = 1000L;
+
     private final MinecraftClient client;
     private FarmingConfig config;
     private VisitorManager visitorManager;
@@ -116,7 +123,7 @@ public class MacroManager {
     // State
     // -----------------------------------------------------------------------
 
-    private enum MacroState { IDLE, DISABLING_FLIGHT, MOUSEMAT_CLICK, ALIGNING_ROTATION, DETECTING, BACKWARD_LEFT, FORWARD_LEFT, FORWARD_RIGHT,
+    private enum MacroState { IDLE, PRE_START_WAIT, DISABLING_FLIGHT, MOUSEMAT_CLICK, ALIGNING_ROTATION, DETECTING, BACKWARD_LEFT, FORWARD_LEFT, FORWARD_RIGHT,
             STRAFE_LEFT_ONLY, STRAFE_RIGHT_ONLY, BACK_ONLY, FORWARD_ONLY, WARPING,
             LANE_SWAP_WAITING, VISITING }
 
@@ -207,6 +214,19 @@ public class MacroManager {
     private long disableFlightStartTime = 0;
     /** The state to enter once the disable-flight sequence finishes. */
     private MacroState nextStateAfterFlightDisable = MacroState.DETECTING;
+
+    /**
+     * Wall-clock time (ms) when the {@link MacroState#PRE_START_WAIT} phase started.
+     * {@code 0} = not active.
+     */
+    private long preStartWaitBeginTime = 0;
+
+    /**
+     * The state to transition to after {@link MacroState#PRE_START_WAIT} expires.
+     * May be {@link MacroState#DISABLING_FLIGHT} (if player was flying when start()
+     * was called) or the normal first macro state.
+     */
+    private MacroState postStartWaitState = MacroState.ALIGNING_ROTATION;
 
     /**
      * Tracks which phase of the MOUSEMAT_CLICK state we are in.
@@ -424,14 +444,17 @@ public class MacroManager {
         if (config.unlockedMouseEnabled) {
             client.mouse.unlockCursor();
         }
-        // If the player is currently flying, disable flight before starting the macro.
+        // Determine the state that follows the 1-second pre-start wait.
         if (client.player != null && client.player.getAbilities().flying) {
-            LOGGER.info("[Just Farming] Player is flying; disabling flight before starting macro.");
+            LOGGER.info("[Just Farming] Player is flying; will disable flight after start delay.");
             nextStateAfterFlightDisable = normalFirstState;
-            state = MacroState.DISABLING_FLIGHT;
+            postStartWaitState = MacroState.DISABLING_FLIGHT;
         } else {
-            state = normalFirstState;
+            postStartWaitState = normalFirstState;
         }
+        // Wait 1 second before starting any movement.
+        preStartWaitBeginTime = System.currentTimeMillis();
+        state = MacroState.PRE_START_WAIT;
         LOGGER.info("[Just Farming] Macro started. Crop: {}", config.selectedCrop);
     }
 
@@ -524,7 +547,7 @@ public class MacroManager {
      * overridden.
      */
     public void onRenderTick() {
-        if (!running || state == MacroState.MOUSEMAT_CLICK) return;
+        if (!running || state == MacroState.MOUSEMAT_CLICK || state == MacroState.PRE_START_WAIT) return;
         ClientPlayerEntity player = client.player;
         if (player == null) return;
 
@@ -602,6 +625,14 @@ public class MacroManager {
         // (60+ FPS) for smooth, linear steps.  Nothing to do here.
 
         switch (state) {
+            case PRE_START_WAIT -> {
+                // Wait 1 second before starting any movement.
+                releaseMovementKeys();
+                if (System.currentTimeMillis() - preStartWaitBeginTime >= FARM_START_DELAY_MS) {
+                    LOGGER.info("[Just Farming] Pre-start delay elapsed; beginning macro.");
+                    state = postStartWaitState;
+                }
+            }
             case DISABLING_FLIGHT  -> tickDisablingFlight(player);
             case MOUSEMAT_CLICK     -> tickMousematClick(player);
             case ALIGNING_ROTATION -> tickAligningRotation(player);

@@ -414,12 +414,29 @@ public class VisitorManager {
      */
     private static final int AOTV_MAIN_VISITOR_REVERSE_COUNT = 4;
 
+    /**
+     * Pitch angle (degrees) used when aiming the AOTV/AOTE before firing.
+     * A small upward angle (-15°) ensures the crosshair passes above the
+     * visitor NPC hitboxes, preventing accidental menu interactions during
+     * the rotation phase.
+     */
+    private static final float AOTV_SAFE_PITCH = -15f;
+
+    /**
+     * Minimum start delay (ms) inserted before the first action of the visitor
+     * routine.  Ensures the player has at least 1 second of idle time after
+     * issuing the {@code /just visitor} command before any movement begins.
+     */
+    private static final long VISITOR_START_DELAY_MS = 1000L;
+
     // ── State machine ────────────────────────────────────────────────────────
 
     /** Internal states of the visitor routine. */
     public enum State {
         /** Not doing anything. */
         IDLE,
+        /** Waiting 1 second before starting movement (inserted by {@code /just visitor}). */
+        PRE_START_WAIT,
         /** Double-pressing space to turn off creative flight before the routine begins. */
         DISABLING_FLIGHT,
         /** Waiting for the server to teleport the player to the barn. */
@@ -430,11 +447,9 @@ public class VisitorManager {
         NAVIGATING,
         /**
          * Aiming and right-clicking with an Aspect of the Void / Aspect of the End
-         * to teleport into the visitor area.  Used when AOTV/AOTE is detected in
-         * the hotbar: the player either teleports over a 1-block wall (wall mode) or
-         * teleports from the nearest visitor toward the farthest one (no-wall mode).
-         * After the teleport the routine switches back to {@link #NAVIGATING} with a
-         * reversed visitor order (farthest-first).
+         * to teleport into the visitor area.  The player rotates to a safe pitch/yaw
+         * (aimed past the visitor NPCs) then fires a single right-click, after which
+         * the trading queue is built in farthest-first order (V5→V4→V3→V2→V1→V6?).
          */
         USING_AOTV,
         /** Interact packet sent; waiting for the visitor menu to appear. */
@@ -603,13 +618,6 @@ public class VisitorManager {
     private boolean useAotv              = false;
 
     /**
-     * {@code true} while the player is still in the initial approach phase
-     * (walking toward V1 to set up the AOTV teleport).  Cleared once the
-     * {@link State#USING_AOTV} teleport completes.
-     */
-    private boolean aotvApproachPhase   = false;
-
-    /**
      * {@code true} after the right-click use-key has been pressed in the
      * {@link State#USING_AOTV} state, preventing a second trigger.
      */
@@ -617,10 +625,17 @@ public class VisitorManager {
 
     /**
      * Yaw angle (degrees) in which the AOTV/AOTE teleport should be aimed.
-     * Computed in the {@link State#NAVIGATING} phase before entering
+     * Computed in the {@link State#SCANNING} phase before entering
      * {@link State#USING_AOTV}.
      */
     private float   aotvTeleportYaw     = 0f;
+
+    /**
+     * Pitch angle (degrees) for the AOTV/AOTE aim.  Set to
+     * {@link #AOTV_SAFE_PITCH} so the crosshair is aimed above the visitor
+     * NPC hitboxes during the rotation phase.
+     */
+    private float   aotvTeleportPitch   = AOTV_SAFE_PITCH;
 
     /**
      * World position of the farthest visitor (V5) saved during scanning.
@@ -771,12 +786,12 @@ public class VisitorManager {
         fastRotateActive = false;
         disableFlightStartTime = 0;
         useAotv = false;
-        aotvApproachPhase = false;
         aotvTeleportFired = false;
         aotvSlot = -1;
         aotvTeleportDistance = AOTV_DEFAULT_DISTANCE;
         aotvV5Pos = null;
         aotvTeleportYaw = 0f;
+        aotvTeleportPitch = AOTV_SAFE_PITCH;
         navAimAsideBlocks = 0f;
         enterState(State.IDLE);
     }
@@ -826,12 +841,12 @@ public class VisitorManager {
         anchorLookPos     = null;
         walkLastJumpTime  = 0;
         useAotv           = false;
-        aotvApproachPhase = false;
         aotvTeleportFired = false;
         aotvSlot          = -1;
         aotvTeleportDistance = AOTV_DEFAULT_DISTANCE;
         aotvV5Pos         = null;
         aotvTeleportYaw   = 0f;
+        aotvTeleportPitch = AOTV_SAFE_PITCH;
         long base = Math.max(0, config.visitorsTeleportDelay);
         teleportWaitMs = base + random.nextInt((int) TELEPORT_EXTRA_RANDOM_MS + 1)
                 + random.nextInt(Math.max(1, config.globalRandomizationMs));
@@ -841,14 +856,8 @@ public class VisitorManager {
             targetYaw   = player.getYaw();
             targetPitch = player.getPitch();
         }
-        // If the player is currently flying, disable flight first before teleporting.
-        if (player != null && player.getAbilities().flying) {
-            LOGGER.info("[Just Farming-Visitors] Player is flying; disabling flight before starting routine.");
-            enterState(State.DISABLING_FLIGHT);
-        } else {
-            enterState(State.TELEPORTING);
-            sendCommand("tptoplot barn");
-        }
+        // Wait 1 second before starting any movement.
+        enterState(State.PRE_START_WAIT);
     }
 
     /**
@@ -885,6 +894,20 @@ public class VisitorManager {
         long now = System.currentTimeMillis();
 
         switch (state) {
+
+            case PRE_START_WAIT -> {
+                // Wait 1 second before starting any movement or flight-disable.
+                if (now - stateEnteredAt >= VISITOR_START_DELAY_MS) {
+                    LOGGER.info("[Just Farming-Visitors] Pre-start delay elapsed; beginning routine.");
+                    if (player.getAbilities().flying) {
+                        LOGGER.info("[Just Farming-Visitors] Player is flying; disabling flight before starting routine.");
+                        enterState(State.DISABLING_FLIGHT);
+                    } else {
+                        enterState(State.TELEPORTING);
+                        sendCommand("tptoplot barn");
+                    }
+                }
+            }
 
             case DISABLING_FLIGHT -> {
                 // Double-press space to turn off creative-style flight before starting.
@@ -932,19 +955,24 @@ public class VisitorManager {
                         pendingVisitors.clear();
                         returnToFarm();
                     } else {
-                        // Detect AOTV/AOTE and set up approach phase before setting currentVisitor.
-                        // scanForVisitors already sorted pendingVisitors closest-first.
+                        // Detect AOTV/AOTE. scanForVisitors already sorted pendingVisitors closest-first.
                         detectAndConfigureAotv(player);
                         currentVisitor = pendingVisitors.remove(0);
                         if (useAotv) {
+                            // Enter USING_AOTV directly – no approach walk toward V1.
+                            // aotvTeleportYaw and aotvTeleportPitch are already set by
+                            // detectAndConfigureAotv (toward V5 at safe pitch).
+                            aotvTeleportFired = false;
+                            lastSmoothLookTime = 0;
                             LOGGER.info("[Just Farming-Visitors] Found {} visitor(s). AOTV detected; "
-                                    + "approaching V1 first, then teleporting to trade V5→V1.",
+                                    + "rotating to safe angle and teleporting toward V5 to trade V5→V1.",
                                     pendingVisitors.size() + 1);
+                            enterState(State.USING_AOTV);
                         } else {
                             LOGGER.info("[Just Farming-Visitors] Found {} visitor(s). Trading closest-first.",
                                     pendingVisitors.size() + 1);
+                            enterState(State.NAVIGATING);
                         }
-                        enterState(State.NAVIGATING);
                     }
                 } else if (now - stateEnteredAt >= SCAN_TIMEOUT_MS) {
                     // Waited 3 s and still no visitors – go back to farming
@@ -961,86 +989,6 @@ public class VisitorManager {
 
                 Vec3d visitorPos = new Vec3d(currentVisitor.getX(), currentVisitor.getY(), currentVisitor.getZ());
                 double dist = new Vec3d(player.getX(), player.getY(), player.getZ()).distanceTo(visitorPos);
-
-                // ── AOTV approach phase ──────────────────────────────────────────
-                // Walk toward V1 (nearest visitor) before firing the AOTV teleport.
-                // Three sub-cases are handled:
-                //   • Wall mode:         a 1-block-tall wall is detected ahead →
-                //                         teleport over it in the current walking
-                //                         direction.
-                //   • Tall-wall mode:    a multi-block wall is ahead, or the player
-                //                         is within AOTV_CLOSE_APPROACH_DIST of V1 →
-                //                         fire toward V5 when the path is clear (no
-                //                         blocks in the crosshair direction).  Used for
-                //                         barn skins like pinwheel where walls are too
-                //                         tall to jump over.
-                //   • No-wall mode:      the player reaches V1's position without any
-                //                         wall → teleport toward the saved V5 position.
-                if (aotvApproachPhase && useAotv) {
-                    float dirYaw = (float) Math.toDegrees(Math.atan2(
-                            -(visitorPos.x - player.getX()), visitorPos.z - player.getZ()));
-
-                    // Wall mode: 1-block wall ahead and close enough to the visitor area
-                    if (isOneBlockWallAhead(player, dirYaw) && dist < AOTV_WALL_TRIGGER_DIST) {
-                        releaseMovementKeys();
-                        aotvTeleportYaw   = dirYaw;
-                        aotvTeleportFired = false;
-                        // Reset smooth-look timestamp so Phase 1 of USING_AOTV starts
-                        // rotating from the current (frozen) camera position cleanly.
-                        lastSmoothLookTime = 0;
-                        LOGGER.info("[Just Farming-Visitors] AOTV wall mode: 1-block wall detected at yaw {}; teleporting.",
-                                (int) dirYaw);
-                        enterState(State.USING_AOTV);
-                        return;
-                    }
-
-                    // Tall-wall mode: multi-block wall detected, or player is very close
-                    // to V1 (within AOTV_CLOSE_APPROACH_DIST).  Fire toward V5 only when
-                    // the path in that direction has no solid blocks (clear crosshair).
-                    boolean tallWall = !isOneBlockWallAhead(player, dirYaw) && isTallWallAhead(player, dirYaw);
-                    if ((tallWall && dist < AOTV_WALL_TRIGGER_DIST) || dist <= AOTV_CLOSE_APPROACH_DIST) {
-                        float v5Yaw = computeAotvV5Yaw(player);
-                        if (isPathClearToward(player, v5Yaw, 3)) {
-                            releaseMovementKeys();
-                            aotvTeleportYaw   = v5Yaw;
-                            aotvTeleportFired = false;
-                            // Reset smooth-look timestamp so Phase 1 of USING_AOTV starts
-                            // rotating from the current (frozen) camera position cleanly.
-                            lastSmoothLookTime = 0;
-                            LOGGER.info("[Just Farming-Visitors] AOTV tall-wall mode: clear path toward V5 at yaw {}; teleporting.",
-                                    (int) v5Yaw);
-                            enterState(State.USING_AOTV);
-                            return;
-                        }
-                        // Path not yet clear – keep walking toward V1; stuck detection
-                        // will adjust position until a clear angle is found.
-                    }
-
-                    // No-wall mode: reached V1 → aim at V5 and teleport
-                    if (dist <= INTERACT_RADIUS) {
-                        releaseMovementKeys();
-                        aotvTeleportYaw   = computeAotvV5Yaw(player);
-                        aotvTeleportFired = false;
-                        // Reset smooth-look timestamp so Phase 1 of USING_AOTV starts
-                        // rotating from the current (frozen) camera position cleanly.
-                        lastSmoothLookTime = 0;
-                        LOGGER.info("[Just Farming-Visitors] AOTV no-wall mode: reached V1; aiming at V5 (yaw {}) to teleport.",
-                                (int) aotvTeleportYaw);
-                        enterState(State.USING_AOTV);
-                        return;
-                    }
-
-                    // Still walking toward V1 – freeze the camera so it never accidentally
-                    // points at V1 and triggers an interaction.  Steer by decomposing the
-                    // angle to V1 into forward/back and strafe key presses relative to the
-                    // current look direction; rotation only begins once the AOTV direction
-                    // is detected and USING_AOTV takes over.
-                    fastRotateActive = false;
-                    targetYaw   = player.getYaw();   // prevent onRenderTick from rotating
-                    targetPitch = player.getPitch(); // prevent onRenderTick from rotating
-                    pressKeysTowardNoRotate(player, visitorPos);
-                    return;
-                }
 
                 // ── Normal navigation (non-AOTV, or AOTV after the teleport) ────
                 if (positionAnchored && !useAotv) {
@@ -1101,7 +1049,7 @@ public class VisitorManager {
                 // the smooth rotation going until the camera actually arrives.
                 if (elapsed < AOTV_AIM_DELAY_MS) {
                     targetYaw   = aotvTeleportYaw;
-                    targetPitch = 0f; // aim straight ahead (horizontal)
+                    targetPitch = aotvTeleportPitch;
                     fastRotateActive = true;
                     releaseMovementKeys();
                     return;
@@ -1116,27 +1064,28 @@ public class VisitorManager {
                     float yawErr = player.getYaw() - aotvTeleportYaw;
                     while (yawErr >  180f) yawErr -= 360f;
                     while (yawErr < -180f) yawErr += 360f;
-                    float pitchErr = player.getPitch(); // target pitch is 0
+                    float pitchErr = player.getPitch() - aotvTeleportPitch;
 
                     boolean aimed = Math.abs(yawErr) <= INTERACT_AIM_THRESHOLD_DEGREES
                             && Math.abs(pitchErr) <= INTERACT_AIM_THRESHOLD_DEGREES;
                     if (!aimed && elapsed < AOTV_AIM_DELAY_MS * 2) {
                         // Camera not yet on target – keep rotating smoothly.
                         targetYaw        = aotvTeleportYaw;
-                        targetPitch      = 0f;
+                        targetPitch      = aotvTeleportPitch;
                         fastRotateActive = true;
                         return;
                     }
                     fastRotateActive = false;
 
                     player.setYaw(aotvTeleportYaw);
-                    player.setPitch(0f);
+                    player.setPitch(aotvTeleportPitch);
                     player.getInventory().setSelectedSlot(aotvSlot);
                     if (client.options != null) {
                         client.options.useKey.setPressed(true);
                     }
                     aotvTeleportFired = true;
-                    LOGGER.info("[Just Farming-Visitors] AOTV right-click fired (yaw={}).", (int) aotvTeleportYaw);
+                    LOGGER.info("[Just Farming-Visitors] AOTV right-click fired (yaw={}, pitch={}).",
+                            (int) aotvTeleportYaw, (int) aotvTeleportPitch);
                     return;
                 }
 
@@ -1167,7 +1116,6 @@ public class VisitorManager {
                     pendingVisitors.addAll(extra);              // [V5, V4, V3, V2, V1, V6?]
 
                     currentVisitor    = pendingVisitors.remove(0); // V5
-                    aotvApproachPhase = false;
 
                     String cvName = currentVisitor != null && currentVisitor.getCustomName() != null
                             ? stripFormatting(currentVisitor.getCustomName().getString()) : "?";
@@ -1541,9 +1489,10 @@ public class VisitorManager {
     /**
      * Detects whether an Aspect of the Void or Aspect of the End item is present
      * in the player's hotbar.  If found, and at least two visitors are available,
-     * configures the AOTV approach: saves the farthest visitor's position (V5),
-     * parses the teleport distance from the item lore, and sets the
-     * {@link #useAotv} / {@link #aotvApproachPhase} flags.
+     * configures the AOTV teleport: saves the farthest visitor's position (V5),
+     * parses the teleport distance from the item lore, pre-computes
+     * {@link #aotvTeleportYaw} toward V5 and sets {@link #aotvTeleportPitch} to
+     * {@link #AOTV_SAFE_PITCH} so the crosshair passes above the visitor NPCs.
      *
      * <p>Must be called after {@link #scanForVisitors} has populated and sorted
      * {@link #pendingVisitors} (closest-first).
@@ -1554,8 +1503,9 @@ public class VisitorManager {
         aotvSlot             = -1;
         aotvTeleportDistance = AOTV_DEFAULT_DISTANCE;
         aotvV5Pos            = null;
+        aotvTeleportYaw      = 0f;
+        aotvTeleportPitch    = AOTV_SAFE_PITCH;
         useAotv              = false;
-        aotvApproachPhase    = false;
 
         if (pendingVisitors.size() < 2) return; // AOTV only useful for 2+ visitors
 
@@ -1579,13 +1529,17 @@ public class VisitorManager {
         aotvSlot             = foundSlot;
         aotvTeleportDistance = parseAotvDistance(player.getInventory().getStack(foundSlot));
         useAotv              = true;
-        aotvApproachPhase    = true;
+        // Pre-compute the aim direction toward V5 so USING_AOTV can start rotating
+        // immediately without any approach-walk phase.
+        aotvTeleportYaw      = computeAotvV5Yaw(player);
+        aotvTeleportPitch    = AOTV_SAFE_PITCH;
 
         String itemName = PestKillerManager.getCleanItemName(player.getInventory().getStack(foundSlot));
         LOGGER.info("[Just Farming-Visitors] AOTV detected: '{}' at slot {}, dist={} blocks, "
-                + "V5 at ({}, {}, {}).",
+                + "V5 at ({}, {}, {}), aim yaw={}, pitch={}.",
                 itemName, foundSlot, aotvTeleportDistance,
-                (int) aotvV5Pos.x, (int) aotvV5Pos.y, (int) aotvV5Pos.z);
+                (int) aotvV5Pos.x, (int) aotvV5Pos.y, (int) aotvV5Pos.z,
+                (int) aotvTeleportYaw, (int) aotvTeleportPitch);
     }
 
     /**
