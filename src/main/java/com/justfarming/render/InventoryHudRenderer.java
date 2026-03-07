@@ -15,8 +15,8 @@ import net.minecraft.item.ItemStack;
  * full-screen GUIs (chat, inventory, etc.).
  *
  * <p>Position is controlled by {@link FarmingConfig#inventoryOverlayX} and
- * {@link FarmingConfig#inventoryOverlayY}, which specify the pixel offset
- * from the bottom-left corner of the screen.
+ * {@link FarmingConfig#inventoryOverlayY}, which specify the top-left corner
+ * of the overlay in screen pixels (origin at screen top-left).
  */
 public class InventoryHudRenderer {
 
@@ -67,22 +67,20 @@ public class InventoryHudRenderer {
         ClientPlayerEntity player = mc.player;
         if (player == null) return;
 
-        int screenW = mc.getWindow().getScaledWidth();
-        int screenH = mc.getWindow().getScaledHeight();
-
-        // Position: bottom-left origin with configurable offset.
-        // inventoryOverlayX = pixels from left edge
-        // inventoryOverlayY = pixels from bottom edge (upward), so we subtract from screenH
-        int startX = config.inventoryOverlayX + BG_PAD;
-        int startY = screenH - config.inventoryOverlayY + BG_PAD;
+        // inventoryOverlayX / inventoryOverlayY specify the top-left corner of
+        // the entire overlay (including the background padding rectangle).
+        int bgX = config.inventoryOverlayX;
+        int bgY = config.inventoryOverlayY;
 
         // Draw a semi-transparent background behind the grid.
-        context.fill(
-                startX - BG_PAD,
-                startY - BG_PAD,
-                startX + GRID_W + BG_PAD,
-                startY + GRID_H + BG_PAD,
+        context.fill(bgX, bgY,
+                bgX + GRID_W + 2 * BG_PAD,
+                bgY + GRID_H + 2 * BG_PAD,
                 BG_COLOR);
+
+        // Items are rendered inside the background, offset by BG_PAD.
+        int startX = bgX + BG_PAD;
+        int startY = bgY + BG_PAD;
 
         // Render the 27 inventory slots (rows 1–3, Minecraft slot indices 9–35).
         for (int row = 0; row < ROWS; row++) {

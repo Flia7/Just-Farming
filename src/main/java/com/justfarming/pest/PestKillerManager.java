@@ -216,7 +216,8 @@ public class PestKillerManager {
 
     /**
      * Random range (blocks) added on top of {@link #PLOT_CENTRE_Y_BASE} when
-     * computing the per-visit flight height.  Results in 80–85.
+     * computing the per-visit flight height.  {@code random.nextInt(6)} returns
+     * 0–5, producing actual heights 80, 81, 82, 83, 84, or 85.
      */
     private static final int    PLOT_CENTRE_Y_RANGE = 6;
 

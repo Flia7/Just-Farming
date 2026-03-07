@@ -88,14 +88,14 @@ public class FarmingConfig {
     public boolean inventoryOverlayEnabled = false;
 
     /**
-     * Horizontal pixel offset of the inventory overlay from the left edge of the
-     * screen.  Negative values are allowed.
+     * Horizontal pixel offset of the inventory overlay's top-left corner
+     * from the left edge of the screen.  0 = screen left edge.
      */
     public int inventoryOverlayX = 0;
 
     /**
-     * Vertical pixel offset of the inventory overlay from the bottom-left corner
-     * of the screen (counted upward from the bottom).  Negative values are allowed.
+     * Vertical pixel offset of the inventory overlay's top-left corner
+     * from the top edge of the screen.  0 = screen top edge.
      */
     public int inventoryOverlayY = 60;
 

@@ -404,14 +404,14 @@ public class FarmingConfigScreen extends Screen {
                         config.inventoryOverlayX);
         this.addDrawableChild(inventoryOverlayXSlider);
         inventoryOverlayXSlider.setTooltip(Tooltip.of(Text.literal(
-                "Horizontal position of the inventory overlay (pixels from left edge).")));
+                "Horizontal position (X) of the inventory overlay's top-left corner (pixels from left edge).")));
         y += bh + pad;
 
         inventoryOverlayYSlider = new InventoryOverlayYSlider(widgetX, y, bw, bh,
                         config.inventoryOverlayY);
         this.addDrawableChild(inventoryOverlayYSlider);
         inventoryOverlayYSlider.setTooltip(Tooltip.of(Text.literal(
-                "Vertical position of the inventory overlay (pixels from bottom edge).")));
+                "Vertical position (Y) of the inventory overlay's top-left corner (pixels from top edge).")));
         tabContentHeights[2] = y + bh - contentAreaTopY + tabScrollOffsets[2];
 
         // ── Tab 3 – Delays ────────────────────────────────────────────────────
