@@ -389,11 +389,25 @@ public class PestKillerManager {
     private static final int    PEST_AOTV_MAX_CLICKS    = 8;
 
     /**
+     * Minimum clicks per second used when randomising the inter-click delay for
+     * AOTV/AOTE sequences.  Together with {@link #PEST_AOTV_MAX_CPS} this gives a
+     * tight 5–6 CPS range that is fast but still looks human-like.
+     */
+    private static final int    PEST_AOTV_MIN_CPS       = 5;
+
+    /**
      * Maximum clicks per second used when randomising the inter-click delay.
-     * Together with 0 CPS (a natural pause), the effective rate varies between
-     * 0 and {@value} CPS, producing humane, non-mechanical clicking behaviour.
+     * Together with {@link #PEST_AOTV_MIN_CPS} the effective rate varies between
+     * 5 and {@value} CPS, producing fast but human-like clicking behaviour.
      */
     private static final int    PEST_AOTV_MAX_CPS       = 6;
+
+    /**
+     * Inclusive size of the CPS range ({@link #PEST_AOTV_MAX_CPS} −
+     * {@link #PEST_AOTV_MIN_CPS} + 1) used as the {@code nextInt} bound when
+     * picking the inter-click delay, pre-computed to avoid repeated arithmetic.
+     */
+    private static final int    PEST_AOTV_CPS_RANGE     = PEST_AOTV_MAX_CPS - PEST_AOTV_MIN_CPS + 1;
 
     /**
      * Minimum Y coordinate the player must be at before the AOTV/AOTE sequence
@@ -856,7 +870,8 @@ public class PestKillerManager {
                 }
 
                 // Use AOTV/AOTE when the target is far to reach it much faster.
-                if (handlePestAotvToward(player, plotCentreTarget)) return;
+                // Pass 0.0 so all the distance to the centre is covered.
+                if (handlePestAotvToward(player, plotCentreTarget, 0.0)) return;
                 flyToward(player, plotCentreTarget);
             }
 
@@ -1040,7 +1055,10 @@ public class PestKillerManager {
                     enterState(State.KILLING_PEST);
                 } else {
                     // Use AOTV/AOTE when the pest is far to reach it much faster.
-                    if (handlePestAotvToward(player, pestPos)) return;
+                    // Pass the effective kill radius so only the teleports needed to
+                    // bring the player within kill range are fired (e.g. 2 hops for a
+                    // pest 24 blocks away with a kill radius of 8 blocks).
+                    if (handlePestAotvToward(player, pestPos, getEffectiveKillRadius())) return;
                     flyToward(player, pestPos);
                 }
             }
@@ -1237,11 +1255,12 @@ public class PestKillerManager {
      * <ol>
      *   <li><b>Aim</b> ({@link #PEST_AOTV_AIM_MS} ms): smooth-rotate the camera toward
      *       the target using the normal render-tick camera interpolation.</li>
-     *   <li><b>Multi-click spam</b>: fire up to {@link #PEST_AOTV_MAX_CLICKS}
-     *       right-clicks, one per required teleport hop (distance ÷
-     *       {@link #PEST_AOTV_TELEPORT_DIST}).  Between consecutive clicks the
-     *       delay is randomised over a 0–{@link #PEST_AOTV_MAX_CPS} CPS range so
-     *       the clicking pattern is humane and non-mechanical.</li>
+     *   <li><b>Multi-click spam</b>: fire the exact number of right-clicks needed to
+     *       bring the player within {@code approachRadius} of the target
+     *       ({@code ceil((dist − approachRadius) / teleportDist)}).  Between
+     *       consecutive clicks the delay is randomised over a
+     *       {@link #PEST_AOTV_MIN_CPS}–{@link #PEST_AOTV_MAX_CPS} CPS range (5–6 CPS)
+     *       so the clicking pattern looks fast but human-like.</li>
      *   <li><b>Wait</b> ({@link #PEST_AOTV_WAIT_MS} ms): give the server time to
      *       process the final teleport before resuming normal flight.</li>
      * </ol>
@@ -1251,12 +1270,17 @@ public class PestKillerManager {
      * {@link #PEST_AOTV_MIN_FLY_Y}, ensuring the teleports never launch the
      * player through crop blocks.
      *
-     * @param player the local player
-     * @param target the position to teleport toward
+     * @param player        the local player
+     * @param target        the position to teleport toward
+     * @param approachRadius distance (blocks) at which the player is considered
+     *                      close enough to stop teleporting; pass {@code 0.0} to
+     *                      fully close the gap (e.g. flying to plot centre), or
+     *                      {@link #getEffectiveKillRadius()} when going to a pest
+     *                      so only the minimum necessary teleports are fired
      * @return {@code true} while the sequence is active (caller should not call
      *         {@link #flyToward} in this case); {@code false} when inactive
      */
-    private boolean handlePestAotvToward(ClientPlayerEntity player, Vec3d target) {
+    private boolean handlePestAotvToward(ClientPlayerEntity player, Vec3d target, double approachRadius) {
         long now = System.currentTimeMillis();
 
         // ── Start a new sequence if not already active ─────────────────────────
@@ -1277,9 +1301,14 @@ public class PestKillerManager {
             int slot = findAotvSlotForPest(player);
             if (slot < 0) return false;
 
-            // Calculate how many teleport hops are needed to cover the distance,
-            // capped at PEST_AOTV_MAX_CLICKS for safety.
-            int clicks = Math.max(1, (int) Math.ceil(dist / PEST_AOTV_TELEPORT_DIST));
+            // Calculate how many teleport hops are needed to reach within approachRadius
+            // of the target.  For plot-centre travel approachRadius is 0 so all the
+            // distance is covered; for pest travel approachRadius is the kill radius so
+            // only the hops required to enter kill range are fired.
+            double remainingDist = Math.max(0.0, dist - approachRadius);
+            // Already within approach radius – no teleport needed.
+            if (remainingDist <= 0.0) return false;
+            int clicks = (int) Math.ceil(remainingDist / PEST_AOTV_TELEPORT_DIST);
             clicks = Math.min(clicks, PEST_AOTV_MAX_CLICKS);
 
             // Compute the yaw toward the target.
@@ -1295,9 +1324,9 @@ public class PestKillerManager {
             lastSmoothLookTime = 0; // reset so camera rotation starts smoothly
             releaseMovementKeys();
             LOGGER.info("[Just Farming-PestKiller] AOTV sequence started: {} hop(s) toward "
-                    + "({}, {}, {}), yaw={}, dist={} blocks.",
+                    + "({}, {}, {}), yaw={}, dist={} blocks, approachRadius={} blocks.",
                     clicks, (int) target.x, (int) target.y, (int) target.z,
-                    (int) pestAotvTargetYaw, (int) dist);
+                    (int) pestAotvTargetYaw, (int) dist, (int) approachRadius);
         }
 
         long elapsed = now - pestAotvSeqStart;
@@ -1330,10 +1359,9 @@ public class PestKillerManager {
                         // All hops fired – begin the post-click wait.
                         pestAotvAllClicksDoneTime = now;
                     } else {
-                        // Schedule next press with a random 0–PEST_AOTV_MAX_CPS CPS delay.
-                        // CPS = 0 is treated as a brief natural pause (1500 ms).
-                        int cps = random.nextInt(PEST_AOTV_MAX_CPS + 1); // 0 to PEST_AOTV_MAX_CPS
-                        long interClickDelay = (cps == 0) ? 1500L : 1000L / cps;
+                        // Schedule next press with a random PEST_AOTV_MIN_CPS–PEST_AOTV_MAX_CPS CPS delay.
+                        int cps = PEST_AOTV_MIN_CPS + random.nextInt(PEST_AOTV_CPS_RANGE);
+                        long interClickDelay = 1000L / cps;
                         pestAotvNextEventTime = now + interClickDelay;
                     }
                 }
