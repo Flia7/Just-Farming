@@ -2,11 +2,13 @@ package com.justfarming;
 
 import com.justfarming.config.FarmingConfig;
 import com.justfarming.gui.FarmingConfigScreen;
+import com.justfarming.input.KeystrokesTracker;
 import com.justfarming.pest.PestDetector;
 import com.justfarming.pest.PestEntityDetector;
 import com.justfarming.pest.PestKillerManager;
 import com.justfarming.render.InventoryHudRenderer;
 import com.justfarming.render.OverlayRenderer;
+import com.justfarming.render.PaperDollRenderer;
 import com.justfarming.visitor.VisitorManager;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
@@ -52,6 +54,7 @@ public class JustFarming implements ClientModInitializer {
     private static VisitorManager visitorManager;
     private static PestKillerManager pestKillerManager;
     private static InventoryHudRenderer inventoryHudRenderer;
+    private static PaperDollRenderer paperDollRenderer;
     /** {@code true} when the farming macro was running before the pest killer started. */
     private static boolean pestKillerShouldResumeMacro = false;
 
@@ -79,8 +82,9 @@ public class JustFarming implements ClientModInitializer {
         macroManager.setVisitorManager(visitorManager);
         macroManager.setPestKillerManager(pestKillerManager, pestDetector);
 
-        // Create inventory HUD renderer
+        // Create inventory HUD renderer and paper-doll renderer
         inventoryHudRenderer = new InventoryHudRenderer(config);
+        paperDollRenderer    = new PaperDollRenderer(config);
 
         // Register keybindings
         toggleMacroKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
@@ -279,6 +283,8 @@ public class JustFarming implements ClientModInitializer {
             // Update pest detection every tick
             pestDetector.update(client);
             pestEntityDetector.update(client);
+            // Update keystrokes tracker (key-transition detection + CPS window pruning)
+            KeystrokesTracker.getInstance().update(client);
 
             // Stop macro if Garden-only mode is enabled and the player left the Garden.
             // Do not stop while the visitor routine is active, while the macro is in
@@ -296,9 +302,12 @@ public class JustFarming implements ClientModInitializer {
             }
         });
 
-        // Register HUD render callback for the inventory overlay.
+        // Register HUD render callback for the inventory overlay and paper-doll panel.
         HudRenderCallback.EVENT.register((drawContext, renderTickCounter) -> {
             inventoryHudRenderer.render(drawContext);
+            paperDollRenderer.render(drawContext,
+                    config.inventoryOverlayX, config.inventoryOverlayY,
+                    config.inventoryOverlayScale);
         });
 
         // Register world render event for pest plot overlay.

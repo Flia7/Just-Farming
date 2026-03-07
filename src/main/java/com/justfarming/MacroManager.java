@@ -1,6 +1,7 @@
 package com.justfarming;
 
 import com.justfarming.config.FarmingConfig;
+import com.justfarming.input.KeystrokesTracker;
 import com.justfarming.pest.PestDetector;
 import com.justfarming.pest.PestKillerManager;
 import com.justfarming.visitor.VisitorManager;
@@ -1234,6 +1235,7 @@ public class MacroManager {
             boolean attacked = client.interactionManager.attackBlock(pos, blockHit.getSide());
             if (attacked) {
                 client.player.swingHand(Hand.MAIN_HAND);
+                KeystrokesTracker.getInstance().registerAttack();
             }
         }
     }

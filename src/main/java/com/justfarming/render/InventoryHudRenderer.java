@@ -45,8 +45,15 @@ public class InventoryHudRenderer {
     /** Background padding around the item grid at scale 1.0. */
     private static final int BG_PAD = 3;
 
-    /** Background colour (semi-transparent black). */
-    private static final int BG_COLOR = 0xA0000000;
+    /** Background colour (semi-transparent black) – also used by the paper-doll panel. */
+    public static final int BG_COLOR = 0xA0000000;
+
+    /**
+     * Slot background colour drawn behind each inventory slot to create a
+     * visible grid of empty-slot squares.  Slightly lighter than
+     * {@link #BG_COLOR} so individual slots are distinguishable even when empty.
+     */
+    private static final int SLOT_BG_COLOR = 0x50000000;
 
     private final FarmingConfig config;
 
@@ -105,11 +112,14 @@ public class InventoryHudRenderer {
         for (int row = 0; row < ROWS; row++) {
             for (int col = 0; col < COLS; col++) {
                 int slotIndex = 9 + (row * COLS) + col;
+                // Positions are in unscaled slot space (scale is applied via matrix)
+                int itemX = col * SLOT_SPACING;
+                int itemY = row * SLOT_SPACING;
+                // Draw a dark slot background behind every slot (even empty ones)
+                // so the inventory grid is always visible.
+                context.fill(itemX, itemY, itemX + SLOT_SIZE, itemY + SLOT_SIZE, SLOT_BG_COLOR);
                 ItemStack stack = player.getInventory().getStack(slotIndex);
                 if (!stack.isEmpty()) {
-                    // Positions are in unscaled slot space (scale is applied via matrix)
-                    int itemX = col * SLOT_SPACING;
-                    int itemY = row * SLOT_SPACING;
                     context.drawItem(stack, itemX, itemY);
                     context.drawStackOverlay(mc.textRenderer, stack, itemX, itemY);
                 }
