@@ -50,7 +50,7 @@ public class FarmingConfigScreen extends Screen {
     private static final int COL_SHADOW      = 0x60000000; // drop shadow
 
     // ── Tabs ──────────────────────────────────────────────────────────────────
-    private static final String[] TAB_NAMES = { "Farming", "Pests", "Misc", "Delays", "Visitors" };
+    private static final String[] TAB_NAMES = { "Just Farming", "Pests", "Misc", "Delays", "Visitors" };
     private int activeTab = 0;
 
     // ── Preset mode ────────────────────────────────────────────────────────────

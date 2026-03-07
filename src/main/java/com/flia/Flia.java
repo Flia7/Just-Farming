@@ -25,7 +25,7 @@ import java.util.ArrayList;
 import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.literal;
 
 /**
- * FLIA – Hypixel Skyblock cocoa-beans farming macro mod for Fabric 1.21.10.
+ * Just Farming – Hypixel Skyblock cocoa-beans farming macro mod for Fabric 1.21.10.
  *
  * <p>Features:
  * <ul>
@@ -61,7 +61,7 @@ public class Flia implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        LOGGER.info("[FLIA] Initialising...");
+        LOGGER.info("[Just Farming] Initialising...");
 
         // Load config
         config = FarmingConfig.load();
@@ -114,7 +114,7 @@ public class Flia implements ClientModInitializer {
                                             macroManager.setRewarpHere();
                                             if (ctx.getSource().getPlayer() != null) {
                                                 ctx.getSource().getPlayer().sendMessage(
-                                                        net.minecraft.text.Text.literal("§a[FLIA] Rewarp position set here."), true);
+                                                        net.minecraft.text.Text.literal("§a[Just Farming] Rewarp position set here."), true);
                                             }
                                             return 1;
                                         })
@@ -123,7 +123,7 @@ public class Flia implements ClientModInitializer {
                                                     macroManager.clearRewarps();
                                                     if (ctx.getSource().getPlayer() != null) {
                                                         ctx.getSource().getPlayer().sendMessage(
-                                                                net.minecraft.text.Text.literal("§a[FLIA] All rewarp positions cleared."), true);
+                                                                net.minecraft.text.Text.literal("§a[Just Farming] All rewarp positions cleared."), true);
                                                     }
                                                     return 1;
                                                 })))
@@ -132,7 +132,7 @@ public class Flia implements ClientModInitializer {
                                             visitorManager.start();
                                             if (ctx.getSource().getPlayer() != null) {
                                                 ctx.getSource().getPlayer().sendMessage(
-                                                        net.minecraft.text.Text.literal("§a[FLIA] Visitor routine started. Teleporting to barn..."), true);
+                                                        net.minecraft.text.Text.literal("§a[Just Farming] Visitor routine started. Teleporting to barn..."), true);
                                             }
                                             return 1;
                                         }))
@@ -146,12 +146,12 @@ public class Flia implements ClientModInitializer {
                                                 pestKillerManager.start(new ArrayList<>(pestDetector.getPestPlots()));
                                                 if (ctx.getSource().getPlayer() != null) {
                                                     ctx.getSource().getPlayer().sendMessage(
-                                                            net.minecraft.text.Text.literal("§a[FLIA] Pest killer started."), true);
+                                                            net.minecraft.text.Text.literal("§a[Just Farming] Pest killer started."), true);
                                                 }
                                             } else {
                                                 if (ctx.getSource().getPlayer() != null) {
                                                     ctx.getSource().getPlayer().sendMessage(
-                                                            net.minecraft.text.Text.literal("§e[FLIA] Pest killer is already running."), true);
+                                                            net.minecraft.text.Text.literal("§e[Just Farming] Pest killer is already running."), true);
                                                 }
                                             }
                                             return 1;
@@ -168,7 +168,7 @@ public class Flia implements ClientModInitializer {
                                             macroManager.start();
                                             if (ctx.getSource().getPlayer() != null) {
                                                 ctx.getSource().getPlayer().sendMessage(
-                                                        net.minecraft.text.Text.literal("§a[FLIA] Warping to garden and starting farming..."), true);
+                                                        net.minecraft.text.Text.literal("§a[Just Farming] Warping to garden and starting farming..."), true);
                                             }
                                             return 1;
                                         }))));
@@ -193,7 +193,7 @@ public class Flia implements ClientModInitializer {
                     // Prevent starting the macro outside the Garden.
                     if (client.player != null) {
                         client.player.sendMessage(net.minecraft.text.Text.literal(
-                                "§c[FLIA] You must be in the Garden to use this macro."), true);
+                                "§c[Just Farming] You must be in the Garden to use this macro."), true);
                     }
                     continue;
                 }
@@ -201,10 +201,10 @@ public class Flia implements ClientModInitializer {
                 if (client.player != null) {
                     if (macroManager.isRunning()) {
                         client.player.sendMessage(
-                                net.minecraft.text.Text.literal("§a[FLIA] Macro started."), true);
+                                net.minecraft.text.Text.literal("§a[Just Farming] Macro started."), true);
                     } else {
                         client.player.sendMessage(
-                                net.minecraft.text.Text.literal("§c[FLIA] Macro stopped."), true);
+                                net.minecraft.text.Text.literal("§c[Just Farming] Macro stopped."), true);
                     }
                 }
             }
@@ -222,8 +222,8 @@ public class Flia implements ClientModInitializer {
                 if (client.player != null) {
                     client.player.sendMessage(
                             net.minecraft.text.Text.literal(macroManager.isFreelookActive()
-                                    ? "§e[FLIA] Freelook enabled."
-                                    : "§e[FLIA] Freelook disabled."), true);
+                                    ? "§e[Just Farming] Freelook enabled."
+                                    : "§e[Just Farming] Freelook disabled."), true);
                 }
             }
 
@@ -251,7 +251,7 @@ public class Flia implements ClientModInitializer {
                         macroManager.start();
                         if (client.player != null) {
                             client.player.sendMessage(net.minecraft.text.Text.literal(
-                                    "§a[FLIA] Pest killer done – resuming macro."), true);
+                                    "§a[Just Farming] Pest killer done – resuming macro."), true);
                         }
                     }
                     pestKillerShouldResumeMacro = false;
@@ -274,7 +274,7 @@ public class Flia implements ClientModInitializer {
                 macroManager.stop();
                 if (client.player != null) {
                     client.player.sendMessage(net.minecraft.text.Text.literal(
-                            "§c[FLIA] Not in Garden – macro stopped."), false);
+                            "§c[Just Farming] Not in Garden – macro stopped."), false);
                 }
             }
         });
@@ -319,10 +319,10 @@ public class Flia implements ClientModInitializer {
                 pestKillerManager.reset();
             }
             pestKillerShouldResumeMacro = false;
-            LOGGER.info("[FLIA] Disconnected – all macros stopped.");
+            LOGGER.info("[Just Farming] Disconnected – all macros stopped.");
         });
 
-        LOGGER.info("[FLIA] Ready. Toggle macro: R | Open GUI: I | Freelook: L | Alternate direction: N | Commands: /just rewarp, /just rewarp clear, /just visitor, /just pest, /just farm");
+        LOGGER.info("[Just Farming] Ready. Toggle macro: R | Open GUI: I | Freelook: L | Alternate direction: N | Commands: /just rewarp, /just rewarp clear, /just visitor, /just pest, /just farm");
     }
 
     /** Returns the shared config instance. */

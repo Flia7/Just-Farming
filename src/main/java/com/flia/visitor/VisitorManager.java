@@ -36,7 +36,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Manages the garden-visitor interaction routine for FLIA.
+ * Manages the garden-visitor interaction routine for Just Farming.
  *
  * <p>When {@link FarmingConfig#visitorsEnabled} is {@code true} the macro
  * calls {@link #start()} instead of warping back to the Garden directly.
@@ -564,7 +564,7 @@ public class VisitorManager {
      */
     public void stop() {
         if (state == State.IDLE || state == State.DONE) return;
-        LOGGER.info("[Flia-Visitors] Visitor routine stopped by user.");
+        LOGGER.info("[Just Farming-Visitors] Visitor routine stopped by user.");
         releaseMovementKeys();
         postAccept = false;
         postPurchase = false;
@@ -588,20 +588,20 @@ public class VisitorManager {
 
 
     public void start() {
-        LOGGER.info("[Flia-Visitors] Starting visitor routine.");
+        LOGGER.info("[Just Farming-Visitors] Starting visitor routine.");
         // Auto-swap to farming tool (same logic as MacroManager.start)
         ClientPlayerEntity player = client.player;
         if (player != null) {
             if (config.farmingToolHotbarSlot >= 0 && config.farmingToolHotbarSlot <= 8
                     && !player.getInventory().getStack(config.farmingToolHotbarSlot).isEmpty()) {
                 player.getInventory().setSelectedSlot(config.farmingToolHotbarSlot);
-                LOGGER.info("[Flia-Visitors] Switched to farming tool slot {}.", config.farmingToolHotbarSlot);
+                LOGGER.info("[Just Farming-Visitors] Switched to farming tool slot {}.", config.farmingToolHotbarSlot);
             } else if (config.farmingToolHotbarSlot < 0) {
                 for (int i = 0; i < 9; i++) {
                     ItemStack stack = player.getInventory().getStack(i);
                     if (PestKillerManager.isFarmingTool(stack)) {
                         player.getInventory().setSelectedSlot(i);
-                        LOGGER.info("[Flia-Visitors] Auto-detected farming tool '{}' at slot {}; switching.",
+                        LOGGER.info("[Just Farming-Visitors] Auto-detected farming tool '{}' at slot {}; switching.",
                                 PestKillerManager.getCleanItemName(stack), i);
                         break;
                     }
@@ -634,7 +634,7 @@ public class VisitorManager {
                 + random.nextInt(Math.max(1, config.globalRandomizationMs));
         // If the player is currently flying, disable flight first before teleporting.
         if (player != null && player.getAbilities().flying) {
-            LOGGER.info("[Flia-Visitors] Player is flying; disabling flight before starting routine.");
+            LOGGER.info("[Just Farming-Visitors] Player is flying; disabling flight before starting routine.");
             enterState(State.DISABLING_FLIGHT);
         } else {
             enterState(State.TELEPORTING);
@@ -691,7 +691,7 @@ public class VisitorManager {
                     // is already off (it should be, but guard against edge cases).
                     disableFlightStartTime = 0;
                     if (client.options != null) client.options.jumpKey.setPressed(false);
-                    LOGGER.info("[Flia-Visitors] Disable-flight sequence complete; teleporting.");
+                    LOGGER.info("[Just Farming-Visitors] Disable-flight sequence complete; teleporting.");
                     enterState(State.TELEPORTING);
                     sendCommand("tptoplot barn");
                 } else {
@@ -706,7 +706,7 @@ public class VisitorManager {
 
             case TELEPORTING -> {
                 if (now - stateEnteredAt >= teleportWaitMs) {
-                    LOGGER.info("[Flia-Visitors] Teleport wait elapsed; scanning.");
+                    LOGGER.info("[Just Farming-Visitors] Teleport wait elapsed; scanning.");
                     enterState(State.SCANNING);
                 }
             }
@@ -717,19 +717,19 @@ public class VisitorManager {
                     int found = pendingVisitors.size();
                     int minCount = Math.max(1, config.visitorsMinCount);
                     if (found < minCount) {
-                        LOGGER.info("[Flia-Visitors] Found {} visitor(s), fewer than minimum {}; returning to farm.",
+                        LOGGER.info("[Just Farming-Visitors] Found {} visitor(s), fewer than minimum {}; returning to farm.",
                                 found, minCount);
                         pendingVisitors.clear();
                         returnToFarm();
                     } else {
                         currentVisitor = pendingVisitors.remove(0);
-                        LOGGER.info("[Flia-Visitors] Found {} visitor(s). Trading closest-first.",
+                        LOGGER.info("[Just Farming-Visitors] Found {} visitor(s). Trading closest-first.",
                                 pendingVisitors.size() + 1);
                         enterState(State.NAVIGATING);
                     }
                 } else if (now - stateEnteredAt >= SCAN_TIMEOUT_MS) {
                     // Waited 3 s and still no visitors – go back to farming
-                    LOGGER.info("[Flia-Visitors] No visitors found; returning to farm.");
+                    LOGGER.info("[Just Farming-Visitors] No visitors found; returning to farm.");
                     returnToFarm();
                 }
             }
@@ -806,7 +806,7 @@ public class VisitorManager {
                             // records the decline, then close the menu and move on.
                             String bName = currentVisitor != null && currentVisitor.getCustomName() != null
                                     ? stripFormatting(currentVisitor.getCustomName().getString()) : "unknown";
-                            LOGGER.info("[Flia-Visitors] Blacklisted visitor {}; clicking Refuse Offer.", bName);
+                            LOGGER.info("[Just Farming-Visitors] Blacklisted visitor {}; clicking Refuse Offer.", bName);
                             tryClickDeclineOffer(screen);
                             if (currentVisitor != null) {
                                 completedVisitorIds.add(currentVisitor.getId());
@@ -863,7 +863,7 @@ public class VisitorManager {
                     String itemName = pendingRequirements.get(requirementIndex).itemName;
                     sendCommand("bazaar " + itemName);
                     enterState(State.OPENING_BAZAAR);
-                    LOGGER.info("[Flia-Visitors] Opening bazaar for: {}", itemName);
+                    LOGGER.info("[Just Farming-Visitors] Opening bazaar for: {}", itemName);
                 }
             }
 
@@ -875,7 +875,7 @@ public class VisitorManager {
                         enterState(State.CLICKING_BAZAAR_ITEM);
                     }
                 } else if (now - stateEnteredAt >= BAZAAR_WAIT_MS) {
-                    LOGGER.warn("[Flia-Visitors] Bazaar screen did not open; skipping.");
+                    LOGGER.warn("[Just Farming-Visitors] Bazaar screen did not open; skipping.");
                     nextRequirementOrAccept();
                 }
             }
@@ -889,7 +889,7 @@ public class VisitorManager {
                         if (tryClickItemByName(screen, itemName)) {
                             enterState(State.READING_BAZAAR);
                         } else if (now - stateEnteredAt >= BAZAAR_WAIT_MS) {
-                            LOGGER.warn("[Flia-Visitors] Could not find '{}' in bazaar; skipping.", itemName);
+                            LOGGER.warn("[Just Farming-Visitors] Could not find '{}' in bazaar; skipping.", itemName);
                             player.closeHandledScreen();
                             nextRequirementOrAccept();
                         }
@@ -965,7 +965,7 @@ public class VisitorManager {
                     // Screen closed on its own (purchase may have completed)
                     nextRequirementOrAccept();
                 } else if (now - stateEnteredAt >= ENTERING_AMOUNT_TIMEOUT_MS) {
-                    LOGGER.warn("[Flia-Visitors] Timed out waiting for sign screen; skipping requirement.");
+                    LOGGER.warn("[Just Farming-Visitors] Timed out waiting for sign screen; skipping requirement.");
                     if (currentScreen != null) {
                         player.closeHandledScreen();
                     }
@@ -1049,7 +1049,7 @@ public class VisitorManager {
                     if (now - stateEnteredAt >= returnWarpDelay) {
                         sendCommand("warp garden");
                         returnWarpSentAt = now;
-                        LOGGER.info("[Flia-Visitors] Sent /warp garden after rewarp delay.");
+                        LOGGER.info("[Just Farming-Visitors] Sent /warp garden after rewarp delay.");
                     }
                 } else if (now - returnWarpSentAt >= WARP_COMMAND_WAIT_MS + randomExtra150) {
                     enterState(State.DONE);
@@ -1076,7 +1076,7 @@ public class VisitorManager {
             walkRecoveryEndTime       = 0;
             walkLastJumpTime          = 0;
         }
-        LOGGER.info("[Flia-Visitors] -> {}", next);
+        LOGGER.info("[Just Farming-Visitors] -> {}", next);
     }
 
     /**
@@ -1109,7 +1109,7 @@ public class VisitorManager {
                             String name = stripFormatting(e.getCustomName().getString());
                             if (!KNOWN_VISITOR_NAMES.contains(name)) return false;
                             if (completedVisitorIds.contains(e.getId())) {
-                                LOGGER.info("[Flia-Visitors] Skipping already-completed visitor: {}", name);
+                                LOGGER.info("[Just Farming-Visitors] Skipping already-completed visitor: {}", name);
                                 return false;
                             }
                             // Blacklisted visitors are included so the routine can navigate
@@ -1196,7 +1196,7 @@ public class VisitorManager {
                 walkRecoveryDirection     = (walkRecoveryDirection == 1) ? -1 : 1;
                 walkRecoveryBackupEndTime = now + WALK_RECOVERY_BACKUP_MS;
                 walkRecoveryEndTime       = now + WALK_RECOVERY_BACKUP_MS + WALK_RECOVERY_STRAFE_MS;
-                LOGGER.debug("[Flia-Visitors] Stuck ({} blocks); backing up then strafing {}.",
+                LOGGER.debug("[Just Farming-Visitors] Stuck ({} blocks); backing up then strafing {}.",
                         String.format("%.2f", progress),
                         walkRecoveryDirection > 0 ? "right" : "left");
             }
@@ -1673,20 +1673,20 @@ public class VisitorManager {
             }
         }
         if (!pendingRequirements.isEmpty()) {
-            LOGGER.info("[Flia-Visitors] Visitor requires: {}", pendingRequirements);
+            LOGGER.info("[Just Farming-Visitors] Visitor requires: {}", pendingRequirements);
             // Check max-visitor-price limit.
             // visitorsMaxPrice == 0 means "no limit" (feature disabled).
             if (config.visitorsMaxPrice > 0) {
                 double totalValue = VisitorNpcPrices.getTotalNpcValue(pendingRequirements);
                 if (totalValue > config.visitorsMaxPrice) {
-                    LOGGER.info("[Flia-Visitors] Visitor NPC value ({} coins) exceeds max ({} coins); declining.",
+                    LOGGER.info("[Just Farming-Visitors] Visitor NPC value ({} coins) exceeds max ({} coins); declining.",
                             (long) totalValue, config.visitorsMaxPrice);
                     pendingRequirements.clear();
                     skipCurrentVisitorDueToPrice = true;
                 }
             }
         } else {
-            LOGGER.info("[Flia-Visitors] Could not parse any requirements from visitor menu.");
+            LOGGER.info("[Just Farming-Visitors] Could not parse any requirements from visitor menu.");
         }
     }
 
@@ -1767,7 +1767,7 @@ public class VisitorManager {
         amountToType   = null;
         signTypingStep = 0;
         enterState(State.TYPING_BAZAAR_COMMAND);
-        LOGGER.info("[Flia-Visitors] Preparing to type /bazaar for: {}",
+        LOGGER.info("[Just Farming-Visitors] Preparing to type /bazaar for: {}",
                 pendingRequirements.get(requirementIndex).itemName);
     }
 
@@ -1797,7 +1797,7 @@ public class VisitorManager {
 
         if (!pendingVisitors.isEmpty()) {
             currentVisitor = pendingVisitors.remove(0);
-            LOGGER.info("[Flia-Visitors] Moving to next visitor.");
+            LOGGER.info("[Just Farming-Visitors] Moving to next visitor.");
             enterState(State.NAVIGATING);
         } else {
             // End-of-queue rescan: after all initially-found visitors are processed,
@@ -1809,10 +1809,10 @@ public class VisitorManager {
             }
             if (!pendingVisitors.isEmpty()) {
                 currentVisitor = pendingVisitors.remove(0);
-                LOGGER.info("[Flia-Visitors] Found additional visitor(s) after rescan.");
+                LOGGER.info("[Just Farming-Visitors] Found additional visitor(s) after rescan.");
                 enterState(State.NAVIGATING);
             } else {
-                LOGGER.info("[Flia-Visitors] All visitors processed.");
+                LOGGER.info("[Just Farming-Visitors] All visitors processed.");
                 returnToFarm();
             }
         }
@@ -1872,7 +1872,7 @@ public class VisitorManager {
             String matched = stripFormatting(handler.getSlot(slot).getStack().getName().getString());
             client.interactionManager.clickSlot(
                     handler.syncId, slot, 0, SlotActionType.PICKUP, client.player);
-            LOGGER.info("[Flia-Visitors] Clicked bazaar item '{}' at slot {}.", matched, slot);
+            LOGGER.info("[Just Farming-Visitors] Clicked bazaar item '{}' at slot {}.", matched, slot);
             return true;
         }
         return false;
@@ -1950,7 +1950,7 @@ public class VisitorManager {
                 if (name.contains(kw.toLowerCase())) {
                     client.interactionManager.clickSlot(
                             handler.syncId, i, 0, SlotActionType.PICKUP, client.player);
-                    LOGGER.info("[Flia-Visitors] Clicked '{}' at slot {}.", kw, i);
+                    LOGGER.info("[Just Farming-Visitors] Clicked '{}' at slot {}.", kw, i);
                     return true;
                 }
             }

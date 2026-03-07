@@ -363,7 +363,7 @@ public class MacroManager {
     /** Toggle freelook on/off. */
     public void toggleFreelook() {
         freelookEnabled = !freelookEnabled;
-        LOGGER.info("[FLIA] Freelook {}.", freelookEnabled ? "enabled" : "disabled");
+        LOGGER.info("[Just Farming] Freelook {}.", freelookEnabled ? "enabled" : "disabled");
     }
 
     /** Start the macro. */
@@ -371,7 +371,7 @@ public class MacroManager {
         if (running) return;
         // Do not start the farming macro while the visitor routine is active.
         if (visitorManager != null && visitorManager.isActive()) {
-            LOGGER.info("[FLIA] Cannot start farming macro while visitor routine is active.");
+            LOGGER.info("[Just Farming] Cannot start farming macro while visitor routine is active.");
             return;
         }
         waitingForVisitors = false;
@@ -382,14 +382,14 @@ public class MacroManager {
             if (config.farmingToolHotbarSlot >= 0 && config.farmingToolHotbarSlot <= 8
                     && !client.player.getInventory().getStack(config.farmingToolHotbarSlot).isEmpty()) {
                 client.player.getInventory().setSelectedSlot(config.farmingToolHotbarSlot);
-                LOGGER.info("[FLIA] Switched to farming tool slot {}.", config.farmingToolHotbarSlot);
+                LOGGER.info("[Just Farming] Switched to farming tool slot {}.", config.farmingToolHotbarSlot);
             } else if (config.farmingToolHotbarSlot < 0) {
                 // Auto-detect: find the first hotbar slot that holds a known farming tool.
                 for (int i = 0; i < 9; i++) {
                     ItemStack stack = client.player.getInventory().getStack(i);
                     if (PestKillerManager.isFarmingTool(stack)) {
                         client.player.getInventory().setSelectedSlot(i);
-                        LOGGER.info("[FLIA] Auto-detected farming tool '{}' at slot {}; switching.",
+                        LOGGER.info("[Just Farming] Auto-detected farming tool '{}' at slot {}; switching.",
                                 PestKillerManager.getCleanItemName(stack), i);
                         break;
                     }
@@ -404,7 +404,7 @@ public class MacroManager {
             float pitchDiff = Math.abs(normalizeAngleDiff(client.player.getPitch() - desiredPitch));
             if (yawDiff <= 1.0f && pitchDiff <= 1.0f) {
                 skipMousemat = true;
-                LOGGER.info("[FLIA] Already aimed at target yaw/pitch – skipping Squeaky Mousemat.");
+                LOGGER.info("[Just Farming] Already aimed at target yaw/pitch – skipping Squeaky Mousemat.");
             }
         }
         MacroState normalFirstState = (config.squeakyMousematEnabled && !skipMousemat)
@@ -426,13 +426,13 @@ public class MacroManager {
         }
         // If the player is currently flying, disable flight before starting the macro.
         if (client.player != null && client.player.getAbilities().flying) {
-            LOGGER.info("[FLIA] Player is flying; disabling flight before starting macro.");
+            LOGGER.info("[Just Farming] Player is flying; disabling flight before starting macro.");
             nextStateAfterFlightDisable = normalFirstState;
             state = MacroState.DISABLING_FLIGHT;
         } else {
             state = normalFirstState;
         }
-        LOGGER.info("[FLIA] Macro started. Crop: {}", config.selectedCrop);
+        LOGGER.info("[Just Farming] Macro started. Crop: {}", config.selectedCrop);
     }
 
     /** Stop the macro and release all held keys. */
@@ -456,7 +456,7 @@ public class MacroManager {
         if (config.unlockedMouseEnabled && client.currentScreen == null) {
             client.mouse.lockCursor();
         }
-        LOGGER.info("[FLIA] Macro stopped.");
+        LOGGER.info("[Just Farming] Macro stopped.");
     }
 
     /** Toggle start / stop. */
@@ -480,7 +480,7 @@ public class MacroManager {
             config.rewarpZ   = client.player.getZ();
             config.rewarpSet = true;
             config.save();
-            LOGGER.info("[FLIA] Rewarp position set to {}, {}, {}.",
+            LOGGER.info("[Just Farming] Rewarp position set to {}, {}, {}.",
                     config.rewarpX, config.rewarpY, config.rewarpZ);
         }
     }
@@ -492,7 +492,7 @@ public class MacroManager {
     public void clearRewarps() {
         config.rewarpSet = false;
         config.save();
-        LOGGER.info("[FLIA] Rewarp positions cleared.");
+        LOGGER.info("[Just Farming] Rewarp positions cleared.");
     }
 
     /**
@@ -502,7 +502,7 @@ public class MacroManager {
     public void triggerRewarp() {
         if (client.player != null && client.player.networkHandler != null) {
             client.player.networkHandler.sendChatCommand("warp garden");
-            LOGGER.info("[FLIA] Rewarp triggered – sent /warp garden.");
+            LOGGER.info("[Just Farming] Rewarp triggered – sent /warp garden.");
         }
     }
 
@@ -571,11 +571,11 @@ public class MacroManager {
                     waitingForVisitors = true;
                     // Keep cursor in its current state (unlocked if unlockedMouseEnabled).
                     visitorManager.start();
-                    LOGGER.info("[FLIA] Pest killer done – visitor mode enabled, starting visitor routine.");
+                    LOGGER.info("[Just Farming] Pest killer done – visitor mode enabled, starting visitor routine.");
                 } else {
                     // Pest killer already sent /warp garden; restart farming.
                     start();
-                    LOGGER.info("[FLIA] Pest killer done – resuming farming macro.");
+                    LOGGER.info("[Just Farming] Pest killer done – resuming farming macro.");
                 }
             }
             return;
@@ -633,7 +633,7 @@ public class MacroManager {
                     // user can still interact with other windows during the pest-killer
                     // routine (the MouseMixin suppresses lockCursor while waiting).
                     pestKillerManager.start(new ArrayList<>(pestPlots));
-                    LOGGER.info("[FLIA] Pest killer enabled – stopping farming macro, starting pest killer routine.");
+                    LOGGER.info("[Just Farming] Pest killer enabled – stopping farming macro, starting pest killer routine.");
                 } else if (config.visitorsEnabled && visitorManager != null) {
                     // Stop the farming macro and hand off to the visitor routine.
                     // The macro will automatically restart once visitors are done.
@@ -645,7 +645,7 @@ public class MacroManager {
                     // user can still interact with other windows during the visitor
                     // routine (the MouseMixin suppresses lockCursor while waiting).
                     visitorManager.start();
-                    LOGGER.info("[FLIA] Visitor mode enabled – stopping farming macro, starting visitor routine.");
+                    LOGGER.info("[Just Farming] Visitor mode enabled – stopping farming macro, starting visitor routine.");
                 } else {
                     triggerRewarp();
                     // Begin a fresh detection cycle after warping back to garden
@@ -681,10 +681,10 @@ public class MacroManager {
                 if (System.currentTimeMillis() - laneSwapStartTime >= laneSwapTargetDelay) {
                     if (laneSwapPendingCustomFlip) {
                         customFlipped = !customFlipped;
-                        LOGGER.info("[FLIA] Custom key flip (delayed) – {}.",
+                        LOGGER.info("[Just Farming] Custom key flip (delayed) – {}.",
                                 customFlipped ? "flipped" : "normal");
                     } else {
-                        LOGGER.info("[FLIA] End of row (delayed) – switching to {}.", laneSwapNextState);
+                        LOGGER.info("[Just Farming] End of row (delayed) – switching to {}.", laneSwapNextState);
                     }
                     state = laneSwapPendingCustomFlip
                             ? deriveStateFromCustomKeys(config.getCropSettings(config.selectedCrop))
@@ -721,7 +721,7 @@ public class MacroManager {
             state = MacroState.DETECTING;
             startDetectTime  = 0;
             detectStartPos   = null;
-            LOGGER.info("[FLIA] Rotation aligned (yaw diff={}, pitch diff={}) – starting detection.", yawDiff, pitchDiff);
+            LOGGER.info("[Just Farming] Rotation aligned (yaw diff={}, pitch diff={}) – starting detection.", yawDiff, pitchDiff);
         }
     }
 
@@ -741,7 +741,7 @@ public class MacroManager {
         if (elapsed >= phase3End + DISABLE_FLIGHT_DONE_MS) {
             disableFlightStartTime = 0;
             client.options.jumpKey.setPressed(false);
-            LOGGER.info("[FLIA] Disable-flight sequence complete; continuing startup.");
+            LOGGER.info("[Just Farming] Disable-flight sequence complete; continuing startup.");
             state = nextStateAfterFlightDisable;
         } else {
             boolean jumpPressed = elapsed < phase1End
@@ -779,7 +779,7 @@ public class MacroManager {
                         }
                     }
                     if (mousematSlot < 0) {
-                        LOGGER.info("[FLIA] Squeaky Mousemat not found in hotbar – skipping.");
+                        LOGGER.info("[Just Farming] Squeaky Mousemat not found in hotbar – skipping.");
                         state = MacroState.DETECTING;
                         startDetectTime = 0;
                         detectStartPos = null;
@@ -810,7 +810,7 @@ public class MacroManager {
                 } else if (now - mousematActionTime >= config.mousematSwapToDelay + mousematPhaseRandomExtra) {
                     // Swap-to delay elapsed – switch to mousemat slot.
                     player.getInventory().setSelectedSlot(mousematTargetSlot);
-                    LOGGER.info("[FLIA] Switched to Squeaky Mousemat slot {} (was slot {}).",
+                    LOGGER.info("[Just Farming] Switched to Squeaky Mousemat slot {} (was slot {}).",
                             mousematTargetSlot, preMousematSlot);
                     mousematActionTime = now;
                     mousematPhaseRandomExtra = randomJitter();
@@ -821,7 +821,7 @@ public class MacroManager {
                 // Wait pre-click delay, then activate ability.
                 if (now - mousematActionTime >= config.mousematPreDelay + mousematPhaseRandomExtra) {
                     performMousematClick(player);
-                    LOGGER.info("[FLIA] Squeaky Mousemat left-click sent.");
+                    LOGGER.info("[Just Farming] Squeaky Mousemat left-click sent.");
                     mousematActionTime = now;
                     mousematPhaseRandomExtra = randomJitter();
                     mousematPhase = 2;
@@ -832,7 +832,7 @@ public class MacroManager {
                 if (now - mousematActionTime >= config.mousematPostDelay + mousematPhaseRandomExtra) {
                     if (preMousematSlot >= 0) {
                         player.getInventory().setSelectedSlot(preMousematSlot);
-                        LOGGER.info("[FLIA] Restored hotbar slot {}.", preMousematSlot);
+                        LOGGER.info("[Just Farming] Restored hotbar slot {}.", preMousematSlot);
                     }
                     mousematActionTime = now;
                     mousematPhaseRandomExtra = randomJitter();
@@ -913,7 +913,7 @@ public class MacroManager {
             lastPos = new Vec3d(player.getX(), player.getY(), player.getZ());
             stuckTicks = 0;
             startDetectTime = 0;
-            LOGGER.info("[FLIA] Custom key config – starting {}.", state);
+            LOGGER.info("[Just Farming] Custom key config – starting {}.", state);
             return;
         }
 
@@ -932,13 +932,13 @@ public class MacroManager {
         if (moved > 0.2) {
             if (crop.isSShape()) {
                 state = MacroState.FORWARD_LEFT;
-                LOGGER.info("[FLIA] Detected movement – S-Shape crop, starting FORWARD_LEFT.");
+                LOGGER.info("[Just Farming] Detected movement – S-Shape crop, starting FORWARD_LEFT.");
             } else if (crop.isLeftBack()) {
                 state = MacroState.STRAFE_LEFT_ONLY;
-                LOGGER.info("[FLIA] Detected movement – left-back crop, starting STRAFE_LEFT_ONLY.");
+                LOGGER.info("[Just Farming] Detected movement – left-back crop, starting STRAFE_LEFT_ONLY.");
             } else if (crop.isCactus()) {
                 state = MacroState.STRAFE_LEFT_ONLY;
-                LOGGER.info("[FLIA] Detected movement – cactus, starting STRAFE_LEFT_ONLY.");
+                LOGGER.info("[Just Farming] Detected movement – cactus, starting STRAFE_LEFT_ONLY.");
             } else {
                 // Project delta onto the crop's forward axis.
                 double yawRad = Math.toRadians(crop.getDefaultYaw());
@@ -950,12 +950,12 @@ public class MacroManager {
                 } else {
                     state = (forwardComponent > 0) ? MacroState.FORWARD_LEFT : MacroState.BACKWARD_LEFT;
                 }
-                LOGGER.info("[FLIA] Detected movement – starting {}.", state);
+                LOGGER.info("[Just Farming] Detected movement – starting {}.", state);
             }
         } else {
             // Player is stationary – fall back to the per-crop built-in default.
             state = defaultStartState(crop);
-            LOGGER.info("[FLIA] No movement detected – defaulting to {}.", state);
+            LOGGER.info("[Just Farming] No movement detected – defaulting to {}.", state);
         }
 
         detectStartPos = null;
@@ -1033,7 +1033,7 @@ public class MacroManager {
                         state = MacroState.LANE_SWAP_WAITING;
                     } else {
                         customFlipped = !customFlipped;
-                        LOGGER.info("[FLIA] Custom key flip – {}.",
+                        LOGGER.info("[Just Farming] Custom key flip – {}.",
                                 customFlipped ? "flipped" : "normal");
                     }
                     return;
@@ -1090,7 +1090,7 @@ public class MacroManager {
                     // next tick when the new state's tickMoving overwrites them.  Because
                     // the strafe key is still held there is no lateral micro-movement.
                     state = nextState;
-                    LOGGER.info("[FLIA] End of row – switching to {}.", state);
+                    LOGGER.info("[Just Farming] End of row – switching to {}.", state);
                 }
                 return;
             }
@@ -1101,7 +1101,7 @@ public class MacroManager {
         if (config.rewarpSet) {
             if (blockCoord(currentPos.x) == blockCoord(config.rewarpX)
                     && blockCoord(currentPos.z) == blockCoord(config.rewarpZ)) {
-                LOGGER.info("[FLIA] Reached rewarp position – warping.");
+                LOGGER.info("[Just Farming] Reached rewarp position – warping.");
                 warpStartTime   = System.currentTimeMillis();
                 warpTargetDelay = config.rewarpDelayMin
                         + random.nextLong(config.rewarpDelayRandom + 1)
@@ -1209,7 +1209,7 @@ public class MacroManager {
             }
             stuckTicks = 0;
             lastPos    = null;
-            LOGGER.info("[FLIA] Alternate key – custom flip {} (crop: {}).",
+            LOGGER.info("[Just Farming] Alternate key – custom flip {} (crop: {}).",
                     customFlipped ? "on" : "off", crop);
         } else {
             // Built-in pattern: compute and jump directly to the opposite state.
@@ -1219,7 +1219,7 @@ public class MacroManager {
                 state      = nextState;
                 stuckTicks = 0;
                 lastPos    = null;
-                LOGGER.info("[FLIA] Alternate key – switching to {} (crop: {}).",
+                LOGGER.info("[Just Farming] Alternate key – switching to {} (crop: {}).",
                         nextState, crop);
             }
         }

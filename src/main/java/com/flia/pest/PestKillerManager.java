@@ -19,7 +19,7 @@ import java.util.Random;
 import java.util.Set;
 import java.util.regex.Pattern;
 /**
- * Manages the auto pest killer routine for FLIA.
+ * Manages the auto pest killer routine for Just Farming.
  *
  * <p>When {@link FarmingConfig#autoPestKillerEnabled} is {@code true} and pests
  * are detected, this manager:
@@ -543,7 +543,7 @@ public class PestKillerManager {
      */
     public void stop() {
         if (state == State.IDLE || state == State.DONE) return;
-        LOGGER.info("[Flia-PestKiller] Stopped.");
+        LOGGER.info("[Just Farming-PestKiller] Stopped.");
         releaseMovementKeys();
         restoreHotbarSlot();
         vacuumParticleTracker.stopTracking();
@@ -592,7 +592,7 @@ public class PestKillerManager {
      *                  the routine warps to the garden and scans there.
      */
     public void start(Collection<String> pestPlots) {
-        LOGGER.info("[Flia-PestKiller] Starting pest killer routine.");
+        LOGGER.info("[Just Farming-PestKiller] Starting pest killer routine.");
         currentPest = null;
         vacuumSlot = -1;
         preVacuumSlot = -1;
@@ -611,7 +611,7 @@ public class PestKillerManager {
             sorted.sort((a, b) -> {
                 try { return Integer.compare(Integer.parseInt(a), Integer.parseInt(b)); }
                 catch (NumberFormatException e) {
-                    LOGGER.warn("[Flia-PestKiller] Non-numeric plot name '{}' or '{}'; using string sort.", a, b);
+                    LOGGER.warn("[Just Farming-PestKiller] Non-numeric plot name '{}' or '{}'; using string sort.", a, b);
                     return a.compareTo(b);
                 }
             });
@@ -659,10 +659,10 @@ public class PestKillerManager {
                     // Pre-teleport delay elapsed: now send the warp command.
                     if (config != null && config.pestKillerWarpToPlot && currentPlotName != null) {
                         sendCommand("tptoplot " + currentPlotName);
-                        LOGGER.info("[Flia-PestKiller] Sent /tptoplot {} to reach infested plot.", currentPlotName);
+                        LOGGER.info("[Just Farming-PestKiller] Sent /tptoplot {} to reach infested plot.", currentPlotName);
                     } else {
                         sendCommand("warp garden");
-                        LOGGER.info("[Flia-PestKiller] Sent /warp garden to reach garden.");
+                        LOGGER.info("[Just Farming-PestKiller] Sent /warp garden to reach garden.");
                     }
                     // Configurable post-teleport wait (pestKillerAfterTeleportDelay)
                     // before scanning for pest entities; global randomization is added.
@@ -683,7 +683,7 @@ public class PestKillerManager {
                         double cz = GardenPlot.getCentreZ(currentPlotName);
                         if (!Double.isNaN(cx) && !Double.isNaN(cz)) {
                             plotCentreTarget = new Vec3d(cx, PLOT_CENTRE_Y, cz);
-                            LOGGER.info("[Flia-PestKiller] Teleport wait elapsed; "
+                            LOGGER.info("[Just Farming-PestKiller] Teleport wait elapsed; "
                                     + "flying to plot {} centre ({}, {}, {}).",
                                     currentPlotName, (int) cx, (int) PLOT_CENTRE_Y, (int) cz);
                             enterState(State.GOING_TO_PLOT_CENTER);
@@ -691,7 +691,7 @@ public class PestKillerManager {
                         }
                     }
                     // No plot name or unknown plot; fall back to scanning in place.
-                    LOGGER.info("[Flia-PestKiller] Teleport wait elapsed; scanning for pests.");
+                    LOGGER.info("[Just Farming-PestKiller] Teleport wait elapsed; scanning for pests.");
                     enterState(State.SCANNING);
                 }
             }
@@ -702,7 +702,7 @@ public class PestKillerManager {
                 if (!pestsAtCentre.isEmpty()) {
                     currentPest = pickNearestPest(player, pestsAtCentre);
                     if (currentPest != null) {
-                        LOGGER.info("[Flia-PestKiller] Pest detected while flying to centre; "
+                        LOGGER.info("[Just Farming-PestKiller] Pest detected while flying to centre; "
                                 + "targeting directly.");
                         releaseMovementKeys();
                         enterState(State.FLYING_TO_PEST);
@@ -721,7 +721,7 @@ public class PestKillerManager {
                 double dz = player.getZ() - plotCentreTarget.z;
                 double horizDist = Math.sqrt(dx * dx + dz * dz);
                 if (horizDist <= PLOT_CENTRE_ARRIVE_RADIUS) {
-                    LOGGER.info("[Flia-PestKiller] Arrived at plot centre; scanning.");
+                    LOGGER.info("[Just Farming-PestKiller] Arrived at plot centre; scanning.");
                     releaseMovementKeys();
                     enterState(State.SCANNING);
                     return;
@@ -729,7 +729,7 @@ public class PestKillerManager {
 
                 // Timeout – give up flying and scan from wherever we are.
                 if (now - stateEnteredAt >= GOING_TO_PLOT_CENTRE_TIMEOUT_MS) {
-                    LOGGER.info("[Flia-PestKiller] Timed out flying to plot centre; scanning.");
+                    LOGGER.info("[Just Farming-PestKiller] Timed out flying to plot centre; scanning.");
                     releaseMovementKeys();
                     enterState(State.SCANNING);
                     return;
@@ -746,7 +746,7 @@ public class PestKillerManager {
                 if (!pests.isEmpty()) {
                     currentPest = pickNearestPest(player, pests);
                     if (currentPest != null) {
-                        LOGGER.info("[Flia-PestKiller] Found {} pest(s). Targeting: {} at {}.",
+                        LOGGER.info("[Just Farming-PestKiller] Found {} pest(s). Targeting: {} at {}.",
                                 pests.size(), currentPest.displayName(), currentPest.position());
                         enterState(State.FLYING_TO_PEST);
                     }
@@ -755,7 +755,7 @@ public class PestKillerManager {
                     // No pests found at centre; try a vacuum shot to locate them via
                     // the particle trail (only one attempt per plot).
                     if (!vacuumShotAttempted && currentPlotName != null) {
-                        LOGGER.info("[Flia-PestKiller] No pests at plot centre; "
+                        LOGGER.info("[Just Farming-PestKiller] No pests at plot centre; "
                                 + "firing vacuum shot to locate them.");
                         vacuumShotAttempted = true;
                         vacuumShotFired = false;
@@ -768,7 +768,7 @@ public class PestKillerManager {
                         // infested plot rather than returning to the farm immediately.
                         teleportToNextPlot(remainingPlots.poll());
                     } else {
-                        LOGGER.info("[Flia-PestKiller] No pests found after scanning all plots; "
+                        LOGGER.info("[Just Farming-PestKiller] No pests found after scanning all plots; "
                                 + "returning to farm.");
                         returnToFarm();
                     }
@@ -781,7 +781,7 @@ public class PestKillerManager {
                 if (!pestsVS.isEmpty()) {
                     currentPest = pickNearestPest(player, pestsVS);
                     if (currentPest != null) {
-                        LOGGER.info("[Flia-PestKiller] Pest detected after vacuum shot; targeting.");
+                        LOGGER.info("[Just Farming-PestKiller] Pest detected after vacuum shot; targeting.");
                         client.options.attackKey.setPressed(false);
                         vacuumParticleTracker.stopTracking();
                         enterState(State.FLYING_TO_PEST);
@@ -796,7 +796,7 @@ public class PestKillerManager {
                 if (!vacuumShotFired) {
                     findAndEquipVacuum(player);
                     if (vacuumSlot < 0) {
-                        LOGGER.warn("[Flia-PestKiller] No vacuum in hotbar; skipping vacuum shot.");
+                        LOGGER.warn("[Just Farming-PestKiller] No vacuum in hotbar; skipping vacuum shot.");
                         vacuumParticleTracker.stopTracking();
                         // Try next plot or return.
                         if (!remainingPlots.isEmpty()) {
@@ -811,7 +811,7 @@ public class PestKillerManager {
                     }
                     client.options.attackKey.setPressed(true);
                     vacuumShotFired = true;
-                    LOGGER.info("[Flia-PestKiller] Fired vacuum shot to locate pest.");
+                    LOGGER.info("[Just Farming-PestKiller] Fired vacuum shot to locate pest.");
                 } else if (elapsed >= VACUUM_SHOT_FIRE_MS) {
                     // Release the attack key after the brief hold.
                     client.options.attackKey.setPressed(false);
@@ -823,7 +823,7 @@ public class PestKillerManager {
                     vacuumParticleTracker.stopTracking();
                     Vec3d waypoint = vacuumParticleTracker.getWaypoint();
                     if (waypoint != null) {
-                        LOGGER.info("[Flia-PestKiller] Particle trail detected; "
+                        LOGGER.info("[Just Farming-PestKiller] Particle trail detected; "
                                 + "following to ({}, {}, {}).",
                                 String.format("%.1f", waypoint.x),
                                 String.format("%.1f", waypoint.y),
@@ -831,7 +831,7 @@ public class PestKillerManager {
                         particleWaypoint = waypoint;
                         enterState(State.FOLLOWING_PARTICLES);
                     } else {
-                        LOGGER.info("[Flia-PestKiller] No particle trail; trying next plot.");
+                        LOGGER.info("[Just Farming-PestKiller] No particle trail; trying next plot.");
                         if (!remainingPlots.isEmpty()) {
                             teleportToNextPlot(remainingPlots.poll());
                         } else {
@@ -847,7 +847,7 @@ public class PestKillerManager {
                 if (!pestsFP.isEmpty()) {
                     currentPest = pickNearestPest(player, pestsFP);
                     if (currentPest != null) {
-                        LOGGER.info("[Flia-PestKiller] Pest detected while following particles; "
+                        LOGGER.info("[Just Farming-PestKiller] Pest detected while following particles; "
                                 + "targeting directly.");
                         releaseMovementKeys();
                         enterState(State.FLYING_TO_PEST);
@@ -864,14 +864,14 @@ public class PestKillerManager {
                 double distWP = new Vec3d(player.getX(), player.getY(), player.getZ()).distanceTo(particleWaypoint);
                 if (distWP <= getEffectiveKillRadius()) {
                     // Arrived near the waypoint; switch to scanning to find the pest.
-                    LOGGER.info("[Flia-PestKiller] Reached particle-trail waypoint; re-scanning.");
+                    LOGGER.info("[Just Farming-PestKiller] Reached particle-trail waypoint; re-scanning.");
                     releaseMovementKeys();
                     enterState(State.SCANNING);
                     return;
                 }
 
                 if (now - stateEnteredAt >= FOLLOWING_PARTICLES_TIMEOUT_MS) {
-                    LOGGER.info("[Flia-PestKiller] Particle-trail follow timed out.");
+                    LOGGER.info("[Just Farming-PestKiller] Particle-trail follow timed out.");
                     releaseMovementKeys();
                     if (!remainingPlots.isEmpty()) {
                         teleportToNextPlot(remainingPlots.poll());
@@ -890,7 +890,7 @@ public class PestKillerManager {
                 currentPest = pickNearestPest(player, pests);
                 if (currentPest == null) {
                     // No more pests in detection range; scan for any remaining
-                    LOGGER.info("[Flia-PestKiller] Target pest gone; scanning for remaining pests.");
+                    LOGGER.info("[Just Farming-PestKiller] Target pest gone; scanning for remaining pests.");
                     releaseMovementKeys();
                     enterState(State.SCANNING);
                     return;
@@ -921,7 +921,7 @@ public class PestKillerManager {
                 currentPest = pickNearestPest(player, pests);
                 if (currentPest == null) {
                     // Pest was killed; brief configurable pause before scanning for more.
-                    LOGGER.info("[Flia-PestKiller] Pest killed; scanning for remaining pests.");
+                    LOGGER.info("[Just Farming-PestKiller] Pest killed; scanning for remaining pests.");
                     releaseMovementKeys();
                     closeApproachNeeded = false; // reset failsafe flag on successful kill
                     int goNextDelay = (config != null) ? config.pestKillerGoToNextPestDelay : 0;
@@ -952,7 +952,7 @@ public class PestKillerManager {
                 // edge cases where the player is at the edge of vacuum range or there
                 // is a slight line-of-sight obstruction.
                 if (now - stateEnteredAt >= KILL_FAILSAFE_MS) {
-                    LOGGER.info("[Flia-PestKiller] Kill failsafe triggered after {}ms; "
+                    LOGGER.info("[Just Farming-PestKiller] Kill failsafe triggered after {}ms; "
                             + "flying closer to pest.", now - stateEnteredAt);
                     if (client.options != null) client.options.useKey.setPressed(false);
                     pestAimOffsetUpdateTime = 0;
@@ -1008,7 +1008,7 @@ public class PestKillerManager {
                 if (returnWarpSentAt == 0) {
                     sendCommand("warp garden");
                     returnWarpSentAt = now;
-                    LOGGER.info("[Flia-PestKiller] Sent /warp garden after pest kill.");
+                    LOGGER.info("[Just Farming-PestKiller] Sent /warp garden after pest kill.");
                 } else if (now - returnWarpSentAt >= WARP_COMMAND_WAIT_MS + randomExtra) {
                     enterState(State.DONE);
                 }
@@ -1037,7 +1037,7 @@ public class PestKillerManager {
             ceilingAvoidStartTime = 0;
         }
         if (next != State.IDLE && next != State.DONE) {
-            LOGGER.info("[Flia-PestKiller] -> {}", next);
+            LOGGER.info("[Just Farming-PestKiller] -> {}", next);
         }
     }
 
@@ -1063,7 +1063,7 @@ public class PestKillerManager {
      * state, and enters {@link State#TELEPORTING}.
      */
     private void teleportToNextPlot(String nextPlot) {
-        LOGGER.info("[Flia-PestKiller] No pests found on this plot; "
+        LOGGER.info("[Just Farming-PestKiller] No pests found on this plot; "
                 + "teleporting to next infested plot: {}.", nextPlot);
         resetPlotState();
         currentPlotName = nextPlot;
@@ -1122,7 +1122,7 @@ public class PestKillerManager {
         }
 
         if (found < 0) {
-            LOGGER.warn("[Flia-PestKiller] No vacuum item found in hotbar.");
+            LOGGER.warn("[Just Farming-PestKiller] No vacuum item found in hotbar.");
             return;
         }
 
@@ -1132,13 +1132,13 @@ public class PestKillerManager {
             for (Map.Entry<String, Double> entry : VACUUM_RANGES.entrySet()) {
                 if (lowerName.contains(entry.getKey())) {
                     detectedVacuumRange = entry.getValue();
-                    LOGGER.info("[Flia-PestKiller] Auto-detected vacuum '{}' with kill range {} blocks.",
+                    LOGGER.info("[Just Farming-PestKiller] Auto-detected vacuum '{}' with kill range {} blocks.",
                             foundName, detectedVacuumRange);
                     break;
                 }
             }
             if (detectedVacuumRange < 0) {
-                LOGGER.info("[Flia-PestKiller] Unknown vacuum '{}'; using configured/default range.", foundName);
+                LOGGER.info("[Just Farming-PestKiller] Unknown vacuum '{}'; using configured/default range.", foundName);
             }
         }
 
@@ -1146,7 +1146,7 @@ public class PestKillerManager {
         preVacuumSlot = findFarmingToolSlot(player, found);
         vacuumSlot = found;
         player.getInventory().setSelectedSlot(vacuumSlot);
-        LOGGER.info("[Flia-PestKiller] Equipped vacuum from hotbar slot {} (farming tool at slot {}).",
+        LOGGER.info("[Just Farming-PestKiller] Equipped vacuum from hotbar slot {} (farming tool at slot {}).",
                 vacuumSlot, preVacuumSlot);
     }
 
@@ -1174,7 +1174,7 @@ public class PestKillerManager {
         if (config != null && config.farmingToolHotbarSlot >= 0
                 && config.farmingToolHotbarSlot <= 8
                 && !player.getInventory().getStack(config.farmingToolHotbarSlot).isEmpty()) {
-            LOGGER.info("[Flia-PestKiller] Using configured farming tool slot {}.",
+            LOGGER.info("[Just Farming-PestKiller] Using configured farming tool slot {}.",
                     config.farmingToolHotbarSlot);
             return config.farmingToolHotbarSlot;
         }
@@ -1184,7 +1184,7 @@ public class PestKillerManager {
             if (i == vacuumIdx) continue;
             ItemStack stack = player.getInventory().getStack(i);
             if (isFarmingTool(stack)) {
-                LOGGER.info("[Flia-PestKiller] Auto-detected farming tool '{}' at hotbar slot {}.",
+                LOGGER.info("[Just Farming-PestKiller] Auto-detected farming tool '{}' at hotbar slot {}.",
                         getCleanItemName(stack), i);
                 return i;
             }
@@ -1194,7 +1194,7 @@ public class PestKillerManager {
         for (int i = 0; i < 9; i++) {
             if (i == vacuumIdx) continue;
             if (!player.getInventory().getStack(i).isEmpty()) {
-                LOGGER.info("[Flia-PestKiller] No named farming tool found; using first non-empty slot {}.", i);
+                LOGGER.info("[Just Farming-PestKiller] No named farming tool found; using first non-empty slot {}.", i);
                 return i;
             }
         }
@@ -1211,7 +1211,7 @@ public class PestKillerManager {
         if (player == null) return;
         if (preVacuumSlot >= 0 && vacuumSlot >= 0) {
             player.getInventory().setSelectedSlot(preVacuumSlot);
-            LOGGER.info("[Flia-PestKiller] Restored hotbar slot {}.", preVacuumSlot);
+            LOGGER.info("[Just Farming-PestKiller] Restored hotbar slot {}.", preVacuumSlot);
         }
         vacuumSlot = -1;
         preVacuumSlot = -1;
@@ -1257,7 +1257,7 @@ public class PestKillerManager {
             if (ceilingAvoidPhase == 0) {
                 ceilingAvoidPhase    = 1;
                 ceilingAvoidStartTime = now;
-                LOGGER.debug("[Flia-PestKiller] Ceiling detected; starting avoidance manoeuvre.");
+                LOGGER.debug("[Just Farming-PestKiller] Ceiling detected; starting avoidance manoeuvre.");
             }
             executeCeilingAvoidance(player, now, target);
             return;
@@ -1310,7 +1310,7 @@ public class PestKillerManager {
                 // Player has not moved enough – alternate strafe direction and hold it briefly
                 strafeDirection = (strafeDirection >= 0) ? -1 : 1;
                 strafeEndTime   = now + STRAFE_DURATION_MS;
-                LOGGER.debug("[Flia-PestKiller] Stuck (progress={} blocks); strafing {}.",
+                LOGGER.debug("[Just Farming-PestKiller] Stuck (progress={} blocks); strafing {}.",
                         String.format("%.2f", progress), strafeDirection > 0 ? "right" : "left");
             }
             lastProgressPos       = eye;
@@ -1353,7 +1353,7 @@ public class PestKillerManager {
     private void executeDoubleJump(ClientPlayerEntity player, long now) {
         if (doubleJumpStartTime == 0) {
             doubleJumpStartTime = now;
-            LOGGER.debug("[Flia-PestKiller] Player not flying; initiating double-jump sequence.");
+            LOGGER.debug("[Just Farming-PestKiller] Player not flying; initiating double-jump sequence.");
         }
         long elapsed  = now - doubleJumpStartTime;
         long phase1End = DOUBLE_JUMP_PRESS_MS;
@@ -1368,7 +1368,7 @@ public class PestKillerManager {
         if (elapsed >= phase3End + DOUBLE_JUMP_COMPLETION_WAIT_MS) {
             // Sequence complete; reset so we retry if the player is still not flying.
             doubleJumpStartTime = 0;
-            LOGGER.debug("[Flia-PestKiller] Double-jump sequence completed.");
+            LOGGER.debug("[Just Farming-PestKiller] Double-jump sequence completed.");
         }
     }
 
@@ -1442,7 +1442,7 @@ public class PestKillerManager {
             if (elapsed >= CEILING_BACKUP_MS) {
                 ceilingAvoidPhase    = 2;
                 ceilingAvoidStartTime = now;
-                LOGGER.debug("[Flia-PestKiller] Ceiling avoidance: backed up, now rising above ceiling.");
+                LOGGER.debug("[Just Farming-PestKiller] Ceiling avoidance: backed up, now rising above ceiling.");
             }
         } else if (ceilingAvoidPhase == 2) {
             // Phase 2: rise until the ceiling above clears or the timeout expires
@@ -1457,7 +1457,7 @@ public class PestKillerManager {
             if (cleared) {
                 ceilingAvoidPhase    = 0;
                 ceilingAvoidStartTime = 0;
-                LOGGER.debug("[Flia-PestKiller] Ceiling avoidance complete; resuming normal pathfinding.");
+                LOGGER.debug("[Just Farming-PestKiller] Ceiling avoidance complete; resuming normal pathfinding.");
             }
         }
     }
