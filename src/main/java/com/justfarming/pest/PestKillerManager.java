@@ -376,6 +376,32 @@ public class PestKillerManager {
      */
     private static final long   PEST_AOTV_COOLDOWN_MS  = 2000L;
 
+    /**
+     * Assumed teleport distance (blocks) per AOTV/AOTE use when the lore
+     * cannot be parsed.  Matches the Aspect of the End default.
+     */
+    private static final int    PEST_AOTV_TELEPORT_DIST = 8;
+
+    /**
+     * Safety cap on the number of right-clicks fired in a single AOTV/AOTE
+     * sequence.  Prevents runaway loops if the distance is very large.
+     */
+    private static final int    PEST_AOTV_MAX_CLICKS    = 8;
+
+    /**
+     * Maximum clicks per second used when randomising the inter-click delay.
+     * Together with 0 CPS (a natural pause), the effective rate varies between
+     * 0 and {@value} CPS, producing humane, non-mechanical clicking behaviour.
+     */
+    private static final int    PEST_AOTV_MAX_CPS       = 6;
+
+    /**
+     * Minimum Y coordinate the player must be at before the AOTV/AOTE sequence
+     * will start.  Ensures the player is already flying and above crop height
+     * on the garden plots before teleporting, avoiding collisions with crops.
+     */
+    private static final double PEST_AOTV_MIN_FLY_Y     = 72.0;
+
     // ── AOTE/AOTV fields ─────────────────────────────────────────────────────
 
     /** Hotbar slot of the AOTV/AOTE item found for the current pest-killer run; -1 if none. */
@@ -385,8 +411,6 @@ public class PestKillerManager {
      * {@code 0} means no sequence is active.
      */
     private long  pestAotvSeqStart     = 0L;
-    /** {@code true} once the right-click use-key has been pressed in the current sequence. */
-    private boolean pestAotvSeqFired   = false;
     /**
      * Wall-clock time (ms) of the last successful AOTV/AOTE fire.  Used together with
      * {@link #PEST_AOTV_COOLDOWN_MS} to prevent rapid re-triggering.
@@ -394,6 +418,24 @@ public class PestKillerManager {
     private long  pestAotvLastFireTime = 0L;
     /** Yaw angle (degrees) toward which the AOTV/AOTE is aimed for the current sequence. */
     private float pestAotvTargetYaw    = 0f;
+    /** Total number of right-clicks to fire in the current sequence (one per teleport hop). */
+    private int   pestAotvTotalClicks       = 0;
+    /** Number of right-clicks already completed in the current sequence. */
+    private int   pestAotvClicksDone        = 0;
+    /**
+     * Wall-clock time (ms) of the next scheduled event in the multi-click loop:
+     * either the next press (when no click is held) or the release of the current
+     * press (when {@link #pestAotvClickHeld} is {@code true}).
+     */
+    private long  pestAotvNextEventTime     = 0L;
+    /** {@code true} while the use-key is held for the current click in the sequence. */
+    private boolean pestAotvClickHeld       = false;
+    /**
+     * Wall-clock time (ms) when all clicks in the sequence were completed;
+     * {@code 0} while clicks are still pending.  Used to time the post-click
+     * wait phase.
+     */
+    private long  pestAotvAllClicksDoneTime = 0L;
 
     // ── Humanised pest-aim drift ─────────────────────────────────────────────
 
@@ -1156,10 +1198,14 @@ public class PestKillerManager {
         if (pestAotvSeqStart != 0 && client.options != null) {
             client.options.useKey.setPressed(false);
         }
-        pestAotvSlot         = -1;
-        pestAotvSeqStart     = 0L;
-        pestAotvSeqFired     = false;
-        pestAotvTargetYaw    = 0f;
+        pestAotvSlot             = -1;
+        pestAotvSeqStart         = 0L;
+        pestAotvTargetYaw        = 0f;
+        pestAotvTotalClicks      = 0;
+        pestAotvClicksDone       = 0;
+        pestAotvNextEventTime    = 0L;
+        pestAotvClickHeld        = false;
+        pestAotvAllClicksDoneTime = 0L;
         // pestAotvLastFireTime is intentionally preserved so the cooldown
         // persists across state transitions.
     }
@@ -1183,22 +1229,27 @@ public class PestKillerManager {
     }
 
     /**
-     * Manages an inline AOTV/AOTE aim→fire→wait sequence to teleport the player
-     * closer to {@code target} when the distance is large enough to benefit.
+     * Manages an inline AOTV/AOTE aim→multi-click-spam→wait sequence to teleport
+     * the player closer to {@code target} when the distance is large enough to
+     * benefit.
      *
-     * <p>The three-phase sequence runs entirely within the caller's existing state
-     * (e.g. {@link State#GOING_TO_PLOT_CENTER} or {@link State#FLYING_TO_PEST}) so
-     * no additional state machine entry is needed:
+     * <p>The sequence has three phases:
      * <ol>
      *   <li><b>Aim</b> ({@link #PEST_AOTV_AIM_MS} ms): smooth-rotate the camera toward
      *       the target using the normal render-tick camera interpolation.</li>
-     *   <li><b>Fire</b> ({@link #PEST_AOTV_HOLD_MS} ms): snap to aim precisely and
-     *       hold the right-click use-key.</li>
-     *   <li><b>Wait</b> ({@link #PEST_AOTV_WAIT_MS} ms): release the key and wait for
-     *       the server to process the teleport before resuming normal flight.</li>
+     *   <li><b>Multi-click spam</b>: fire up to {@link #PEST_AOTV_MAX_CLICKS}
+     *       right-clicks, one per required teleport hop (distance ÷
+     *       {@link #PEST_AOTV_TELEPORT_DIST}).  Between consecutive clicks the
+     *       delay is randomised over a 0–{@link #PEST_AOTV_MAX_CPS} CPS range so
+     *       the clicking pattern is humane and non-mechanical.</li>
+     *   <li><b>Wait</b> ({@link #PEST_AOTV_WAIT_MS} ms): give the server time to
+     *       process the final teleport before resuming normal flight.</li>
      * </ol>
-     * After the sequence the vacuum is restored as the active hotbar item so kills
-     * can continue without the player having to switch manually.
+     *
+     * <p>The sequence will not start unless the player is already flying
+     * ({@code player.getAbilities().flying}) and above the farm at least at
+     * {@link #PEST_AOTV_MIN_FLY_Y}, ensuring the teleports never launch the
+     * player through crop blocks.
      *
      * @param player the local player
      * @param target the position to teleport toward
@@ -1210,7 +1261,12 @@ public class PestKillerManager {
 
         // ── Start a new sequence if not already active ─────────────────────────
         if (pestAotvSeqStart == 0) {
-            // Respect the cooldown between successive fires.
+            // Only use AOTV while already flying and above the farm; flyToward()
+            // will handle taking off and climbing before the sequence starts.
+            if (!player.getAbilities().flying) return false;
+            if (player.getY() < PEST_AOTV_MIN_FLY_Y) return false;
+
+            // Respect the cooldown between successive sequence starts.
             if (now - pestAotvLastFireTime < PEST_AOTV_COOLDOWN_MS) return false;
 
             // Only fire when the target is far enough to be worth the overhead.
@@ -1221,16 +1277,27 @@ public class PestKillerManager {
             int slot = findAotvSlotForPest(player);
             if (slot < 0) return false;
 
+            // Calculate how many teleport hops are needed to cover the distance,
+            // capped at PEST_AOTV_MAX_CLICKS for safety.
+            int clicks = Math.max(1, (int) Math.ceil(dist / PEST_AOTV_TELEPORT_DIST));
+            clicks = Math.min(clicks, PEST_AOTV_MAX_CLICKS);
+
             // Compute the yaw toward the target.
             Vec3d eye  = player.getEyePos();
-            pestAotvTargetYaw = computeYawTo(eye, target);
-            pestAotvSlot      = slot;
-            pestAotvSeqStart  = now;
-            pestAotvSeqFired  = false;
+            pestAotvTargetYaw        = computeYawTo(eye, target);
+            pestAotvSlot             = slot;
+            pestAotvSeqStart         = now;
+            pestAotvTotalClicks      = clicks;
+            pestAotvClicksDone       = 0;
+            pestAotvNextEventTime    = 0L;  // fire first click immediately after aim
+            pestAotvClickHeld        = false;
+            pestAotvAllClicksDoneTime = 0L;
             lastSmoothLookTime = 0; // reset so camera rotation starts smoothly
             releaseMovementKeys();
-            LOGGER.info("[Just Farming-PestKiller] AOTV sequence started toward ({}, {}, {}), yaw={}.",
-                    (int) target.x, (int) target.y, (int) target.z, (int) pestAotvTargetYaw);
+            LOGGER.info("[Just Farming-PestKiller] AOTV sequence started: {} hop(s) toward "
+                    + "({}, {}, {}), yaw={}, dist={} blocks.",
+                    clicks, (int) target.x, (int) target.y, (int) target.z,
+                    (int) pestAotvTargetYaw, (int) dist);
         }
 
         long elapsed = now - pestAotvSeqStart;
@@ -1243,37 +1310,62 @@ public class PestKillerManager {
             return true;
         }
 
-        // ── Phase 2: snap aim and fire (once) ───────────────────────────────────
-        if (!pestAotvSeqFired) {
-            player.setYaw(pestAotvTargetYaw);
-            player.setPitch(0f);
-            player.getInventory().setSelectedSlot(pestAotvSlot);
-            if (client.options != null) client.options.useKey.setPressed(true);
-            pestAotvSeqFired = true;
-            LOGGER.info("[Just Farming-PestKiller] AOTV fired (slot={}, yaw={}).",
-                    pestAotvSlot, (int) pestAotvTargetYaw);
+        // Keep aim locked for all phases after the initial rotation.
+        player.setYaw(pestAotvTargetYaw);
+        player.setPitch(0f);
+        player.getInventory().setSelectedSlot(pestAotvSlot);
+
+        // ── Phase 2: multi-click spam ───────────────────────────────────────────
+        if (pestAotvAllClicksDoneTime == 0L) {
+            if (pestAotvClickHeld) {
+                // Release the use-key once the brief hold duration has elapsed.
+                if (now >= pestAotvNextEventTime) {
+                    if (client.options != null) client.options.useKey.setPressed(false);
+                    pestAotvClickHeld = false;
+                    pestAotvClicksDone++;
+                    LOGGER.info("[Just Farming-PestKiller] AOTV click {}/{} released (slot={}, yaw={}).",
+                            pestAotvClicksDone, pestAotvTotalClicks,
+                            pestAotvSlot, (int) pestAotvTargetYaw);
+                    if (pestAotvClicksDone >= pestAotvTotalClicks) {
+                        // All hops fired – begin the post-click wait.
+                        pestAotvAllClicksDoneTime = now;
+                    } else {
+                        // Schedule next press with a random 0–PEST_AOTV_MAX_CPS CPS delay.
+                        // CPS = 0 is treated as a brief natural pause (1500 ms).
+                        int cps = random.nextInt(PEST_AOTV_MAX_CPS + 1); // 0 to PEST_AOTV_MAX_CPS
+                        long interClickDelay = (cps == 0) ? 1500L : 1000L / cps;
+                        pestAotvNextEventTime = now + interClickDelay;
+                    }
+                }
+            } else {
+                // Fire the next press when the scheduled time arrives.
+                if (now >= pestAotvNextEventTime) {
+                    if (client.options != null) client.options.useKey.setPressed(true);
+                    pestAotvClickHeld    = true;
+                    pestAotvNextEventTime = now + PEST_AOTV_HOLD_MS;
+                    LOGGER.info("[Just Farming-PestKiller] AOTV firing click {} of {} (slot={}, yaw={}).",
+                            pestAotvClicksDone + 1, pestAotvTotalClicks,
+                            pestAotvSlot, (int) pestAotvTargetYaw);
+                }
+            }
             return true;
         }
 
-        // Release the use-key after the hold duration.
-        if (elapsed >= PEST_AOTV_AIM_MS + PEST_AOTV_HOLD_MS) {
-            if (client.options != null) client.options.useKey.setPressed(false);
-        }
-
-        // ── Phase 3: wait for the teleport to land ───────────────────────────────
-        if (elapsed < PEST_AOTV_AIM_MS + PEST_AOTV_HOLD_MS + PEST_AOTV_WAIT_MS) {
+        // ── Phase 3: wait for the final teleport to land ────────────────────────
+        if (now - pestAotvAllClicksDoneTime < PEST_AOTV_WAIT_MS) {
             return true;
         }
 
         // ── Sequence complete ────────────────────────────────────────────────────
         if (client.options != null) client.options.useKey.setPressed(false);
         pestAotvLastFireTime = now;
+        int completedClicks = pestAotvTotalClicks; // save before resetAotvState() zeroes it
         resetAotvState();
         // Restore vacuum so killing can continue immediately.
         if (vacuumSlot >= 0) {
             player.getInventory().setSelectedSlot(vacuumSlot);
-            LOGGER.info("[Just Farming-PestKiller] AOTV sequence complete; restored vacuum slot {}.",
-                    vacuumSlot);
+            LOGGER.info("[Just Farming-PestKiller] AOTV sequence complete ({} hops); "
+                    + "restored vacuum slot {}.", completedClicks, vacuumSlot);
         }
         return false; // sequence done – caller may resume normal flight
     }

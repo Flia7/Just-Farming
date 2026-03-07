@@ -976,6 +976,12 @@ public class VisitorManager {
                         releaseMovementKeys();
                         aotvTeleportYaw   = dirYaw;
                         aotvTeleportFired = false;
+                        // Prime camera rotation immediately so onRenderTick() begins
+                        // rotating toward the correct target from the very first frame
+                        // after the state transition (avoids a direction-flip snap).
+                        targetYaw        = aotvTeleportYaw;
+                        targetPitch      = 0f;
+                        fastRotateActive = true;
                         LOGGER.info("[Just Farming-Visitors] AOTV wall mode: 1-block wall detected at yaw {}; teleporting.",
                                 (int) dirYaw);
                         enterState(State.USING_AOTV);
@@ -992,6 +998,10 @@ public class VisitorManager {
                             releaseMovementKeys();
                             aotvTeleportYaw   = v5Yaw;
                             aotvTeleportFired = false;
+                            // Prime camera rotation immediately (see wall-mode comment above).
+                            targetYaw        = aotvTeleportYaw;
+                            targetPitch      = 0f;
+                            fastRotateActive = true;
                             LOGGER.info("[Just Farming-Visitors] AOTV tall-wall mode: clear path toward V5 at yaw {}; teleporting.",
                                     (int) v5Yaw);
                             enterState(State.USING_AOTV);
@@ -1006,6 +1016,10 @@ public class VisitorManager {
                         releaseMovementKeys();
                         aotvTeleportYaw   = computeAotvV5Yaw(player);
                         aotvTeleportFired = false;
+                        // Prime camera rotation immediately (see wall-mode comment above).
+                        targetYaw        = aotvTeleportYaw;
+                        targetPitch      = 0f;
+                        fastRotateActive = true;
                         LOGGER.info("[Just Farming-Visitors] AOTV no-wall mode: reached V1; aiming at V5 (yaw {}) to teleport.",
                                 (int) aotvTeleportYaw);
                         enterState(State.USING_AOTV);
@@ -1071,8 +1085,10 @@ public class VisitorManager {
                 long elapsed = now - stateEnteredAt;
 
                 // Phase 1: Smoothly rotate the camera toward the teleport direction.
-                // targetYaw/targetPitch are set here; onRenderTick() applies the
-                // incremental rotation at render-frame frequency.
+                // targetYaw/targetPitch were already primed when entering this state
+                // (so onRenderTick() started rotating toward the correct target from
+                // the very first frame); they are re-asserted here every tick to keep
+                // the smooth rotation going until the camera actually arrives.
                 if (elapsed < AOTV_AIM_DELAY_MS) {
                     targetYaw   = aotvTeleportYaw;
                     targetPitch = 0f; // aim straight ahead (horizontal)
@@ -1080,10 +1096,29 @@ public class VisitorManager {
                     releaseMovementKeys();
                     return;
                 }
-                fastRotateActive = false;
 
-                // Phase 2: Snap aim precisely and fire the right-click (once).
+                // Phase 2: Fire the right-click once the camera has smoothly reached
+                // the target direction.  Continue rotating at the fast rate until the
+                // aim is within the threshold, then snap for precision and fire.
+                // A hard timeout (2× aim delay) ensures the click always fires even
+                // if tremor keeps the camera marginally off-target.
                 if (!aotvTeleportFired) {
+                    float yawErr = player.getYaw() - aotvTeleportYaw;
+                    while (yawErr >  180f) yawErr -= 360f;
+                    while (yawErr < -180f) yawErr += 360f;
+                    float pitchErr = player.getPitch(); // target pitch is 0
+
+                    boolean aimed = Math.abs(yawErr) <= INTERACT_AIM_THRESHOLD_DEGREES
+                            && Math.abs(pitchErr) <= INTERACT_AIM_THRESHOLD_DEGREES;
+                    if (!aimed && elapsed < AOTV_AIM_DELAY_MS * 2) {
+                        // Camera not yet on target – keep rotating smoothly.
+                        targetYaw        = aotvTeleportYaw;
+                        targetPitch      = 0f;
+                        fastRotateActive = true;
+                        return;
+                    }
+                    fastRotateActive = false;
+
                     player.setYaw(aotvTeleportYaw);
                     player.setPitch(0f);
                     player.getInventory().setSelectedSlot(aotvSlot);
