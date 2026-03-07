@@ -28,6 +28,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
@@ -298,6 +299,44 @@ public class VisitorManager {
      */
     private static final long   WALK_JUMP_COOLDOWN_MS           = 1500L;
 
+    // ── Aspect of the Void / Aspect of the End teleport constants ────────────
+
+    /**
+     * Time (ms) to smooth the camera toward the AOTV/AOTE teleport direction
+     * before firing the right-click.  Gives a human-like aiming delay.
+     */
+    private static final long AOTV_AIM_DELAY_MS      = 600L;
+
+    /**
+     * Duration (ms) to hold the right-click (use-key) when triggering the
+     * AOTV/AOTE teleport ability.  Minecraft registers a single use within
+     * this window.
+     */
+    private static final long AOTV_CLICK_HOLD_MS     = 100L;
+
+    /**
+     * Time (ms) to wait after the right-click before resuming navigation.
+     * This gives the server time to process the teleport and update the
+     * player's position before we start walking again.
+     */
+    private static final long AOTV_TELEPORT_WAIT_MS  = 1000L;
+
+    /**
+     * Default AOTV teleport distance (blocks) used when the lore cannot be parsed.
+     */
+    private static final int  AOTV_DEFAULT_DISTANCE  = 8;
+
+    /**
+     * Maximum distance from the current visitor at which the wall-mode AOTV
+     * teleport is triggered.  When the player is within this range of the
+     * target visitor AND a 1-block wall is detected ahead, the teleport fires.
+     */
+    private static final double AOTV_WALL_TRIGGER_DIST = 20.0;
+
+    /** Pattern for parsing the teleport distance from AOTV/AOTE item lore. */
+    private static final Pattern AOTV_TELEPORT_PATTERN =
+            Pattern.compile("teleport\\s+(\\d+)\\s+blocks");
+
     // ── State machine ────────────────────────────────────────────────────────
 
     /** Internal states of the visitor routine. */
@@ -312,6 +351,15 @@ public class VisitorManager {
         SCANNING,
         /** Walking toward the {@link #currentVisitor}. */
         NAVIGATING,
+        /**
+         * Aiming and right-clicking with an Aspect of the Void / Aspect of the End
+         * to teleport into the visitor area.  Used when AOTV/AOTE is detected in
+         * the hotbar: the player either teleports over a 1-block wall (wall mode) or
+         * teleports from the nearest visitor toward the farthest one (no-wall mode).
+         * After the teleport the routine switches back to {@link #NAVIGATING} with a
+         * reversed visitor order (farthest-first).
+         */
+        USING_AOTV,
         /** Interact packet sent; waiting for the visitor menu to appear. */
         INTERACTING,
         /** The visitor menu is open; parsing required items. */
@@ -433,6 +481,7 @@ public class VisitorManager {
      * are handled from this fixed anchor spot (Hypixel SkyBlock barn visitors
      * all spawn at the same visitor-point, so staying put is both faster and
      * more natural-looking than navigating to each NPC individually).
+     * Not used when {@link #useAotv} is {@code true}.
      */
     private boolean positionAnchored = false;
 
@@ -442,6 +491,56 @@ public class VisitorManager {
      * position the moment the player enters {@link #INTERACT_RADIUS}.
      */
     private Vec3d anchorLookPos = null;
+
+    // ── Aspect of the Void / Aspect of the End state ─────────────────────────
+
+    /**
+     * Hotbar slot of an "Aspect of the Void" or "Aspect of the End" item, or
+     * {@code -1} if none was found during the last {@link #scanForVisitors} call.
+     */
+    private int     aotvSlot             = -1;
+
+    /**
+     * Teleport distance (blocks) parsed from the AOTV/AOTE item lore.
+     * Defaults to {@link #AOTV_DEFAULT_DISTANCE} when the lore cannot be parsed.
+     */
+    private int     aotvTeleportDistance = AOTV_DEFAULT_DISTANCE;
+
+    /**
+     * {@code true} when an AOTV/AOTE item was detected and the current run
+     * should use it to teleport into the visitor area before trading.
+     * Only set when at least 2 visitors are present (teleport makes no sense
+     * for a single visitor).
+     */
+    private boolean useAotv              = false;
+
+    /**
+     * {@code true} while the player is still in the initial approach phase
+     * (walking toward V1 to set up the AOTV teleport).  Cleared once the
+     * {@link State#USING_AOTV} teleport completes.
+     */
+    private boolean aotvApproachPhase   = false;
+
+    /**
+     * {@code true} after the right-click use-key has been pressed in the
+     * {@link State#USING_AOTV} state, preventing a second trigger.
+     */
+    private boolean aotvTeleportFired   = false;
+
+    /**
+     * Yaw angle (degrees) in which the AOTV/AOTE teleport should be aimed.
+     * Computed in the {@link State#NAVIGATING} phase before entering
+     * {@link State#USING_AOTV}.
+     */
+    private float   aotvTeleportYaw     = 0f;
+
+    /**
+     * World position of the farthest visitor (V5) saved during scanning.
+     * Used in no-wall AOTV mode to aim the teleport toward the far end of
+     * the visitor row.  {@code null} when AOTV is not in use or the scan
+     * found fewer than two visitors.
+     */
+    private Vec3d   aotvV5Pos           = null;
 
     // Item requirements extracted from the current visitor's menu
     private final List<VisitorRequirement> pendingRequirements = new ArrayList<>();
@@ -583,6 +682,13 @@ public class VisitorManager {
         walkLastJumpTime = 0;
         fastRotateActive = false;
         disableFlightStartTime = 0;
+        useAotv = false;
+        aotvApproachPhase = false;
+        aotvTeleportFired = false;
+        aotvSlot = -1;
+        aotvTeleportDistance = AOTV_DEFAULT_DISTANCE;
+        aotvV5Pos = null;
+        aotvTeleportYaw = 0f;
         enterState(State.IDLE);
     }
 
@@ -629,6 +735,13 @@ public class VisitorManager {
         positionAnchored  = false;
         anchorLookPos     = null;
         walkLastJumpTime  = 0;
+        useAotv           = false;
+        aotvApproachPhase = false;
+        aotvTeleportFired = false;
+        aotvSlot          = -1;
+        aotvTeleportDistance = AOTV_DEFAULT_DISTANCE;
+        aotvV5Pos         = null;
+        aotvTeleportYaw   = 0f;
         long base = Math.max(0, config.visitorsTeleportDelay);
         teleportWaitMs = base + random.nextInt((int) TELEPORT_EXTRA_RANDOM_MS + 1)
                 + random.nextInt(Math.max(1, config.globalRandomizationMs));
@@ -658,7 +771,8 @@ public class VisitorManager {
      * other camera logic.
      */
     public void onRenderTick() {
-        if (state != State.NAVIGATING && state != State.ACCEPTING_OFFER) return;
+        if (state != State.NAVIGATING && state != State.ACCEPTING_OFFER
+                && state != State.USING_AOTV) return;
         ClientPlayerEntity player = client.player;
         if (player == null) return;
         float speed = fastRotateActive ? FAST_LOOK_DEGREES_PER_SECOND : SMOOTH_LOOK_DEGREES_PER_SECOND;
@@ -722,9 +836,18 @@ public class VisitorManager {
                         pendingVisitors.clear();
                         returnToFarm();
                     } else {
+                        // Detect AOTV/AOTE and set up approach phase before setting currentVisitor.
+                        // scanForVisitors already sorted pendingVisitors closest-first.
+                        detectAndConfigureAotv(player);
                         currentVisitor = pendingVisitors.remove(0);
-                        LOGGER.info("[Just Farming-Visitors] Found {} visitor(s). Trading closest-first.",
-                                pendingVisitors.size() + 1);
+                        if (useAotv) {
+                            LOGGER.info("[Just Farming-Visitors] Found {} visitor(s). AOTV detected; "
+                                    + "approaching V1 first, then teleporting to trade V5→V1.",
+                                    pendingVisitors.size() + 1);
+                        } else {
+                            LOGGER.info("[Just Farming-Visitors] Found {} visitor(s). Trading closest-first.",
+                                    pendingVisitors.size() + 1);
+                        }
                         enterState(State.NAVIGATING);
                     }
                 } else if (now - stateEnteredAt >= SCAN_TIMEOUT_MS) {
@@ -743,12 +866,56 @@ public class VisitorManager {
                 Vec3d visitorPos = new Vec3d(currentVisitor.getX(), currentVisitor.getY(), currentVisitor.getZ());
                 double dist = new Vec3d(player.getX(), player.getY(), player.getZ()).distanceTo(visitorPos);
 
-                if (positionAnchored) {
-                    // Already reached the first visitor's position – stand still and
-                    // aim at the anchor point for all subsequent visitor interactions.
-                    // Only send the interact packet once the visitor NPC has actually
-                    // arrived within interact range; do not click blindly while the
-                    // visitor is still far away or hasn't spawned at the barn yet.
+                // ── AOTV approach phase ──────────────────────────────────────────
+                // Walk toward V1 (nearest visitor) before firing the AOTV teleport.
+                // Two sub-cases are handled:
+                //   • Wall mode:    a 1-block-tall wall is detected ahead while
+                //                   approaching → teleport over it in the current
+                //                   walking direction.
+                //   • No-wall mode: the player reaches V1's position without hitting
+                //                   a wall → teleport toward the saved V5 position.
+                if (aotvApproachPhase && useAotv) {
+                    float dirYaw = (float) Math.toDegrees(Math.atan2(
+                            -(visitorPos.x - player.getX()), visitorPos.z - player.getZ()));
+
+                    // Wall mode: 1-block wall ahead and close enough to the visitor area
+                    if (isOneBlockWallAhead(player, dirYaw) && dist < AOTV_WALL_TRIGGER_DIST) {
+                        releaseMovementKeys();
+                        aotvTeleportYaw   = dirYaw;
+                        aotvTeleportFired = false;
+                        LOGGER.info("[Just Farming-Visitors] AOTV wall mode: 1-block wall detected at yaw {}; teleporting.",
+                                (int) dirYaw);
+                        enterState(State.USING_AOTV);
+                        return;
+                    }
+
+                    // No-wall mode: reached V1 → aim at V5 and teleport
+                    if (dist <= INTERACT_RADIUS) {
+                        releaseMovementKeys();
+                        if (aotvV5Pos != null) {
+                            Vec3d pp = new Vec3d(player.getX(), player.getY(), player.getZ());
+                            aotvTeleportYaw = (float) Math.toDegrees(Math.atan2(
+                                    -(aotvV5Pos.x - pp.x), aotvV5Pos.z - pp.z));
+                        } else {
+                            aotvTeleportYaw = player.getYaw();
+                        }
+                        aotvTeleportFired = false;
+                        LOGGER.info("[Just Farming-Visitors] AOTV no-wall mode: reached V1; aiming at V5 (yaw {}) to teleport.",
+                                (int) aotvTeleportYaw);
+                        enterState(State.USING_AOTV);
+                        return;
+                    }
+
+                    // Still walking toward V1
+                    fastRotateActive = false;
+                    walkToward(player, visitorPos);
+                    return;
+                }
+
+                // ── Normal navigation (non-AOTV, or AOTV after the teleport) ────
+                if (positionAnchored && !useAotv) {
+                    // Anchored (non-AOTV only): stand still and wait for each visitor
+                    // to come within interact range.
                     releaseMovementKeys();
                     boolean withinRange = dist <= INTERACT_RADIUS;
                     fastRotateActive = withinRange;
@@ -763,11 +930,14 @@ public class VisitorManager {
                     }
                 } else if (dist <= INTERACT_RADIUS) {
                     releaseMovementKeys();
-                    // First visitor reached – anchor here for all subsequent interactions.
-                    positionAnchored = true;
-                    anchorLookPos = visitorPos;
+                    if (!useAotv) {
+                        // Non-AOTV: anchor at this position for all subsequent visitors.
+                        positionAnchored = true;
+                        anchorLookPos    = visitorPos;
+                    }
                     fastRotateActive = dist <= VISITOR_DETECT_RADIUS;
-                    lookAt(player, visitorPos, fastRotateActive
+                    Vec3d lookTarget = (!useAotv && anchorLookPos != null) ? anchorLookPos : visitorPos;
+                    lookAt(player, lookTarget, fastRotateActive
                             ? FAST_LOOK_DEGREES_PER_SECOND
                             : SMOOTH_LOOK_DEGREES_PER_SECOND);
                     if (isAimedAtTarget(player) && now >= interactCooldownUntil) {
@@ -779,6 +949,72 @@ public class VisitorManager {
                 } else {
                     fastRotateActive = false;
                     walkToward(player, visitorPos);
+                }
+            }
+
+            case USING_AOTV -> {
+                long elapsed = now - stateEnteredAt;
+
+                // Phase 1: Smoothly rotate the camera toward the teleport direction.
+                // targetYaw/targetPitch are set here; onRenderTick() applies the
+                // incremental rotation at render-frame frequency.
+                if (elapsed < AOTV_AIM_DELAY_MS) {
+                    targetYaw   = aotvTeleportYaw;
+                    targetPitch = 0f; // aim straight ahead (horizontal)
+                    fastRotateActive = true;
+                    releaseMovementKeys();
+                    return;
+                }
+                fastRotateActive = false;
+
+                // Phase 2: Snap aim precisely and fire the right-click (once).
+                if (!aotvTeleportFired) {
+                    player.setYaw(aotvTeleportYaw);
+                    player.setPitch(0f);
+                    player.getInventory().setSelectedSlot(aotvSlot);
+                    if (client.options != null) {
+                        client.options.useKey.setPressed(true);
+                    }
+                    aotvTeleportFired = true;
+                    LOGGER.info("[Just Farming-Visitors] AOTV right-click fired (yaw={}).", (int) aotvTeleportYaw);
+                    return;
+                }
+
+                // Release the use key after the brief hold duration.
+                if (elapsed >= AOTV_AIM_DELAY_MS + AOTV_CLICK_HOLD_MS) {
+                    if (client.options != null) {
+                        client.options.useKey.setPressed(false);
+                    }
+                }
+
+                // Phase 3: Wait for the teleport to land, then build the reversed
+                // trading queue and start navigating to the farthest visitor (V5).
+                if (elapsed >= AOTV_AIM_DELAY_MS + AOTV_CLICK_HOLD_MS + AOTV_TELEPORT_WAIT_MS) {
+                    if (client.options != null) {
+                        client.options.useKey.setPressed(false);
+                    }
+
+                    // pendingVisitors currently holds [V2, V3, V4, V5, V6?…].
+                    // currentVisitor is V1 (the approach target).
+                    // Build the trading order: V5, V4, V3, V2, V1, V6…
+                    int mainCount = Math.min(4, pendingVisitors.size());
+                    List<Entity> mainReversed = new ArrayList<>(pendingVisitors.subList(0, mainCount));
+                    List<Entity> extra        = new ArrayList<>(pendingVisitors.subList(mainCount, pendingVisitors.size()));
+                    Collections.reverse(mainReversed);          // [V5, V4, V3, V2]
+                    mainReversed.add(currentVisitor);           // [V5, V4, V3, V2, V1]
+                    pendingVisitors.clear();
+                    pendingVisitors.addAll(mainReversed);
+                    pendingVisitors.addAll(extra);              // [V5, V4, V3, V2, V1, V6?]
+
+                    currentVisitor    = pendingVisitors.remove(0); // V5
+                    aotvApproachPhase = false;
+
+                    String cvName = currentVisitor != null && currentVisitor.getCustomName() != null
+                            ? stripFormatting(currentVisitor.getCustomName().getString()) : "?";
+                    LOGGER.info("[Just Farming-Visitors] AOTV teleport complete; navigating to '{}' next "
+                            + "({} visitors remaining).", cvName, pendingVisitors.size());
+
+                    enterState(State.NAVIGATING);
                 }
             }
 
@@ -1130,6 +1366,86 @@ public class VisitorManager {
             });
         }
         // Single visitor: no reordering needed.
+    }
+
+    /**
+     * Detects whether an Aspect of the Void or Aspect of the End item is present
+     * in the player's hotbar.  If found, and at least two visitors are available,
+     * configures the AOTV approach: saves the farthest visitor's position (V5),
+     * parses the teleport distance from the item lore, and sets the
+     * {@link #useAotv} / {@link #aotvApproachPhase} flags.
+     *
+     * <p>Must be called after {@link #scanForVisitors} has populated and sorted
+     * {@link #pendingVisitors} (closest-first).
+     *
+     * @param player the local player
+     */
+    private void detectAndConfigureAotv(ClientPlayerEntity player) {
+        aotvSlot             = -1;
+        aotvTeleportDistance = AOTV_DEFAULT_DISTANCE;
+        aotvV5Pos            = null;
+        useAotv              = false;
+        aotvApproachPhase    = false;
+
+        if (pendingVisitors.size() < 2) return; // AOTV only useful for 2+ visitors
+
+        int foundSlot = findAotvSlot(player);
+        if (foundSlot < 0) return;
+
+        // V5 = the farthest of the first five visitors (or the last if fewer than 5).
+        int v5Idx   = Math.min(4, pendingVisitors.size() - 1);
+        Entity v5   = pendingVisitors.get(v5Idx);
+        aotvV5Pos   = new Vec3d(v5.getX(), v5.getY(), v5.getZ());
+
+        aotvSlot             = foundSlot;
+        aotvTeleportDistance = parseAotvDistance(player.getInventory().getStack(foundSlot));
+        useAotv              = true;
+        aotvApproachPhase    = true;
+
+        String itemName = PestKillerManager.getCleanItemName(player.getInventory().getStack(foundSlot));
+        LOGGER.info("[Just Farming-Visitors] AOTV detected: '{}' at slot {}, dist={} blocks, "
+                + "V5 at ({}, {}, {}).",
+                itemName, foundSlot, aotvTeleportDistance,
+                (int) aotvV5Pos.x, (int) aotvV5Pos.y, (int) aotvV5Pos.z);
+    }
+
+    /**
+     * Searches the player's hotbar for an "Aspect of the Void" or "Aspect of the End" item.
+     *
+     * @param player the local player
+     * @return the hotbar slot index (0–8), or {@code -1} if not found
+     */
+    private int findAotvSlot(ClientPlayerEntity player) {
+        for (int i = 0; i < 9; i++) {
+            ItemStack stack = player.getInventory().getStack(i);
+            if (stack.isEmpty()) continue;
+            String name = stripFormatting(stack.getName().getString()).toLowerCase();
+            if (name.contains("aspect of the void") || name.contains("aspect of the end")) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Parses the teleport distance from an Aspect of the Void / Aspect of the End
+     * item's lore.  Looks for a line matching "teleport N blocks".
+     *
+     * @param stack the AOTV/AOTE item stack
+     * @return parsed distance in blocks, or {@link #AOTV_DEFAULT_DISTANCE} if parsing fails
+     */
+    private int parseAotvDistance(ItemStack stack) {
+        LoreComponent lore = stack.getOrDefault(DataComponentTypes.LORE, LoreComponent.DEFAULT);
+        for (Text line : lore.lines()) {
+            String stripped = stripFormatting(line.getString()).toLowerCase();
+            Matcher m = AOTV_TELEPORT_PATTERN.matcher(stripped);
+            if (m.find()) {
+                try {
+                    return Integer.parseInt(m.group(1));
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+        return AOTV_DEFAULT_DISTANCE;
     }
 
     /**

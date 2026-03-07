@@ -232,7 +232,7 @@ public class FarmingConfig {
      * the pest killer will run {@code /tptoplot <plot>} to warp directly to the
      * infested plot.  When {@code false}, it runs {@code /warp garden} instead.
      */
-    public boolean pestKillerWarpToPlot = true;
+    public boolean pestKillerWarpToPlot = false;
 
     /**
      * How long (in milliseconds) to wait before sending the plot teleport command.

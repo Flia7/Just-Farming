@@ -1311,13 +1311,17 @@ public class PestKillerManager {
         // any obstacle rather than flying into it and stalling.
         // Enable sneak (descend) when the pest is significantly below the player so
         // the player actively drops toward pests on the ground rather than flying
-        // horizontally above them.
-        // Ground-clearance guard: if solid ground is within GROUND_CLEARANCE_BLOCKS
-        // below the player, suppress sneak-descent and force jump so the player
-        // never lands on crops or the garden floor.
+        // In creative flight, vertical movement is driven entirely by camera pitch +
+        // the forward key: pointing the camera up/down and pressing forward causes
+        // genuine 3D diagonal movement.  Holding the jump key to "avoid the ground"
+        // fights against natural descent and generates illegal-move corrections from
+        // Hypixel's anti-cheat.  Similarly, obstacle-triggered jumps produce rapid
+        // vertical oscillation near garden crops.  The jump key is therefore used
+        // only when the target is genuinely above the player (dy > 1.5), and the
+        // sneak key is suppressed near the ground to prevent landing on crops.
         double dy = target.y - eye.y;
         boolean isNearGround = hasGroundBelow(player);
-        boolean shouldJump  = dy > 1.5 || hasObstacleInPath(player, target) || isNearGround;
+        boolean shouldJump  = dy > 1.5;
         boolean shouldSneak = !isNearGround && dy < -1.0; // descend only when safely above ground
 
         // ── Stuck detection ─────────────────────────────────────────────────

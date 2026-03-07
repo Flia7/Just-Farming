@@ -1017,7 +1017,7 @@ public class FarmingConfigScreen extends Screen {
         config.visitorsEnabled              = true;
         config.visitorsBuyFromBazaar        = true;
         config.autoPestKillerEnabled        = true;
-        config.pestKillerWarpToPlot         = true;
+        config.pestKillerWarpToPlot         = false;
         config.visitorsMinCount             = 3;
         config.visitorsMaxPrice             = 450000;
         config.farmingToolHotbarSlot        = -1;
