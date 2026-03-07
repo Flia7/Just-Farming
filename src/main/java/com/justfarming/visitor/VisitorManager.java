@@ -166,6 +166,42 @@ public class VisitorManager {
     private static final long WALK_JITTER_INTERVAL_MS = 800;
 
     /**
+     * Distance threshold (blocks) above {@link #INTERACT_RADIUS} at which the
+     * off-axis navigation offset is active.  When the player is within this
+     * distance of the visitor the offset is cleared and the camera aims directly.
+     */
+    private static final double NAV_OFFSET_DISABLE_DIST = 1.5;
+
+    /**
+     * Minimum lateral offset (blocks) applied to the navigation target while
+     * walking toward a visitor from far away.  Keeps the camera slightly
+     * off-axis so the visitor trade menu is not accidentally triggered.
+     */
+    private static final float NAV_OFFSET_MIN_BLOCKS = 1.0f;
+
+    /**
+     * Random range (blocks) added on top of {@link #NAV_OFFSET_MIN_BLOCKS}
+     * when computing the lateral navigation offset, giving a total range of
+     * {@code NAV_OFFSET_MIN_BLOCKS} to
+     * {@code NAV_OFFSET_MIN_BLOCKS + NAV_OFFSET_RANGE_BLOCKS}.
+     */
+    private static final float NAV_OFFSET_RANGE_BLOCKS = 1.5f;
+
+    /**
+     * Minimum landing radius (blocks) from V5 used when randomising the
+     * AOTV/AOTE teleport landing position.
+     */
+    private static final double AOTV_LANDING_MIN_RADIUS = 1.0;
+
+    /**
+     * Random range (blocks) added on top of {@link #AOTV_LANDING_MIN_RADIUS}
+     * when choosing the AOTV landing offset, giving a total radius of
+     * {@code AOTV_LANDING_MIN_RADIUS} to
+     * {@code AOTV_LANDING_MIN_RADIUS + AOTV_LANDING_RADIUS_RANGE} (1–3 blocks).
+     */
+    private static final double AOTV_LANDING_RADIUS_RANGE = 2.0;
+
+    /**
      * Steer-angle offsets (degrees) tried in order when the direct path is blocked by a wall.
      * Covers small nudges first (likely NPC avoidance) through wide detours (±90°) so the
      * pathfinder can navigate around corners before resorting to a forced-forward fallback.
@@ -462,6 +498,17 @@ public class VisitorManager {
     /** Timestamp (ms) when the walk jitter should next be re-randomised. */
     private long  walkJitterNextUpdate = 0;
 
+    /**
+     * Lateral (perpendicular) offset in blocks applied to the approach navigation
+     * target while the player is walking toward a visitor but still outside
+     * {@link #INTERACT_RADIUS}.  Keeping the camera slightly off-axis prevents the
+     * routine from accidentally triggering the visitor trade menu while still
+     * approaching (e.g. right after a {@code /tptoplot barn} lands the player
+     * very close to a visitor).  Re-randomised each time the {@link State#NAVIGATING}
+     * state is entered.
+     */
+    private float navAimAsideBlocks = 0f;
+
     // Wall-crash / stuck-detection state for walkToward
     /** Player's position at the last stuck-detection progress check; {@code null} = not yet set. */
     private Vec3d walkLastProgressPos         = null;
@@ -721,6 +768,7 @@ public class VisitorManager {
         aotvTeleportDistance = AOTV_DEFAULT_DISTANCE;
         aotvV5Pos = null;
         aotvTeleportYaw = 0f;
+        navAimAsideBlocks = 0f;
         enterState(State.IDLE);
     }
 
@@ -758,6 +806,7 @@ public class VisitorManager {
         skipCurrentVisitorDueToBlacklist = false;
         walkJitter        = 0f;
         walkJitterNextUpdate = 0;
+        navAimAsideBlocks = 0f;
         lastSmoothLookTime = 0;
         fastRotateActive  = false;
         disableFlightStartTime = 0;
@@ -777,6 +826,12 @@ public class VisitorManager {
         long base = Math.max(0, config.visitorsTeleportDelay);
         teleportWaitMs = base + random.nextInt((int) TELEPORT_EXTRA_RANDOM_MS + 1)
                 + random.nextInt(Math.max(1, config.globalRandomizationMs));
+        // Initialise camera targets to the player's current rotation so the first
+        // render tick in NAVIGATING does not snap the camera to a stale 0° default.
+        if (player != null) {
+            targetYaw   = player.getYaw();
+            targetPitch = player.getPitch();
+        }
         // If the player is currently flying, disable flight first before teleporting.
         if (player != null && player.getAbilities().flying) {
             LOGGER.info("[Just Farming-Visitors] Player is flying; disabling flight before starting routine.");
@@ -999,7 +1054,16 @@ public class VisitorManager {
                     }
                 } else {
                     fastRotateActive = false;
-                    walkToward(player, visitorPos);
+                    // When still walking toward the visitor, aim slightly to the side
+                    // (navAimAsideBlocks) so the camera never points directly at them
+                    // during approach.  This prevents the macro from accidentally
+                    // opening the trade menu when the player teleports close to a visitor.
+                    // The offset is cleared once the player is within INTERACT_RADIUS
+                    // and the routine switches to direct look-at for the interact.
+                    Vec3d walkTarget = dist > INTERACT_RADIUS + NAV_OFFSET_DISABLE_DIST
+                            ? computeOffAxisNavTarget(player, visitorPos, navAimAsideBlocks)
+                            : visitorPos;
+                    walkToward(player, walkTarget);
                 }
             }
 
@@ -1366,6 +1430,13 @@ public class VisitorManager {
             walkRecoveryEndTime       = 0;
             walkLastJumpTime          = 0;
         }
+        if (next == State.NAVIGATING) {
+            // Re-randomise the lateral offset so the approach angle varies each time and
+            // the camera never looks directly at the visitor while walking toward them.
+            // Bias the offset at least NAV_OFFSET_MIN_BLOCKS to one side so it is always noticeable.
+            float sign = random.nextBoolean() ? 1f : -1f;
+            navAimAsideBlocks = sign * (NAV_OFFSET_MIN_BLOCKS + random.nextFloat() * NAV_OFFSET_RANGE_BLOCKS);
+        }
         LOGGER.info("[Just Farming-Visitors] -> {}", next);
     }
 
@@ -1450,7 +1521,15 @@ public class VisitorManager {
         // (or the last if fewer visitors are present).
         int v5Idx   = Math.min(AOTV_MAIN_VISITOR_REVERSE_COUNT, pendingVisitors.size() - 1);
         Entity v5   = pendingVisitors.get(v5Idx);
-        aotvV5Pos   = new Vec3d(v5.getX(), v5.getY(), v5.getZ());
+        // Randomise the teleport landing position within a 3-block radius of V5 so
+        // the player does not always land at the exact same spot (more human-like),
+        // and to avoid accidentally landing on top of the visitor NPC itself.
+        double landAngle  = random.nextDouble() * 2 * Math.PI;
+        double landRadius = AOTV_LANDING_MIN_RADIUS + random.nextDouble() * AOTV_LANDING_RADIUS_RANGE;
+        aotvV5Pos   = new Vec3d(
+                v5.getX() + Math.cos(landAngle) * landRadius,
+                v5.getY(),
+                v5.getZ() + Math.sin(landAngle) * landRadius);
 
         aotvSlot             = foundSlot;
         aotvTeleportDistance = parseAotvDistance(player.getInventory().getStack(foundSlot));
@@ -1983,6 +2062,32 @@ public class VisitorManager {
     private double getSpeedMultiplier(ClientPlayerEntity player) {
         double attrVal = player.getAttributeValue(EntityAttributes.MOVEMENT_SPEED);
         return Math.max(1.0, attrVal / BASE_WALK_SPEED);
+    }
+
+    /**
+     * Computes a navigation target that is {@code offsetBlocks} blocks to the side
+     * of {@code target} as seen from the player's current position.
+     *
+     * <p>Used when walking toward a visitor to keep the camera slightly off-axis,
+     * preventing the routine from accidentally opening the visitor trade menu while
+     * still approaching.  The perpendicular direction is computed from the player→target
+     * vector, and a positive {@code offsetBlocks} shifts the target to the right of
+     * the approach direction while a negative value shifts it to the left.
+     *
+     * @param player       the local player
+     * @param target       the original navigation target (the visitor's position)
+     * @param offsetBlocks lateral offset in blocks; positive = right, negative = left
+     * @return the off-axis target position (same Y as {@code target})
+     */
+    private Vec3d computeOffAxisNavTarget(ClientPlayerEntity player, Vec3d target, float offsetBlocks) {
+        double dx = target.x - player.getX();
+        double dz = target.z - player.getZ();
+        double mag = Math.sqrt(dx * dx + dz * dz);
+        if (mag < 0.001) return target;
+        // Perpendicular unit vector (clockwise rotation of the forward direction).
+        double perpX = dz / mag;
+        double perpZ = -dx / mag;
+        return new Vec3d(target.x + perpX * offsetBlocks, target.y, target.z + perpZ * offsetBlocks);
     }
 
     /** Smoothly rotate the player's camera toward {@code target} over multiple ticks. */

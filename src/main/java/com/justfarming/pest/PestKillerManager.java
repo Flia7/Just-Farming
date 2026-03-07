@@ -339,9 +339,61 @@ public class PestKillerManager {
      * Number of consecutive zero-progress stuck checks before the routine gives
      * up and falls back to {@code /warp garden} (skipping any remaining plot
      * teleports).  Each check is {@link #STUCK_CHECK_INTERVAL_MS} apart, so
-     * three checks = ~4.5 seconds of no movement.
+     * five checks = ~7.5 seconds of no movement, reducing false positives caused
+     * by anti-cheat lag-back corrections during long flights.
      */
-    private static final int    ZERO_PROGRESS_MAX_COUNT      = 3;
+    private static final int    ZERO_PROGRESS_MAX_COUNT      = 5;
+
+    // ── AOTE/AOTV use during pest-killer flight ──────────────────────────────
+
+    /**
+     * Minimum distance (blocks) to the flight target at which the pest killer
+     * will use an Aspect of the End / Aspect of the Void to teleport closer.
+     * Below this distance the routine relies on normal creative flight.
+     */
+    private static final double PEST_AOTV_TRIGGER_DIST = 18.0;
+
+    /**
+     * Duration (ms) to smooth the camera toward the AOTV/AOTE aim direction
+     * before firing the right-click.  Mirrors the human-like aiming delay used
+     * in the visitor routine.
+     */
+    private static final long   PEST_AOTV_AIM_MS       = 600L;
+
+    /** Duration (ms) to hold the right-click when activating the AOTV/AOTE. */
+    private static final long   PEST_AOTV_HOLD_MS      = 100L;
+
+    /**
+     * Time (ms) to wait after firing the AOTV/AOTE before resuming flight.
+     * Gives the server time to process the teleport and update the player's
+     * position.
+     */
+    private static final long   PEST_AOTV_WAIT_MS      = 800L;
+
+    /**
+     * Minimum cooldown (ms) between successive AOTV/AOTE fires so the mod
+     * does not spam the ability while the player is still mid-flight.
+     */
+    private static final long   PEST_AOTV_COOLDOWN_MS  = 2000L;
+
+    // ── AOTE/AOTV fields ─────────────────────────────────────────────────────
+
+    /** Hotbar slot of the AOTV/AOTE item found for the current pest-killer run; -1 if none. */
+    private int   pestAotvSlot         = -1;
+    /**
+     * Wall-clock time (ms) when the current aim/fire/wait AOTV sequence started.
+     * {@code 0} means no sequence is active.
+     */
+    private long  pestAotvSeqStart     = 0L;
+    /** {@code true} once the right-click use-key has been pressed in the current sequence. */
+    private boolean pestAotvSeqFired   = false;
+    /**
+     * Wall-clock time (ms) of the last successful AOTV/AOTE fire.  Used together with
+     * {@link #PEST_AOTV_COOLDOWN_MS} to prevent rapid re-triggering.
+     */
+    private long  pestAotvLastFireTime = 0L;
+    /** Yaw angle (degrees) toward which the AOTV/AOTE is aimed for the current sequence. */
+    private float pestAotvTargetYaw    = 0f;
 
     // ── Humanised pest-aim drift ─────────────────────────────────────────────
 
@@ -554,6 +606,7 @@ public class PestKillerManager {
         pestAimOffsetTarget = Vec3d.ZERO;
         pestAimOffsetUpdateTime = 0;
         closeApproachNeeded = false;
+        resetAotvState();
         resetPlotState();
     }
 
@@ -577,6 +630,7 @@ public class PestKillerManager {
         pestAimOffsetTarget = Vec3d.ZERO;
         pestAimOffsetUpdateTime = 0;
         closeApproachNeeded = false;
+        resetAotvState();
         resetPlotState();
         enterState(State.IDLE);
     }
@@ -725,12 +779,14 @@ public class PestKillerManager {
                         LOGGER.info("[Just Farming-PestKiller] Pest detected while flying to centre; "
                                 + "targeting directly.");
                         releaseMovementKeys();
+                        resetAotvState();
                         enterState(State.FLYING_TO_PEST);
                         return;
                     }
                 }
 
                 if (plotCentreTarget == null) {
+                    resetAotvState();
                     enterState(State.SCANNING);
                     return;
                 }
@@ -743,6 +799,7 @@ public class PestKillerManager {
                 if (horizDist <= PLOT_CENTRE_ARRIVE_RADIUS) {
                     LOGGER.info("[Just Farming-PestKiller] Arrived at plot centre; scanning.");
                     releaseMovementKeys();
+                    resetAotvState();
                     enterState(State.SCANNING);
                     return;
                 }
@@ -751,10 +808,13 @@ public class PestKillerManager {
                 if (now - stateEnteredAt >= GOING_TO_PLOT_CENTRE_TIMEOUT_MS) {
                     LOGGER.info("[Just Farming-PestKiller] Timed out flying to plot centre; scanning.");
                     releaseMovementKeys();
+                    resetAotvState();
                     enterState(State.SCANNING);
                     return;
                 }
 
+                // Use AOTV/AOTE when the target is far to reach it much faster.
+                if (handlePestAotvToward(player, plotCentreTarget)) return;
                 flyToward(player, plotCentreTarget);
             }
 
@@ -912,6 +972,7 @@ public class PestKillerManager {
                     // No more pests in detection range; scan for any remaining
                     LOGGER.info("[Just Farming-PestKiller] Target pest gone; scanning for remaining pests.");
                     releaseMovementKeys();
+                    resetAotvState();
                     enterState(State.SCANNING);
                     return;
                 }
@@ -926,6 +987,7 @@ public class PestKillerManager {
                 double approachRadius = closeApproachNeeded ? CLOSE_APPROACH_RADIUS : getEffectiveKillRadius();
                 if (dist <= approachRadius || horizDist <= approachRadius) {
                     releaseMovementKeys();
+                    resetAotvState();
                     closeApproachNeeded = false;
                     // Find vacuum before entering kill state
                     findAndEquipVacuum(player);
@@ -935,6 +997,8 @@ public class PestKillerManager {
                     pestAimOffsetUpdateTime = 0;
                     enterState(State.KILLING_PEST);
                 } else {
+                    // Use AOTV/AOTE when the pest is far to reach it much faster.
+                    if (handlePestAotvToward(player, pestPos)) return;
                     flyToward(player, pestPos);
                 }
             }
@@ -1085,6 +1149,133 @@ public class PestKillerManager {
         atLeastOnePestKilledThisPlot = false;
         vacuumParticleTracker.stopTracking();
         vacuumParticleTracker.reset();
+    }
+
+    /** Resets all AOTV/AOTE state fields to their default (inactive) values. */
+    private void resetAotvState() {
+        if (pestAotvSeqStart != 0 && client.options != null) {
+            client.options.useKey.setPressed(false);
+        }
+        pestAotvSlot         = -1;
+        pestAotvSeqStart     = 0L;
+        pestAotvSeqFired     = false;
+        pestAotvTargetYaw    = 0f;
+        // pestAotvLastFireTime is intentionally preserved so the cooldown
+        // persists across state transitions.
+    }
+
+    /**
+     * Searches the player's hotbar for an Aspect of the End or Aspect of the Void item.
+     *
+     * @param player the local player
+     * @return the hotbar slot index (0–8), or {@code -1} if not found
+     */
+    private int findAotvSlotForPest(ClientPlayerEntity player) {
+        for (int i = 0; i < 9; i++) {
+            ItemStack stack = player.getInventory().getStack(i);
+            if (stack.isEmpty()) continue;
+            String name = getCleanItemName(stack).toLowerCase();
+            if (name.contains("aspect of the void") || name.contains("aspect of the end")) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Manages an inline AOTV/AOTE aim→fire→wait sequence to teleport the player
+     * closer to {@code target} when the distance is large enough to benefit.
+     *
+     * <p>The three-phase sequence runs entirely within the caller's existing state
+     * (e.g. {@link State#GOING_TO_PLOT_CENTER} or {@link State#FLYING_TO_PEST}) so
+     * no additional state machine entry is needed:
+     * <ol>
+     *   <li><b>Aim</b> ({@link #PEST_AOTV_AIM_MS} ms): smooth-rotate the camera toward
+     *       the target using the normal render-tick camera interpolation.</li>
+     *   <li><b>Fire</b> ({@link #PEST_AOTV_HOLD_MS} ms): snap to aim precisely and
+     *       hold the right-click use-key.</li>
+     *   <li><b>Wait</b> ({@link #PEST_AOTV_WAIT_MS} ms): release the key and wait for
+     *       the server to process the teleport before resuming normal flight.</li>
+     * </ol>
+     * After the sequence the vacuum is restored as the active hotbar item so kills
+     * can continue without the player having to switch manually.
+     *
+     * @param player the local player
+     * @param target the position to teleport toward
+     * @return {@code true} while the sequence is active (caller should not call
+     *         {@link #flyToward} in this case); {@code false} when inactive
+     */
+    private boolean handlePestAotvToward(ClientPlayerEntity player, Vec3d target) {
+        long now = System.currentTimeMillis();
+
+        // ── Start a new sequence if not already active ─────────────────────────
+        if (pestAotvSeqStart == 0) {
+            // Respect the cooldown between successive fires.
+            if (now - pestAotvLastFireTime < PEST_AOTV_COOLDOWN_MS) return false;
+
+            // Only fire when the target is far enough to be worth the overhead.
+            double dist = player.getEyePos().distanceTo(target);
+            if (dist <= PEST_AOTV_TRIGGER_DIST) return false;
+
+            // Find AOTV/AOTE in the hotbar.
+            int slot = findAotvSlotForPest(player);
+            if (slot < 0) return false;
+
+            // Compute the yaw toward the target.
+            Vec3d eye  = player.getEyePos();
+            pestAotvTargetYaw = computeYawTo(eye, target);
+            pestAotvSlot      = slot;
+            pestAotvSeqStart  = now;
+            pestAotvSeqFired  = false;
+            lastSmoothLookTime = 0; // reset so camera rotation starts smoothly
+            releaseMovementKeys();
+            LOGGER.info("[Just Farming-PestKiller] AOTV sequence started toward ({}, {}, {}), yaw={}.",
+                    (int) target.x, (int) target.y, (int) target.z, (int) pestAotvTargetYaw);
+        }
+
+        long elapsed = now - pestAotvSeqStart;
+
+        // ── Phase 1: smooth-rotate toward the target ────────────────────────────
+        if (elapsed < PEST_AOTV_AIM_MS) {
+            targetYaw   = pestAotvTargetYaw;
+            targetPitch = 0f;
+            releaseMovementKeys();
+            return true;
+        }
+
+        // ── Phase 2: snap aim and fire (once) ───────────────────────────────────
+        if (!pestAotvSeqFired) {
+            player.setYaw(pestAotvTargetYaw);
+            player.setPitch(0f);
+            player.getInventory().setSelectedSlot(pestAotvSlot);
+            if (client.options != null) client.options.useKey.setPressed(true);
+            pestAotvSeqFired = true;
+            LOGGER.info("[Just Farming-PestKiller] AOTV fired (slot={}, yaw={}).",
+                    pestAotvSlot, (int) pestAotvTargetYaw);
+            return true;
+        }
+
+        // Release the use-key after the hold duration.
+        if (elapsed >= PEST_AOTV_AIM_MS + PEST_AOTV_HOLD_MS) {
+            if (client.options != null) client.options.useKey.setPressed(false);
+        }
+
+        // ── Phase 3: wait for the teleport to land ───────────────────────────────
+        if (elapsed < PEST_AOTV_AIM_MS + PEST_AOTV_HOLD_MS + PEST_AOTV_WAIT_MS) {
+            return true;
+        }
+
+        // ── Sequence complete ────────────────────────────────────────────────────
+        if (client.options != null) client.options.useKey.setPressed(false);
+        pestAotvLastFireTime = now;
+        resetAotvState();
+        // Restore vacuum so killing can continue immediately.
+        if (vacuumSlot >= 0) {
+            player.getInventory().setSelectedSlot(vacuumSlot);
+            LOGGER.info("[Just Farming-PestKiller] AOTV sequence complete; restored vacuum slot {}.",
+                    vacuumSlot);
+        }
+        return false; // sequence done – caller may resume normal flight
     }
 
     /**
@@ -1547,6 +1738,24 @@ public class PestKillerManager {
         targetYaw   = (float) Math.toDegrees(Math.atan2(-dx, dz));
         targetPitch = (float) -Math.toDegrees(Math.atan2(dy, distXZ));
         smoothRotateCamera(player);
+    }
+
+    /**
+     * Computes the Minecraft yaw (degrees) from {@code from} to {@code to}
+     * on the horizontal plane.
+     *
+     * <p>Uses the standard Minecraft convention where 0° = south (+Z) and
+     * 90° = west (−X), matching the sign produced by
+     * {@code atan2(-dx, dz)}.
+     *
+     * @param from the source position
+     * @param to   the destination position
+     * @return yaw in degrees, in the range [−180, 180)
+     */
+    private static float computeYawTo(Vec3d from, Vec3d to) {
+        double dx = to.x - from.x;
+        double dz = to.z - from.z;
+        return (float) Math.toDegrees(Math.atan2(-dx, dz));
     }
 
     /**
