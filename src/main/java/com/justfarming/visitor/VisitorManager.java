@@ -402,6 +402,22 @@ public class VisitorManager {
      */
     private boolean midRunRescanPerformed = false;
 
+    /**
+     * When {@code true}, the player has already reached the first visitor's
+     * interact position and must not walk any further.  All subsequent visitors
+     * are handled from this fixed anchor spot (Hypixel SkyBlock barn visitors
+     * all spawn at the same visitor-point, so staying put is both faster and
+     * more natural-looking than navigating to each NPC individually).
+     */
+    private boolean positionAnchored = false;
+
+    /**
+     * The world position to look at for every interaction while
+     * {@link #positionAnchored} is {@code true}.  Set to the first visitor's
+     * position the moment the player enters {@link #INTERACT_RADIUS}.
+     */
+    private Vec3d anchorLookPos = null;
+
     // Item requirements extracted from the current visitor's menu
     private final List<VisitorRequirement> pendingRequirements = new ArrayList<>();
     private int requirementIndex = 0;
@@ -532,6 +548,8 @@ public class VisitorManager {
         returnWarpDelay = 0;
         returnWarpSentAt = 0;
         midRunRescanPerformed = false;
+        positionAnchored = false;
+        anchorLookPos = null;
         walkLastProgressPos = null;
         walkLastProgressCheckTime = 0;
         walkRecoveryDirection = 0;
@@ -582,8 +600,9 @@ public class VisitorManager {
         returnWarpDelay   = 0;
         returnWarpSentAt  = 0;
         midRunRescanPerformed = false;
-        long base = config.visitorsTeleportDelay > 0
-                ? config.visitorsTeleportDelay : TELEPORT_WAIT_DEFAULT_MS;
+        positionAnchored  = false;
+        anchorLookPos     = null;
+        long base = Math.max(0, config.visitorsTeleportDelay);
         teleportWaitMs = base + random.nextInt((int) TELEPORT_EXTRA_RANDOM_MS + 1)
                 + random.nextInt(Math.max(1, config.globalRandomizationMs));
         // If the player is currently flying, disable flight first before teleporting.
@@ -696,10 +715,25 @@ public class VisitorManager {
 
                 Vec3d visitorPos = new Vec3d(currentVisitor.getX(), currentVisitor.getY(), currentVisitor.getZ());
                 double dist = new Vec3d(player.getX(), player.getY(), player.getZ()).distanceTo(visitorPos);
-                if (dist <= INTERACT_RADIUS) {
+
+                if (positionAnchored) {
+                    // Already reached the first visitor's position – stand still and
+                    // aim at the anchor point for all subsequent visitor interactions.
                     releaseMovementKeys();
-                    // Within VISITOR_DETECT_RADIUS: use fast rotation so the camera
-                    // aligns quickly but still smoothly (not a hard snap).
+                    fastRotateActive = true;
+                    Vec3d lookTarget = anchorLookPos != null ? anchorLookPos : visitorPos;
+                    lookAt(player, lookTarget, FAST_LOOK_DEGREES_PER_SECOND);
+                    if (isAimedAtTarget(player) && now >= interactCooldownUntil) {
+                        fastRotateActive = false;
+                        interactWithEntity(player, currentVisitor);
+                        interactCooldownUntil = now + INTERACT_COOLDOWN_MS + randomExtra150;
+                        enterState(State.INTERACTING);
+                    }
+                } else if (dist <= INTERACT_RADIUS) {
+                    releaseMovementKeys();
+                    // First visitor reached – anchor here for all subsequent interactions.
+                    positionAnchored = true;
+                    anchorLookPos = visitorPos;
                     fastRotateActive = dist <= VISITOR_DETECT_RADIUS;
                     lookAt(player, visitorPos, fastRotateActive
                             ? FAST_LOOK_DEGREES_PER_SECOND
@@ -791,8 +825,7 @@ public class VisitorManager {
             }
 
             case TYPING_BAZAAR_COMMAND -> {
-                long typingDelay = config.bazaarSearchDelay > 0
-                        ? config.bazaarSearchDelay : BAZAAR_WAIT_MS;
+                long typingDelay = Math.max(0, config.bazaarSearchDelay);
                 if (now - stateEnteredAt >= typingDelay) {
                     String itemName = pendingRequirements.get(requirementIndex).itemName;
                     sendCommand("bazaar " + itemName);
@@ -930,22 +963,21 @@ public class VisitorManager {
                     return;
                 }
                 Vec3d visitorPos = new Vec3d(currentVisitor.getX(), currentVisitor.getY(), currentVisitor.getZ());
+                // Always aim at the anchored look position (set when the first visitor was
+                // reached). If positionAnchored is somehow false, fall back to the current
+                // visitor's position so the routine still works in degenerate cases.
+                Vec3d lookTarget = (positionAnchored && anchorLookPos != null) ? anchorLookPos : visitorPos;
                 double dist = new Vec3d(player.getX(), player.getY(), player.getZ()).distanceTo(visitorPos);
-                if (dist <= INTERACT_RADIUS) {
-                    releaseMovementKeys();
-                    fastRotateActive = dist <= VISITOR_DETECT_RADIUS;
-                    lookAt(player, visitorPos, fastRotateActive
-                            ? FAST_LOOK_DEGREES_PER_SECOND
-                            : SMOOTH_LOOK_DEGREES_PER_SECOND);
-                    if (isAimedAtTarget(player) && now >= interactCooldownUntil) {
-                        fastRotateActive = false;
-                        interactWithEntity(player, currentVisitor);
-                        interactCooldownUntil = now + INTERACT_COOLDOWN_MS + randomExtra150;
-                        enterState(State.WAITING_FOR_ACCEPT);
-                    }
-                } else {
+                releaseMovementKeys();
+                fastRotateActive = dist <= VISITOR_DETECT_RADIUS;
+                lookAt(player, lookTarget, fastRotateActive
+                        ? FAST_LOOK_DEGREES_PER_SECOND
+                        : SMOOTH_LOOK_DEGREES_PER_SECOND);
+                if (isAimedAtTarget(player) && now >= interactCooldownUntil) {
                     fastRotateActive = false;
-                    walkToward(player, visitorPos);
+                    interactWithEntity(player, currentVisitor);
+                    interactCooldownUntil = now + INTERACT_COOLDOWN_MS + randomExtra150;
+                    enterState(State.WAITING_FOR_ACCEPT);
                 }
             }
 
@@ -1018,7 +1050,7 @@ public class VisitorManager {
      * Uses the configured values from {@link FarmingConfig}.
      */
     private long rollActionDelay() {
-        int base = config.visitorsActionDelay > 0 ? config.visitorsActionDelay : (int) ACTION_DELAY_DEFAULT_MS;
+        int base = Math.max(0, config.visitorsActionDelay);
         int extra = config.visitorsActionDelayRandom > 0
                 ? random.nextInt(config.visitorsActionDelayRandom + 1) : 0;
         return base + extra;
