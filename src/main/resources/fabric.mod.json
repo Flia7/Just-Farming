@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "flia",
   "version": "${version}",
-  "name": "FLIA",
+  "name": "farming",
   "description": "A Hypixel Skyblock farming macro with GUI for crop selection, keybinds, and automation.",
   "authors": [],
   "contact": {},

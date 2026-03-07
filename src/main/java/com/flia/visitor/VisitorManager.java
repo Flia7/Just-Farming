@@ -1242,19 +1242,28 @@ public class VisitorManager {
             shouldWalk = true;
             chosenYaw  = onStepSurface ? baseTargetYaw : baseTargetYaw + walkJitter;
         } else {
-            // Immediate path blocked – try progressive steer angles to find a gap.
-            for (float steer : WALL_STEER_ANGLES) {
-                if (isPathClear(player, baseTargetYaw + steer, steerProbeStep)) {
-                    shouldWalk = true;
-                    chosenYaw  = baseTargetYaw + steer;
-                    break;
-                }
-            }
-            if (!shouldWalk) {
-                // All angles blocked – nudge straight forward to escape edge cases
-                // where isPassable is overly conservative (e.g. on a stair lip).
+            // Immediate path blocked – before trying steer angles, check whether
+            // the obstacle is a 1-block-tall wall that can be jumped straight over.
+            // If so, keep looking forward and let the jump key clear the obstacle
+            // instead of rotating sideways, which causes erratic movement.
+            if (isOneBlockWallAhead(player, baseTargetYaw)) {
                 shouldWalk = true;
                 chosenYaw  = baseTargetYaw;
+            } else {
+                // Try progressive steer angles to find a gap.
+                for (float steer : WALL_STEER_ANGLES) {
+                    if (isPathClear(player, baseTargetYaw + steer, steerProbeStep)) {
+                        shouldWalk = true;
+                        chosenYaw  = baseTargetYaw + steer;
+                        break;
+                    }
+                }
+                if (!shouldWalk) {
+                    // All angles blocked – nudge straight forward to escape edge cases
+                    // where isPassable is overly conservative (e.g. on a stair lip).
+                    shouldWalk = true;
+                    chosenYaw  = baseTargetYaw;
+                }
             }
         }
 
@@ -1354,6 +1363,33 @@ public class VisitorManager {
         boolean feetWall = !feetState.isAir() && !isStepBlock(feetState);
         boolean headWall = !headState.isAir() && !isStepBlock(headState);
         return feetWall || headWall;
+    }
+
+    /**
+     * Returns {@code true} when there is exactly a 1-block-tall wall directly
+     * ahead: a solid full-block (non-stair/slab) at the player's feet level
+     * with air (or a step-over block) at head level.
+     *
+     * <p>Such an obstacle can be cleared by a single jump without any sideways
+     * steering.  This is used in {@link #walkToward} to detect the common
+     * Hypixel SkyBlock barn step-up and jump over it immediately, avoiding the
+     * erratic rotation that would otherwise occur when the steer-angle system
+     * tries to route around a jumpable wall.
+     */
+    private boolean isOneBlockWallAhead(ClientPlayerEntity player, double yawDeg) {
+        if (client.world == null) return false;
+        double yawRad    = Math.toRadians(yawDeg);
+        double nextX     = player.getX() - Math.sin(yawRad) * PROBE_STEP;
+        double nextZ     = player.getZ() + Math.cos(yawRad) * PROBE_STEP;
+        int    bx        = (int) Math.floor(nextX);
+        int    bz        = (int) Math.floor(nextZ);
+        int    feetY     = (int) Math.floor(player.getY());
+        BlockState feetState = client.world.getBlockState(new BlockPos(bx, feetY,     bz));
+        BlockState headState = client.world.getBlockState(new BlockPos(bx, feetY + 1, bz));
+        // Solid full-block at feet level AND clear space above → 1-block tall jump.
+        boolean feetWall  = !feetState.isAir() && !isStepBlock(feetState);
+        boolean headClear = headState.isAir() || isStepBlock(headState);
+        return feetWall && headClear;
     }
 
     /**

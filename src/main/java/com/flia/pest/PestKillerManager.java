@@ -388,6 +388,14 @@ public class PestKillerManager {
     private static final int  CEILING_SCAN_HEIGHT         = 3;
 
     /**
+     * Minimum clearance (blocks) between the player's feet and the nearest
+     * solid block below.  When the ground is this close, sneak-descent is
+     * suppressed and the jump key is held to keep the player airborne at all
+     * times – the pest macro must never land on crops or the garden floor.
+     */
+    private static final int  GROUND_CLEARANCE_BLOCKS     = 3;
+
+    /**
      * How long (ms) to hold the back key while rising during the ceiling-avoidance
      * manoeuvre (phase 1: back up + rise).
      */
@@ -1283,9 +1291,13 @@ public class PestKillerManager {
         // Enable sneak (descend) when the pest is significantly below the player so
         // the player actively drops toward pests on the ground rather than flying
         // horizontally above them.
+        // Ground-clearance guard: if solid ground is within GROUND_CLEARANCE_BLOCKS
+        // below the player, suppress sneak-descent and force jump so the player
+        // never lands on crops or the garden floor.
         double dy = target.y - eye.y;
-        boolean shouldJump  = dy > 1.5 || hasObstacleInPath(player, target);
-        boolean shouldSneak = dy < -1.0; // descend when target is significantly below
+        boolean isNearGround = hasGroundBelow(player);
+        boolean shouldJump  = dy > 1.5 || hasObstacleInPath(player, target) || isNearGround;
+        boolean shouldSneak = !isNearGround && dy < -1.0; // descend only when safely above ground
 
         // ── Stuck detection ─────────────────────────────────────────────────
         if (lastProgressPos == null) {
@@ -1376,6 +1388,27 @@ public class PestKillerManager {
         int headTopY = (int) Math.floor(player.getY()) + 2; // one block above head
         for (int dy = 0; dy < CEILING_SCAN_HEIGHT; dy++) {
             if (!client.world.getBlockState(new BlockPos(bx, headTopY + dy, bz)).isAir()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Returns {@code true} if there is at least one non-air block within
+     * {@link #GROUND_CLEARANCE_BLOCKS} below the player's feet.
+     *
+     * <p>Used by {@link #flyToward} to prevent the player from landing on crops
+     * or the garden floor: when the ground is this close, sneak-descent is
+     * suppressed and the jump key is held to maintain a safe minimum altitude.
+     */
+    private boolean hasGroundBelow(ClientPlayerEntity player) {
+        if (client.world == null) return false;
+        int bx    = (int) Math.floor(player.getX());
+        int bz    = (int) Math.floor(player.getZ());
+        int feetY = (int) Math.floor(player.getY());
+        for (int dy = 1; dy <= GROUND_CLEARANCE_BLOCKS; dy++) {
+            if (!client.world.getBlockState(new BlockPos(bx, feetY - dy, bz)).isAir()) {
                 return true;
             }
         }
