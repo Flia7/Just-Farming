@@ -39,7 +39,7 @@ import java.util.Set;
  *
  * <p>Registered as a
  * {@link net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents#AFTER_ENTITIES}
- * callback in {@link com.justfarming.Flia}.
+ * callback in {@link com.justfarming.JustFarming}.
  */
 public class OverlayRenderer {
 

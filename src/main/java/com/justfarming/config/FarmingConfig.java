@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Persistent configuration for FLIA mod.
+ * Persistent configuration for Just Farming mod.
  * Saved to and loaded from a JSON file in the Fabric config directory.
  */
 public class FarmingConfig {
@@ -27,7 +27,7 @@ public class FarmingConfig {
             .setPrettyPrinting()
             .registerTypeAdapter(FarmingConfig.class, (InstanceCreator<FarmingConfig>) type -> new FarmingConfig())
             .create();
-    private static final String CONFIG_FILE = "flia.json";
+    private static final String CONFIG_FILE = "just-farming.json";
 
     // --- Config fields ---
 
