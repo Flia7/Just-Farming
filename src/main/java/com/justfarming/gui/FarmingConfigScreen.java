@@ -53,6 +53,13 @@ public class FarmingConfigScreen extends Screen {
     private static final String[] TAB_NAMES = { "Farming", "Pests", "Misc", "Delays", "Visitors" };
     private int activeTab = 0;
 
+    // ── Preset mode ────────────────────────────────────────────────────────────
+    private static final int PRESET_BLATANT = 0;
+    private static final int PRESET_SMART   = 1;
+    private static final int PRESET_CUSTOM  = 2;
+    /** Currently active preset (0=Blatant, 1=Smart, 2=Custom). Not persisted. */
+    private int presetMode = PRESET_CUSTOM;
+
     // ── Dynamic layout (computed in init) ─────────────────────────────────────
     private float scale = 1.0f;
     private int winX, winY, winW, winH;
@@ -124,6 +131,7 @@ public class FarmingConfigScreen extends Screen {
 
     // ── Always-visible widget ─────────────────────────────────────────────────
     private FlatButtonWidget saveCloseButton;
+    private FlatButtonWidget presetButton;
 
     // ── Section-label Y positions (set in init, used in render) ───────────────
     private int sectionCropY, actionSeparatorY;
@@ -538,6 +546,61 @@ public class FarmingConfigScreen extends Screen {
                         btn -> close());
         this.addDrawableChild(saveCloseButton);
 
+        // ── Always-visible: Preset cycling button in the bottom-left (nav panel) ─
+        int presetBtnW = navW - pad * 2;
+        presetButton = new FlatButtonWidget(winX + pad, closeBtnY, presetBtnW, bh,
+                        getPresetButtonText(),
+                        btn -> {
+                            applyConfig();
+                            cyclePreset();
+                        });
+        this.addDrawableChild(presetButton);
+        presetButton.setTooltip(Tooltip.of(Text.literal(
+                "Blatant: all features on, 0 delays.\n" +
+                "Smart: human-like delays and default settings.\n" +
+                "Custom: your current settings (shown when you change anything).")));
+
+        // ── Register onChange callbacks so preset switches to "Custom" on user edits ─
+        Runnable markCustom = this::markPresetCustom;
+        // Tab 0
+        farmingToolSlotSlider.setOnChange(markCustom);
+        // Tab 1
+        pestHighlightButton.setOnChange(markCustom);
+        pestLabelsButton.setOnChange(markCustom);
+        titleScaleSlider.setOnChange(markCustom);
+        pestEspButton.setOnChange(markCustom);
+        pestTracerButton.setOnChange(markCustom);
+        pestKillerEnabledButton.setOnChange(markCustom);
+        pestKillerWarpToPlotButton.setOnChange(markCustom);
+        pestKillerVacuumRangeSlider.setOnChange(markCustom);
+        // Tab 2
+        unlockedMouseButton.setOnChange(markCustom);
+        gardenOnlyButton.setOnChange(markCustom);
+        squeakyMousematButton.setOnChange(markCustom);
+        macroEnabledInGuiButton.setOnChange(markCustom);
+        // Tab 3
+        globalRandomSlider.setOnChange(markCustom);
+        laneSwapDelaySlider.setOnChange(markCustom);
+        laneSwapRandomSlider.setOnChange(markCustom);
+        rewarpDelaySlider.setOnChange(markCustom);
+        rewarpRandomSlider.setOnChange(markCustom);
+        mousematSwapToSlider.setOnChange(markCustom);
+        mousematPreDelaySlider.setOnChange(markCustom);
+        mousematPostDelaySlider.setOnChange(markCustom);
+        mousematResumeDelaySlider.setOnChange(markCustom);
+        visitorsDelaySlider.setOnChange(markCustom);
+        visitorsRandomSlider.setOnChange(markCustom);
+        visitorsTeleportDelaySlider.setOnChange(markCustom);
+        bazaarSearchDelaySlider.setOnChange(markCustom);
+        pestKillerTeleportDelaySliderInDelays.setOnChange(markCustom);
+        pestKillerAfterTeleportSlider.setOnChange(markCustom);
+        pestKillerGoToNextPestSlider.setOnChange(markCustom);
+        // Tab 4
+        visitorsEnabledButton.setOnChange(markCustom);
+        visitorsBuyFromBazaarButton.setOnChange(markCustom);
+        visitorsMinCountSlider.setOnChange(markCustom);
+        visitorsMaxPriceSlider.setOnChange(markCustom);
+
         refreshWidgetVisibility();
     }
 
@@ -837,6 +900,128 @@ public class FarmingConfigScreen extends Screen {
         return Text.translatable("gui.just-farming.set_rewarp");
     }
 
+    // ── Preset helpers ────────────────────────────────────────────────────────
+
+    private Text getPresetButtonText() {
+        return switch (presetMode) {
+            case PRESET_BLATANT -> Text.literal("Preset: Blatant");
+            case PRESET_SMART   -> Text.literal("Preset: Smart");
+            default             -> Text.literal("Preset: Custom");
+        };
+    }
+
+    /**
+     * Called by any widget when the user modifies a value.
+     * Switches the preset indicator to "Custom" if it was previously Blatant or Smart.
+     */
+    private void markPresetCustom() {
+        if (presetMode != PRESET_CUSTOM) {
+            presetMode = PRESET_CUSTOM;
+            if (presetButton != null) {
+                presetButton.setMessage(getPresetButtonText());
+            }
+        }
+    }
+
+    /**
+     * Cycle through presets:
+     * <ul>
+     *   <li>Blatant → Smart</li>
+     *   <li>Smart   → Blatant</li>
+     *   <li>Custom  → Blatant</li>
+     * </ul>
+     */
+    private void cyclePreset() {
+        if (presetMode == PRESET_BLATANT) {
+            applySmartPreset();
+        } else {
+            applyBlatantPreset();
+        }
+    }
+
+    /** Apply the Blatant preset: all features enabled, 0 ms delays throughout. */
+    private void applyBlatantPreset() {
+        presetMode = PRESET_BLATANT;
+        config.globalRandomizationMs        = 0;
+        config.laneSwapDelayMin             = 0;
+        config.laneSwapDelayRandom          = 0;
+        config.rewarpDelayMin               = 0;
+        config.rewarpDelayRandom            = 0;
+        config.mousematSwapToDelay          = 0;
+        config.mousematPreDelay             = 0;
+        config.mousematPostDelay            = 0;
+        config.mousematResumeDelay          = 0;
+        config.visitorsActionDelay          = 0;
+        config.visitorsActionDelayRandom    = 0;
+        config.visitorsTeleportDelay        = 0;
+        config.bazaarSearchDelay            = 0;
+        config.pestKillerTeleportDelay      = 0;
+        config.pestKillerGoToNextPestDelay  = 0;
+        config.pestKillerAfterTeleportDelay = 0;
+        config.pestHighlightEnabled         = true;
+        config.pestLabelsEnabled            = true;
+        config.pestEspEnabled               = true;
+        config.pestTracerEnabled            = true;
+        config.unlockedMouseEnabled         = true;
+        config.gardenOnlyEnabled            = true;
+        config.squeakyMousematEnabled       = true;
+        config.macroEnabledInGui            = true;
+        config.visitorsEnabled              = true;
+        config.visitorsBuyFromBazaar        = true;
+        config.autoPestKillerEnabled        = true;
+        config.pestKillerWarpToPlot         = true;
+        config.visitorsMinCount             = 1;
+        config.visitorsMaxPrice             = 0;
+        config.farmingToolHotbarSlot        = -1;
+        config.pestKillerVacuumRange        = 15;
+        config.save();
+        clearAndInit();
+    }
+
+    /** Apply the Smart preset: human-like delays and a recommended default configuration. */
+    private void applySmartPreset() {
+        presetMode = PRESET_SMART;
+        config.globalRandomizationMs        = 150;
+        config.laneSwapDelayMin             = 400;
+        config.laneSwapDelayRandom          = 500;
+        config.rewarpDelayMin               = 1000;
+        config.rewarpDelayRandom            = 400;
+        config.mousematSwapToDelay          = 400;
+        config.mousematPreDelay             = 200;
+        config.mousematPostDelay            = 350;
+        config.mousematResumeDelay          = 450;
+        config.visitorsActionDelay          = 500;
+        config.visitorsActionDelayRandom    = 550;
+        config.visitorsTeleportDelay        = 2000;
+        config.bazaarSearchDelay            = 1250;
+        config.pestKillerTeleportDelay      = 1000;
+        config.pestKillerGoToNextPestDelay  = 350;
+        config.pestKillerAfterTeleportDelay = 500;
+        config.pestHighlightEnabled         = true;
+        config.pestLabelsEnabled            = true;
+        config.pestEspEnabled               = true;
+        config.pestTitleScale               = 0.5f;
+        config.pestTracerEnabled            = true;
+        config.unlockedMouseEnabled         = false;
+        config.gardenOnlyEnabled            = true;
+        config.squeakyMousematEnabled       = true;
+        config.macroEnabledInGui            = true;
+        config.visitorsEnabled              = true;
+        config.visitorsBuyFromBazaar        = true;
+        config.autoPestKillerEnabled        = true;
+        config.pestKillerWarpToPlot         = true;
+        config.visitorsMinCount             = 3;
+        config.visitorsMaxPrice             = 450000;
+        config.farmingToolHotbarSlot        = -1;
+        config.pestKillerVacuumRange        = 10;
+        config.visitorBlacklist.clear();
+        config.visitorBlacklist.add("Gold Forger");
+        config.visitorBlacklist.add("Spaceman");
+        config.visitorBlacklist.add("Rhys");
+        config.save();
+        clearAndInit();
+    }
+
     // -------------------------------------------------------------------------
     // Inner classes
     // -------------------------------------------------------------------------
@@ -863,6 +1048,7 @@ public class FarmingConfigScreen extends Screen {
 
         private final net.minecraft.text.Text label;
         private boolean value;
+        private Runnable onChange;
 
         FlatBoolToggleWidget(int x, int y, int width, int height,
                              net.minecraft.text.Text label, boolean initialValue) {
@@ -870,6 +1056,8 @@ public class FarmingConfigScreen extends Screen {
             this.label = label;
             this.value = initialValue;
         }
+
+        void setOnChange(Runnable r) { this.onChange = r; }
 
         boolean getValue() {
             return value;
@@ -914,6 +1102,7 @@ public class FarmingConfigScreen extends Screen {
         @Override
         public void onClick(net.minecraft.client.gui.Click click, boolean toggle) {
             value = !value;
+            if (onChange != null) onChange.run();
         }
 
         @Override
@@ -990,16 +1179,21 @@ public class FarmingConfigScreen extends Screen {
 
         private final int min;
         private final int max;
+        private Runnable onChange;
 
         IntStepSlider(int x, int y, int width, int height, int min, int max, int initialValue) {
-            super(x, y, width, height, Text.empty(), (double)(initialValue - min) / (max - min));
+            super(x, y, width, height, Text.empty(),
+                    (max > min) ? (double)(Math.max(min, Math.min(max, initialValue)) - min) / (max - min) : 0.0);
             this.min = min;
             this.max = max;
             updateMessage();
         }
 
+        void setOnChange(Runnable r) { this.onChange = r; }
+
         /** Returns the current value rounded to the nearest multiple of 5, clamped to [min, max]. */
         int getIntValue() {
+            if (max == min) return min;
             int raw = min + (int)Math.round(value * (max - min));
             int snapped = (int)Math.round(raw / 5.0) * 5;
             return Math.max(min, Math.min(max, snapped));
@@ -1007,12 +1201,14 @@ public class FarmingConfigScreen extends Screen {
 
         @Override
         protected void applyValue() {
+            if (max == min) { this.value = 0.0; if (onChange != null) onChange.run(); return; }
             // Snap mouse-drag value to nearest multiple of 5.
             int steps = max - min;
             int rawInt = min + (int)Math.round(this.value * steps);
             int snapped = (int)Math.round(rawInt / 5.0) * 5;
             snapped = Math.max(min, Math.min(max, snapped));
             this.value = (double)(snapped - min) / steps;
+            if (onChange != null) onChange.run();
         }
 
         @Override
@@ -1022,7 +1218,7 @@ public class FarmingConfigScreen extends Screen {
                 this.value = (input.key() == GLFW_KEY_LEFT)
                         ? Math.max(0.0, this.value - step)
                         : Math.min(1.0, this.value + step);
-                applyValue();
+                applyValue(); // also fires onChange
                 updateMessage();
                 return true;
             }
@@ -1176,11 +1372,15 @@ public class FarmingConfigScreen extends Screen {
         private static final float MIN = 0.5f;
         private static final float MAX = 6.0f;
 
+        private Runnable onChange;
+
         TitleScaleSlider(int x, int y, int width, int height, float initialValue) {
             super(x, y, width, height, Text.empty(),
                     (double)(initialValue - MIN) / (MAX - MIN));
             updateMessage();
         }
+
+        void setOnChange(Runnable r) { this.onChange = r; }
 
         float getTitleScaleValue() {
             return MIN + (float)value * (MAX - MIN);
@@ -1197,14 +1397,16 @@ public class FarmingConfigScreen extends Screen {
         }
 
         @Override
-        protected void applyValue() {}
+        protected void applyValue() {
+            if (onChange != null) onChange.run();
+        }
     }
 
-    /** Slider for the visitors action delay – applies to all visitor interactions (200–3000 ms). */
+    /** Slider for the visitors action delay – applies to all visitor interactions (0–3000 ms). */
     private static class VisitorsDelaySlider extends IntStepSlider {
 
         VisitorsDelaySlider(int x, int y, int width, int height, int initialValue) {
-            super(x, y, width, height, 200, 3000, initialValue);
+            super(x, y, width, height, 0, 3000, initialValue);
         }
 
         int getDelayValue() { return getIntValue(); }
@@ -1230,11 +1432,11 @@ public class FarmingConfigScreen extends Screen {
         }
     }
 
-    /** Slider for the visitor teleport-to-barn wait time (1000–8000 ms). */
+    /** Slider for the visitor teleport-to-barn wait time (0–8000 ms). */
     private static class VisitorTeleportDelaySlider extends IntStepSlider {
 
         VisitorTeleportDelaySlider(int x, int y, int width, int height, int initialValue) {
-            super(x, y, width, height, 1000, 8000, initialValue);
+            super(x, y, width, height, 0, 8000, initialValue);
         }
 
         int getDelayValue() { return getIntValue(); }
@@ -1245,11 +1447,11 @@ public class FarmingConfigScreen extends Screen {
         }
     }
 
-    /** Slider for the bazaar search delay (500–5000 ms). */
+    /** Slider for the bazaar search delay (0–5000 ms). */
     private static class BazaarSearchDelaySlider extends IntStepSlider {
 
         BazaarSearchDelaySlider(int x, int y, int width, int height, int initialValue) {
-            super(x, y, width, height, 500, 5000, initialValue);
+            super(x, y, width, height, 0, 5000, initialValue);
         }
 
         int getDelayValue() { return getIntValue(); }
@@ -1271,11 +1473,15 @@ public class FarmingConfigScreen extends Screen {
         private static final int GLFW_KEY_LEFT  = 263;
         private static final int GLFW_KEY_RIGHT = 262;
 
+        private Runnable onChange;
+
         VisitorMinCountSlider(int x, int y, int width, int height, int initialValue) {
             super(x, y, width, height, Text.empty(),
                     (double)(Math.max(MIN, Math.min(MAX, initialValue)) - MIN) / (MAX - MIN));
             updateMessage();
         }
+
+        void setOnChange(Runnable r) { this.onChange = r; }
 
         int getCountValue() {
             return MIN + (int) Math.round(value * (MAX - MIN));
@@ -1288,6 +1494,7 @@ public class FarmingConfigScreen extends Screen {
             int rawInt = MIN + (int) Math.round(this.value * steps);
             rawInt = Math.max(MIN, Math.min(MAX, rawInt));
             this.value = (double)(rawInt - MIN) / steps;
+            if (onChange != null) onChange.run();
         }
 
         @Override
@@ -1337,11 +1544,15 @@ public class FarmingConfigScreen extends Screen {
         private static final int GLFW_KEY_LEFT  = 263;
         private static final int GLFW_KEY_RIGHT = 262;
 
+        private Runnable onChange;
+
         VisitorMaxPriceSlider(int x, int y, int width, int height, int initialValue) {
             super(x, y, width, height, Text.empty(),
                     (double) Math.max(0, Math.min(STEPS, initialValue / STEP)) / STEPS);
             updateMessage();
         }
+
+        void setOnChange(Runnable r) { this.onChange = r; }
 
         /** Returns the configured price limit in coins, or {@code 0} if disabled. */
         int getPriceValue() {
@@ -1355,6 +1566,7 @@ public class FarmingConfigScreen extends Screen {
             int pos = (int) Math.round(this.value * STEPS);
             pos = Math.max(0, Math.min(STEPS, pos));
             this.value = (double) pos / STEPS;
+            if (onChange != null) onChange.run();
         }
 
         @Override
@@ -1452,11 +1664,15 @@ public class FarmingConfigScreen extends Screen {
         private static final int GLFW_KEY_LEFT  = 263;
         private static final int GLFW_KEY_RIGHT = 262;
 
+        private Runnable onChange;
+
         FarmingToolSlotSlider(int x, int y, int width, int height, int initialValue) {
             super(x, y, width, height, Text.empty(),
                     (double)(Math.max(MIN, Math.min(MAX, initialValue)) - MIN) / (MAX - MIN));
             updateMessage();
         }
+
+        void setOnChange(Runnable r) { this.onChange = r; }
 
         /** Returns the selected slot (-1 = Auto, 0–8 = specific hotbar slot). */
         int getSlotValue() {
@@ -1469,6 +1685,7 @@ public class FarmingConfigScreen extends Screen {
             int rawInt = MIN + (int) Math.round(this.value * steps);
             rawInt = Math.max(MIN, Math.min(MAX, rawInt));
             this.value = (double)(rawInt - MIN) / steps;
+            if (onChange != null) onChange.run();
         }
 
         @Override
@@ -1511,11 +1728,15 @@ public class FarmingConfigScreen extends Screen {
         private static final int GLFW_KEY_LEFT  = 263;
         private static final int GLFW_KEY_RIGHT = 262;
 
+        private Runnable onChange;
+
         PestKillerVacuumRangeSlider(int x, int y, int width, int height, int initialValue) {
             super(x, y, width, height, Text.empty(),
                     (double)(Math.max(MIN, Math.min(MAX, initialValue)) - MIN) / (MAX - MIN));
             updateMessage();
         }
+
+        void setOnChange(Runnable r) { this.onChange = r; }
 
         int getRangeValue() {
             return MIN + (int) Math.round(value * (MAX - MIN));
@@ -1527,6 +1748,7 @@ public class FarmingConfigScreen extends Screen {
             int rawInt = MIN + (int) Math.round(this.value * steps);
             rawInt = Math.max(MIN, Math.min(MAX, rawInt));
             this.value = (double)(rawInt - MIN) / steps;
+            if (onChange != null) onChange.run();
         }
 
         @Override
