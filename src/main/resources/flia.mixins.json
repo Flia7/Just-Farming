@@ -1,0 +1,16 @@
+{
+  "required": true,
+  "package": "com.flia.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "CameraMixin",
+    "ClientWorldParticleMixin",
+    "EntityMixin",
+    "GameRendererMixin",
+    "MinecraftClientMixin",
+    "MouseMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
