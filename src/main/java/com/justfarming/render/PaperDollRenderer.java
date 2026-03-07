@@ -9,86 +9,98 @@ import net.minecraft.client.gui.screen.ingame.InventoryScreen;
 import net.minecraft.client.network.ClientPlayerEntity;
 
 /**
- * Renders a paper-doll player model and a compact WASD + CPS keystrokes display
- * directly to the right of the {@link InventoryHudRenderer} overlay.
+ * Renders a paper-doll player model and a compact WASD + LMB/RMB keystrokes
+ * display directly to the right of the {@link InventoryHudRenderer} overlay.
  *
- * <p>The panel shares the same background colour and exact height as the
- * inventory HUD so the two widgets appear as a single cohesive unit.  The upper
- * ~65 % of the panel shows the player model (via
- * {@link InventoryScreen#drawEntity}) and the lower ~35 % shows the keystrokes
- * display:
+ * <p>Visual design is inspired by the
+ * <a href="https://github.com/Polyfrost/Canelex-KeyStrokes-Revamp">Canelex
+ * KeyStrokes Revamp</a> mod:
+ * <ul>
+ *   <li>Inverted-T WASD layout: W centred on the top row; A, S, D on the row
+ *       below (matching Canelex's key arrangement).</li>
+ *   <li>Filled triangle arrows ▲ ▼ ◀ ▶ for WASD labels.</li>
+ *   <li>Smooth per-key colour fading when pressed/released, using the same
+ *       linear interpolation ({@code percentFaded}) approach as Canelex.</li>
+ *   <li>LMB / RMB mouse buttons in a third row; LMB shows the live CPS count
+ *       (packets sent, not just physical clicks).</li>
+ * </ul>
  *
  * <pre>
- *   ┌─────────────────────────────────────────┐ ┌────────────┐
- *   │  [slot][slot]…[slot]  (inventory grid)  │ │  (player)  │
- *   │  [slot][slot]…[slot]                    │ │  [↑][CPS]  │
- *   │  [slot][slot]…[slot]                    │ │ [←][↓][→]  │
- *   └─────────────────────────────────────────┘ └────────────┘
+ *   ┌──────────────────────────────────────┐  ┌──────────────────┐
+ *   │  [slot]…[slot]  (3-row inv grid)     │  │   player model   │
+ *   │  [slot]…[slot]                       │  ├──────────────────┤
+ *   │  [slot]…[slot]                       │  │      [ ▲ ]       │  ← W
+ *   └──────────────────────────────────────┘  │  [ ◀ ][ ▼ ][ ▶ ]│  ← A S D
+ *                                             │  [ 7 LMB ][ RMB ]│  ← LMB(cps) RMB
+ *                                             └──────────────────┘
  * </pre>
  *
- * <p>Active WASD keys are drawn with a bright background; inactive keys use a
- * dim background.  The CPS counter shows the number of left-click events in the
- * last second as reported by {@link KeystrokesTracker}.
+ * <p>The panel shares the same background colour and exact height as the
+ * inventory HUD so the two widgets appear as a single cohesive unit.
  */
 public class PaperDollRenderer {
 
-    // ── Panel dimensions (at scale 1.0) ─────────────────────────────────────
+    // ── Panel dimensions (unscaled, at inventoryOverlayScale = 1.0) ──────────
 
-    /**
-     * Width (px) of the paper-doll panel at scale 1.0.
-     * Large enough to accommodate a readable player model and three key buttons
-     * side-by-side in the keystrokes row.
-     */
-    private static final int PANEL_W = 46;
+    /** Unscaled width (px) of the paper-doll panel. */
+    private static final int PANEL_W = 40;
 
-    /**
-     * Gap (px) between the right edge of the inventory HUD and the left edge of
-     * the paper-doll panel at scale 1.0.
-     */
+    /** Unscaled gap (px) between the right edge of the inventory HUD and this panel. */
     private static final int PANEL_GAP = 2;
 
-    // ── Key-button dimensions (at scale 1.0) ─────────────────────────────────
+    // ── Key layout (unscaled) ─────────────────────────────────────────────────
 
-    /** Width and height (px) of each key button square at scale 1.0. */
-    private static final int KEY_SIZE = 7;
+    /** Unscaled side length (px) of each WASD key square. */
+    private static final int KEY_SIZE = 11;
 
-    /** Horizontal gap (px) between adjacent key buttons at scale 1.0. */
-    private static final int KEY_GAP = 2;
+    /** Unscaled gap (px) between adjacent keys (horizontal and vertical). */
+    private static final int KEY_GAP = 1;
 
-    /** Height (px) of the full keystrokes section at the bottom of the panel. */
-    private static final int KS_HEIGHT = 20;
+    /** Unscaled horizontal padding inside the panel on each side. */
+    private static final int H_PAD = 2;
 
-    // ── Colours ──────────────────────────────────────────────────────────────
+    /** Unscaled vertical padding above the first key row. */
+    private static final int V_PAD = 3;
 
-    private static final int KEY_BG_ACTIVE   = 0xC0FFFFFF; // pressed key – light
-    private static final int KEY_BG_INACTIVE = 0x30FFFFFF; // released key – dim
-    private static final int KEY_TXT_ACTIVE  = 0xFF000000; // black text on light bg
-    private static final int KEY_TXT_INACTIVE= 0x80FFFFFF; // dim white text on dark bg
-    private static final int CPS_COLOR       = 0xFFFFFFFF; // CPS number – white
-
-    // ── Font / text scaling constants ────────────────────────────────────────
-
-    /** Minimum font scale for the CPS counter text (prevents unreadably tiny text). */
-    private static final float MIN_CPS_TEXT_SCALE   = 0.4f;
-    /** CPS text scale as a fraction of the HUD scale (makes text proportional to panel size). */
-    private static final float CPS_TEXT_SCALE_RATIO = 0.55f;
-
-    /** Minimum font scale for arrow labels inside key buttons. */
-    private static final float MIN_FONT_SCALE   = 0.3f;
     /**
-     * Font scale as a fraction of the key-button size so the arrow character
-     * fills roughly 80 % of the button area at any HUD scale.
-     * (Minecraft's default glyph is ~5–6 px at scale 1; a ratio of 0.14 × key
-     * size gives approximately that size for the default 7-px button.)
+     * Unscaled height (px) of the keystrokes section at the bottom of the panel.
+     * Contains three rows (W, ASD, LMB/RMB) with two gaps between them, plus
+     * top padding.
      */
-    private static final float FONT_SCALE_RATIO = 0.14f;
+    private static final int KS_HEIGHT = V_PAD + 3 * KEY_SIZE + 2 * KEY_GAP;
 
-    private static final String ARROW_UP    = "↑";
-    private static final String ARROW_LEFT  = "←";
-    private static final String ARROW_DOWN  = "↓";
-    private static final String ARROW_RIGHT = "→";
+    // ── Key symbols – Canelex KeyStrokes Revamp triangle arrows ──────────────
 
-    // ── State ────────────────────────────────────────────────────────────────
+    private static final String ARROW_W = "▲";
+    private static final String ARROW_A = "◀";
+    private static final String ARROW_S = "▼";
+    private static final String ARROW_D = "▶";
+
+    // ── Colours – matching Canelex default theme ──────────────────────────────
+
+    /** Background colour when a key is fully pressed. */
+    private static final int BG_PRESSED   = 0xC0FFFFFF;
+    /** Background colour when a key is fully released. */
+    private static final int BG_RELEASED  = 0x30FFFFFF;
+    /** Text/icon colour when a key is fully pressed (dark, for contrast). */
+    private static final int TXT_PRESSED  = 0xFF000000;
+    /** Text/icon colour when a key is fully released (dim white). */
+    private static final int TXT_RELEASED = 0x80FFFFFF;
+
+    // ── Font scaling ──────────────────────────────────────────────────────────
+
+    /**
+     * Ratio of font scale to key pixel size.  Targets approximately 65 % of
+     * the key height as the glyph cap height.  Minecraft's default font cap
+     * height is roughly 8 px at scale 1.0, so the formula is
+     * {@code keyPx * KEY_FONT_SCALE_RATIO ≈ keyPx * 0.65 / 8}.
+     */
+    private static final float KEY_FONT_SCALE_RATIO = 0.075f;
+
+    /** Minimum font scale so labels remain readable at very small HUD scales. */
+    private static final float MIN_FONT_SCALE = 0.3f;
+
+    // ── State ─────────────────────────────────────────────────────────────────
 
     private final FarmingConfig config;
 
@@ -96,15 +108,18 @@ public class PaperDollRenderer {
         this.config = config;
     }
 
+    // ── Public render entry point ─────────────────────────────────────────────
+
     /**
-     * Called by the HUD render callback.  Renders the paper-doll panel to the
-     * right of the inventory HUD when {@link FarmingConfig#paperDollEnabled}
-     * and {@link FarmingConfig#inventoryOverlayEnabled} are both {@code true}.
+     * Called by the HUD render callback every frame.  Renders the paper-doll
+     * panel to the right of the inventory HUD when both
+     * {@link FarmingConfig#inventoryOverlayEnabled} and
+     * {@link FarmingConfig#paperDollEnabled} are {@code true}.
      *
-     * @param context     the current draw context
-     * @param invHudX     X pixel position of the inventory HUD's top-left corner
-     * @param invHudY     Y pixel position of the inventory HUD's top-left corner
-     * @param invScale    the scale multiplier in use for the inventory HUD
+     * @param context   draw context
+     * @param invHudX   screen X of the inventory HUD's top-left corner
+     * @param invHudY   screen Y of the inventory HUD's top-left corner
+     * @param invScale  the active inventory HUD scale multiplier
      */
     public void render(DrawContext context, int invHudX, int invHudY, float invScale) {
         if (!config.inventoryOverlayEnabled || !config.paperDollEnabled) return;
@@ -118,9 +133,10 @@ public class PaperDollRenderer {
         int invW  = InventoryHudRenderer.getOverlayWidth(scale);
         int invH  = InventoryHudRenderer.getOverlayHeight(scale);
 
-        // Pixel dimensions of the panel at current scale.
-        int panelW = Math.round(PANEL_W * scale);
-        int panelH = invH; // same height as inventory HUD
+        int panelW = Math.round(PANEL_W   * scale);
+        int panelH = invH;   // same height as the inventory HUD
+        int ksH    = Math.round(KS_HEIGHT * scale);
+        int modelH = panelH - ksH;
 
         int panelX = invHudX + invW + Math.round(PANEL_GAP * scale);
         int panelY = invHudY;
@@ -129,126 +145,160 @@ public class PaperDollRenderer {
         context.fill(panelX, panelY, panelX + panelW, panelY + panelH,
                 InventoryHudRenderer.BG_COLOR);
 
-        // ── Player model ─────────────────────────────────────────────────────
-        int ksH     = Math.round(KS_HEIGHT * scale);
-        int modelH  = panelH - ksH;
-
-        // Entity size is chosen so the model fits within the model area with a
-        // small vertical margin.  The InventoryScreen clipping ensures it never
-        // bleeds outside the model area.
+        // ── Player model ──────────────────────────────────────────────────────
+        // Entity display size: 70% of the model area height; minimum 4 px.
         int entitySize = Math.max(4, (int) (modelH * 0.70f));
 
-        // Slight upward look angle so the face is visible rather than the top
-        // of the head.  mouseX=0 → face directly toward viewer; mouseY=-N → head
-        // tilted slightly backward (standard paper-doll convention).
+        // Mouse offsets control the entity's look direction within drawEntity.
+        // mouseX=0 → face toward viewer; small negative mouseY → slight upward
+        // tilt so the face is visible rather than the top of the head.
         float mouseX = 0.0f;
-        float mouseY = -(entitySize * 0.25f);
+        float mouseY = -(entitySize * 0.30f);
 
-        InventoryScreen.drawEntity(context,
-                panelX, panelY,
-                panelX + panelW, panelY + modelH,
+        InventoryScreen.drawEntity(
+                context,
+                panelX, panelY, panelX + panelW, panelY + modelH,
                 entitySize,
                 mouseX, mouseY,
-                0.0f,   // tickDelta – 0 freezes entity animations for a static display
+                0.0f,   // tickDelta = 0 freezes entity animations (static pose)
                 player);
 
+        // ── Separator line between model area and keystrokes area ─────────────
+        int sepY = panelY + modelH;
+        context.fill(panelX, sepY, panelX + panelW, sepY + 1, 0x20FFFFFF);
+
         // ── Keystrokes section ────────────────────────────────────────────────
-        int ksY = panelY + modelH;
-        renderKeystrokes(context, mc, player, panelX, ksY, panelW, ksH, scale);
+        renderKeystrokes(context, mc.textRenderer, panelX, sepY + 1, panelW, ksH - 1, scale);
     }
 
-    // ── Private helpers ──────────────────────────────────────────────────────
+    // ── Private rendering helpers ─────────────────────────────────────────────
 
     /**
-     * Renders the WASD arrows and CPS counter inside the keystrokes area of the
-     * paper-doll panel.
+     * Renders the WASD keys (W top / A-S-D bottom) and the LMB / RMB mouse
+     * buttons inside the keystrokes area.
      *
-     * <p>Layout (at scale 1.0, KS_HEIGHT=20px):
+     * <p>Layout (unscaled, KS_HEIGHT ≈ 38 px):
      * <pre>
-     *   y+2  [ ↑ ]  &lt;cps&gt;
-     *   y+11 [←][↓][→]
+     *   y + V_PAD            :  [ ▲ ]                 ← W  (centred)
+     *   y + V_PAD + stride   :  [ ◀ ] [ ▼ ] [ ▶ ]   ← A S D (centred)
+     *   y + V_PAD + 2*stride :  [ LMB cps ] [ RMB ]  ← mouse buttons
      * </pre>
+     *
+     * @param x       left pixel of the keystrokes section
+     * @param y       top pixel of the keystrokes section
+     * @param w       width of the section in screen pixels
+     * @param h       height of the section in screen pixels (unused directly)
+     * @param scale   current HUD scale multiplier
      */
-    private void renderKeystrokes(DrawContext context, MinecraftClient mc,
-                                   ClientPlayerEntity player,
+    private void renderKeystrokes(DrawContext context, TextRenderer tr,
                                    int x, int y, int w, int h, float scale) {
         KeystrokesTracker tracker = KeystrokesTracker.getInstance();
-        TextRenderer tr = mc.textRenderer;
+        long now = System.currentTimeMillis();
 
-        int ks   = Math.max(1, Math.round(KEY_SIZE * scale)); // key button size
-        int kg   = Math.max(1, Math.round(KEY_GAP  * scale)); // key gap
+        int ks     = Math.max(1, Math.round(KEY_SIZE * scale));  // key square side
+        int kg     = Math.max(1, Math.round(KEY_GAP  * scale));  // gap between keys
+        int stride = ks + kg;                                     // distance between key origins
+        int hPad   = Math.max(1, Math.round(H_PAD * scale));
+        int vPad   = Math.max(1, Math.round(V_PAD * scale));
 
-        int pad  = Math.max(1, Math.round(2 * scale)); // padding around keys
+        // ── Row 1: W key, centred horizontally ───────────────────────────────
+        int row1Y = y + vPad;
+        int wX    = x + (w - ks) / 2;
+        drawKey(context, tr, wX, row1Y, ks, ARROW_W,
+                KeystrokesTracker.KEY_W, tracker, now);
 
-        // ── Row 1: W(↑) key + CPS counter ────────────────────────────────────
-        // W key centred horizontally in the left half of the panel.
-        int row1Y = y + pad;
+        // ── Row 2: A / S / D, centred horizontally ───────────────────────────
+        int row2Y     = row1Y + stride;
+        int threeW    = 3 * ks + 2 * kg;
+        int asdStartX = x + (w - threeW) / 2;
+        drawKey(context, tr, asdStartX,          row2Y, ks, ARROW_A,
+                KeystrokesTracker.KEY_A, tracker, now);
+        drawKey(context, tr, asdStartX + stride, row2Y, ks, ARROW_S,
+                KeystrokesTracker.KEY_S, tracker, now);
+        drawKey(context, tr, asdStartX + 2 * stride, row2Y, ks, ARROW_D,
+                KeystrokesTracker.KEY_D, tracker, now);
 
-        int wKeyX = x + pad;
-        boolean wPressed = tracker.isForwardPressed(mc);
-        drawKey(context, tr, wKeyX, row1Y, ks, ARROW_UP, wPressed, scale);
+        // ── Row 3: LMB (with CPS) and RMB, filling the inner width ───────────
+        int row3Y  = row2Y + stride;
+        int inner  = w - 2 * hPad;
+        int lmbW   = (inner - kg) / 2;
+        int rmbW   = inner - lmbW - kg;
+        int lmbX   = x + hPad;
+        int rmbX   = lmbX + lmbW + kg;
 
-        // CPS counter to the right of the W key.
-        int cps = tracker.getAttackCps();
-        String cpsStr = String.valueOf(cps);
-        int cpsX = wKeyX + ks + Math.round(3 * scale);
-        int cpsY = row1Y + (ks - 6) / 2; // vertically centred within key height (font height ≈ 6)
-        context.getMatrices().pushMatrix();
-        float txtScale = Math.max(MIN_CPS_TEXT_SCALE, scale * CPS_TEXT_SCALE_RATIO);
-        context.getMatrices().translate(cpsX, cpsY);
-        context.getMatrices().scale(txtScale, txtScale);
-        context.drawText(tr, cpsStr, 0, 0, CPS_COLOR, true);
-        context.getMatrices().popMatrix();
-
-        // ── Row 2: A(←) S(↓) D(→) ────────────────────────────────────────────
-        int row2Y = row1Y + ks + kg;
-
-        // Three keys centred horizontally inside the panel.
-        int rowW  = 3 * ks + 2 * kg;
-        int row2X = x + (w - rowW) / 2;
-
-        boolean aPressed = tracker.isLeftPressed(mc);
-        boolean sPressed = tracker.isBackPressed(mc);
-        boolean dPressed = tracker.isRightPressed(mc);
-
-        drawKey(context, tr, row2X,              row2Y, ks, ARROW_LEFT,  aPressed, scale);
-        drawKey(context, tr, row2X + ks + kg,    row2Y, ks, ARROW_DOWN,  sPressed, scale);
-        drawKey(context, tr, row2X + 2*(ks + kg),row2Y, ks, ARROW_RIGHT, dPressed, scale);
+        drawLmbKey(context, tr, lmbX, row3Y, lmbW, ks, tracker, now);
+        drawRmbKey(context, tr, rmbX, row3Y, rmbW, ks, tracker, now);
     }
 
     /**
-     * Draws a single key button square with an arrow symbol centred inside it.
+     * Draws a single WASD key button with a triangle-arrow label.
      *
-     * @param context  draw context
-     * @param tr       text renderer
-     * @param x        left pixel of the key
-     * @param y        top pixel of the key
-     * @param size     side length of the key square in pixels
-     * @param label    arrow character to draw (↑ ← ↓ →)
-     * @param active   {@code true} if the key is currently pressed
-     * @param scale    current HUD scale (for font scaling)
+     * <p>Background and text colours are smoothly interpolated between pressed
+     * and unpressed states using the per-key fade progress from
+     * {@link KeystrokesTracker#getKeyBgColor} / {@link KeystrokesTracker#getKeyTextColor},
+     * matching the Canelex {@code percentFaded} animation.
      */
     private void drawKey(DrawContext context, TextRenderer tr,
-                         int x, int y, int size,
-                         String label, boolean active, float scale) {
-        int bgColor  = active ? KEY_BG_ACTIVE  : KEY_BG_INACTIVE;
-        int txtColor = active ? KEY_TXT_ACTIVE : KEY_TXT_INACTIVE;
+                         int x, int y, int size, String label,
+                         int keyIdx, KeystrokesTracker tracker, long now) {
+        int bg  = tracker.getKeyBgColor  (keyIdx, BG_PRESSED,  BG_RELEASED,  now);
+        int txt = tracker.getKeyTextColor(keyIdx, TXT_PRESSED, TXT_RELEASED, now);
+        drawKeyBox(context, tr, x, y, size, size, label, bg, txt);
+    }
 
-        // Key background
-        context.fill(x, y, x + size, y + size, bgColor);
+    /**
+     * Draws the LMB button.  The button label is the current CPS count as a
+     * plain number (e.g. "7"), making CPS immediately readable.
+     */
+    private void drawLmbKey(DrawContext context, TextRenderer tr,
+                             int x, int y, int w, int h,
+                             KeystrokesTracker tracker, long now) {
+        int bg  = tracker.getKeyBgColor  (KeystrokesTracker.KEY_LMB, BG_PRESSED,  BG_RELEASED,  now);
+        int txt = tracker.getKeyTextColor(KeystrokesTracker.KEY_LMB, TXT_PRESSED, TXT_RELEASED, now);
+        String cpsStr = String.valueOf(tracker.getLmbCps());
+        drawKeyBox(context, tr, x, y, w, h, cpsStr, bg, txt);
+    }
 
-        // Arrow symbol – scale font so it fits within the key square.
-        // A Minecraft glyph is ~5-6 px tall at scale 1.0; we target ~80 % of key size.
-        float fontScale = Math.max(MIN_FONT_SCALE, size * FONT_SCALE_RATIO);
+    /**
+     * Draws the RMB button with an "R" label.
+     */
+    private void drawRmbKey(DrawContext context, TextRenderer tr,
+                             int x, int y, int w, int h,
+                             KeystrokesTracker tracker, long now) {
+        int bg  = tracker.getKeyBgColor  (KeystrokesTracker.KEY_RMB, BG_PRESSED,  BG_RELEASED,  now);
+        int txt = tracker.getKeyTextColor(KeystrokesTracker.KEY_RMB, TXT_PRESSED, TXT_RELEASED, now);
+        drawKeyBox(context, tr, x, y, w, h, "R", bg, txt);
+    }
+
+    /**
+     * Core drawing primitive: fills a rectangular key button with {@code bg},
+     * then centres {@code label} text inside it at the appropriate font scale.
+     *
+     * @param x, y       top-left corner of the button
+     * @param w, h       dimensions of the button in screen pixels
+     * @param label      text to centre inside the button
+     * @param bg         background colour (ARGB)
+     * @param txt        text colour (ARGB)
+     */
+    private static void drawKeyBox(DrawContext context, TextRenderer tr,
+                                   int x, int y, int w, int h,
+                                   String label, int bg, int txt) {
+        // Background fill
+        context.fill(x, y, x + w, y + h, bg);
+
+        // Scale font so the glyph occupies ~65% of the button height.
+        // Minecraft's default font cap height is ≈8 px at fontScale 1.0.
+        float fontScale = Math.max(MIN_FONT_SCALE, h * KEY_FONT_SCALE_RATIO);
         int glyphW = Math.round(tr.getWidth(label) * fontScale);
-        int glyphH = Math.round(6 * fontScale);
-        int txtX = x + (size - glyphW) / 2;
-        int txtY = y + (size - glyphH) / 2;
+        int glyphH = Math.round(8 * fontScale);
+        int tx = x + (w - glyphW) / 2;
+        int ty = y + (h - glyphH) / 2;
 
-        context.getMatrices().pushMatrix();
-        context.getMatrices().translate(txtX, txtY);
-        context.getMatrices().scale(fontScale, fontScale);
-        context.drawText(tr, label, 0, 0, txtColor, false);
-        context.getMatrices().popMatrix();
+        var matrices = context.getMatrices();
+        matrices.pushMatrix();
+        matrices.translate(tx, ty);
+        matrices.scale(fontScale, fontScale);
+        context.drawText(tr, label, 0, 0, txt, false);
+        matrices.popMatrix();
     }
 }
