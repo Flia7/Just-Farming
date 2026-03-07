@@ -97,6 +97,7 @@ public class FarmingConfigScreen extends Screen {
     private FlatBoolToggleWidget  squeakyMousematButton;
     private FlatBoolToggleWidget  macroEnabledInGuiButton;
     private FlatBoolToggleWidget  inventoryOverlayButton;
+    private FlatBoolToggleWidget  paperDollButton;
     private FlatButtonWidget                  inventoryHudLocationButton;
     private InventoryOverlayXSlider           inventoryOverlayXSlider;
     private InventoryOverlayYSlider           inventoryOverlayYSlider;
@@ -402,6 +403,16 @@ public class FarmingConfigScreen extends Screen {
                 "Adjust the X/Y sliders below to change its position.")));
         y += bh + pad;
 
+        paperDollButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
+                        Text.literal("Paper Doll"),
+                        config.paperDollEnabled);
+        this.addDrawableChild(paperDollButton);
+        paperDollButton.setTooltip(Tooltip.of(Text.literal(
+                "Show a paper-doll player model to the right of the inventory HUD,\n" +
+                "with a WASD keystrokes + CPS counter below it.\n" +
+                "Requires the Inventory HUD Overlay to be enabled.")));
+        y += bh + pad;
+
         inventoryHudLocationButton = new FlatButtonWidget(widgetX, y, bw, bh,
                         Text.literal("Inventory HUD Location"),
                         btn -> {
@@ -635,6 +646,7 @@ public class FarmingConfigScreen extends Screen {
         squeakyMousematButton.setOnChange(markCustom);
         macroEnabledInGuiButton.setOnChange(markCustom);
         inventoryOverlayButton.setOnChange(markCustom);
+        paperDollButton.setOnChange(markCustom);
         inventoryOverlayXSlider.setOnChange(markCustom);
         inventoryOverlayYSlider.setOnChange(markCustom);
         inventoryOverlayScaleSlider.setOnChange(markCustom);
@@ -701,6 +713,7 @@ public class FarmingConfigScreen extends Screen {
         squeakyMousematButton.visible = t2 && inContentBounds(squeakyMousematButton);
         macroEnabledInGuiButton.visible = t2 && inContentBounds(macroEnabledInGuiButton);
         inventoryOverlayButton.visible       = t2 && inContentBounds(inventoryOverlayButton);
+        paperDollButton.visible              = t2 && inContentBounds(paperDollButton);
         inventoryHudLocationButton.visible    = t2 && inContentBounds(inventoryHudLocationButton);
         inventoryOverlayXSlider.visible       = t2 && inContentBounds(inventoryOverlayXSlider);
         inventoryOverlayYSlider.visible       = t2 && inContentBounds(inventoryOverlayYSlider);
@@ -913,6 +926,7 @@ public class FarmingConfigScreen extends Screen {
         config.squeakyMousematEnabled = squeakyMousematButton.getValue();
         config.macroEnabledInGui    = macroEnabledInGuiButton.getValue();
         config.inventoryOverlayEnabled = inventoryOverlayButton.getValue();
+        config.paperDollEnabled     = paperDollButton.getValue();
         config.inventoryOverlayX    = inventoryOverlayXSlider.getPositionValue();
         config.inventoryOverlayY    = inventoryOverlayYSlider.getPositionValue();
         config.inventoryOverlayScale = inventoryOverlayScaleSlider.getScaleValue();

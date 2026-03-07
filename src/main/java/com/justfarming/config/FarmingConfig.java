@@ -107,6 +107,14 @@ public class FarmingConfig {
     public float inventoryOverlayScale = 1.0f;
 
     /**
+     * When {@code true}, renders a paper-doll player model to the right of the
+     * inventory HUD overlay, along with a compact WASD keystrokes + CPS display
+     * below the model.  Only visible while {@link #inventoryOverlayEnabled} is
+     * also {@code true}.
+     */
+    public boolean paperDollEnabled = false;
+
+    /**
      * When {@code true}, the macro will only start (and will auto-stop) when
      * the player is detected to be in the Hypixel Skyblock Garden.
      */
