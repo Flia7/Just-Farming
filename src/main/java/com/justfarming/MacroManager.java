@@ -654,6 +654,33 @@ public class MacroManager {
                         ? pestDetector.getPestPlots() : Collections.emptySet();
                 if (config.autoPestKillerEnabled && pestKillerManager != null
                         && !pestPlots.isEmpty()) {
+                    // Abort pest killer if the player has no vacuum in the hotbar.
+                    if (!PestKillerManager.hasVacuumInHotbar(player)) {
+                        LOGGER.warn("[Just Farming] No vacuum found in hotbar – pest killer skipped.");
+                        if (client.player != null) {
+                            client.player.sendMessage(
+                                    net.minecraft.text.Text.literal(
+                                            "§c[Just Farming] No vacuum detected in hotbar, pest killer disabled"),
+                                    false);
+                        }
+                        // Fall through to visitor or farm as if pest killer were not enabled.
+                        if (config.visitorsEnabled && visitorManager != null) {
+                            running = false;
+                            state = MacroState.IDLE;
+                            lastRotationTime = 0;
+                            waitingForVisitors = true;
+                            visitorManager.start();
+                            LOGGER.info("[Just Farming] No vacuum – skipping pest killer, starting visitor routine.");
+                        } else {
+                            triggerRewarp();
+                            state = MacroState.DETECTING;
+                            startDetectTime = 0;
+                            detectStartPos = new Vec3d(player.getX(), player.getY(), player.getZ());
+                            lastPos = null;
+                            stuckTicks = 0;
+                        }
+                        break;
+                    }
                     // Pest killer has priority over visitors at the rewarp block.
                     // Stop the farming macro and start the pest killer for all infested plots.
                     running = false;
