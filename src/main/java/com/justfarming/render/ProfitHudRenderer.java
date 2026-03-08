@@ -308,6 +308,34 @@ public class ProfitHudRenderer {
         return SEPARATOR_PRE_GAP + SEP_H + SECTION_GAP;
     }
 
+    // ── Static dimension helpers (used by Edit HUD screen) ────────────────────
+
+    /** Returns the panel width in pixels (constant, independent of content). */
+    public static int getPanelWidth() {
+        return PANEL_W;
+    }
+
+    /**
+     * Returns an approximate panel height in pixels for the given configuration.
+     * Used by the Edit HUD screen to determine drag bounds before tracker data is
+     * available.  The value errs slightly tall to ensure the full panel is covered.
+     *
+     * @param pestProfitEnabled whether the pest-profit section is shown
+     */
+    public static int getApproxHeight(boolean pestProfitEnabled) {
+        // crop title + BPS
+        int h = PAD_Y * 2 + LINE_H + scaledLineH();
+        // Farming section (separator + label + ~2 item rows + total)
+        h += separatorH() + LINE_H + 3 * scaledLineH();
+        // Pests section (optional)
+        if (pestProfitEnabled) {
+            h += separatorH() + LINE_H + 2 * scaledLineH();
+        }
+        // Stats section (separator + label + profit/hour)
+        h += separatorH() + LINE_H + scaledLineH();
+        return h;
+    }
+
     // ── Formatting helpers ────────────────────────────────────────────────────
 
     private static final NumberFormat NUM_FMT =

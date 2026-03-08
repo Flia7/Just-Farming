@@ -15,12 +15,13 @@ import net.minecraft.text.Text;
  * Configuration GUI screen for FLIA.
  *
  * <p>Layout inspired by the sw mod: a left navigation sidebar with
- * category tabs and a right content panel. Five categories organise
+ * category tabs and a right content panel. Six categories organise
  * the settings:
  * <ul>
  *   <li><b>Farming</b>  – crop selection, rewarp, start/stop macro, farming tool slot</li>
  *   <li><b>Pests</b>    – pest highlight, labels, ESP, tracer; auto pest killer settings</li>
- *   <li><b>Misc</b>     – freelook toggle, unlocked mouse</li>
+ *   <li><b>HUD</b>      – inventory overlay, paper doll, profit tracker</li>
+ *   <li><b>Settings</b> – freelook, unlocked mouse, garden-only, macro-in-GUI</li>
  *   <li><b>Delays</b>   – all timing/delay sliders</li>
  *   <li><b>Visitors</b> – visitor macro settings and filters</li>
  * </ul>
@@ -50,7 +51,15 @@ public class FarmingConfigScreen extends Screen {
     private static final int COL_SHADOW      = 0x60000000; // drop shadow
 
     // ── Tabs ──────────────────────────────────────────────────────────────────
-    private static final String[] TAB_NAMES = { "Just Farming", "Pests", "Misc", "Delays", "Visitors" };
+    private static final String[] TAB_NAMES = { "Farming", "Pests", "HUD", "Settings", "Delays", "Visitors" };
+    private static final int[] TAB_COLORS = {
+        0xFF50D090,  // Farming: mint green
+        0xFFE06848,  // Pests: warm red-orange
+        0xFF50A8E0,  // HUD: sky blue
+        0xFF9090C8,  // Settings: lavender
+        0xFFD0A830,  // Delays: amber
+        0xFFD060C0,  // Visitors: pink-purple
+    };
     private int activeTab = 0;
 
     // ── Preset mode ────────────────────────────────────────────────────────────
@@ -98,9 +107,7 @@ public class FarmingConfigScreen extends Screen {
     private FlatBoolToggleWidget  macroEnabledInGuiButton;
     private FlatBoolToggleWidget  inventoryOverlayButton;
     private FlatBoolToggleWidget  paperDollButton;
-    private FlatButtonWidget                  inventoryHudLocationButton;
-    private InventoryOverlayXSlider           inventoryOverlayXSlider;
-    private InventoryOverlayYSlider           inventoryOverlayYSlider;
+    private FlatButtonWidget                  editHudButton;
     private InventoryOverlayScaleSlider       inventoryOverlayScaleSlider;
     private FlatBoolToggleWidget  profitTrackerButton;
     private FlatBoolToggleWidget  pestProfitButton;
@@ -144,13 +151,15 @@ public class FarmingConfigScreen extends Screen {
 
     // ── Section-label Y positions (set in init, used in render) ───────────────
     private int sectionCropY, actionSeparatorY;
-    private int sectionPestsY, sectionMiscY, miscSeparatorY, sectionInvOverlayY, sectionProfitY;
+    private int sectionPestsY, sectionPestKillerY, pestKillerStatusY;
+    // HUD tab (tab 2)
+    private int sectionHudInvY, sectionHudProfitY;
+    // Settings tab (tab 3)
+    private int sectionSettingsCameraY, sectionSettingsMacroY, settingsCameraSeparatorY;
+    // Delays tab (tab 4)
     private int sectionGlobalRandomY, sectionLaneSwapY, sectionRewarpDelayY, sectionMousematDelayY, sectionVisitorDelaysY, sectionPestKillerDelaysY;
-    private int sectionVisitorsY;
-    private int sectionVisitorFiltersY;
-    private int visitorStatusY;
-    private int sectionPestKillerY;
-    private int pestKillerStatusY;
+    // Visitors tab (tab 5)
+    private int sectionVisitorsY, sectionVisitorFiltersY, visitorStatusY;
 
     // ── Scroll state (persists across clearAndInit) ───────────────────────────
     private final int[] tabScrollOffsets  = new int[TAB_NAMES.length];
@@ -345,9 +354,64 @@ public class FarmingConfigScreen extends Screen {
         pestKillerStatusY = y;
         tabContentHeights[1] = y - contentAreaTopY + tabScrollOffsets[1];
 
-        // ── Tab 2 – Misc ──────────────────────────────────────────────────────
+        // ── Tab 2 – HUD ───────────────────────────────────────────────────────
         y = contentAreaTopY - tabScrollOffsets[2];
-        sectionMiscY = y;
+        sectionHudInvY = y;
+        y += sLH;
+
+        inventoryOverlayButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
+                        Text.literal("Inventory HUD"),
+                        config.inventoryOverlayEnabled);
+        this.addDrawableChild(inventoryOverlayButton);
+        inventoryOverlayButton.setTooltip(Tooltip.of(Text.literal(
+                "Show your main inventory (27 slots) as a HUD overlay.")));
+        y += bh + pad;
+
+        paperDollButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
+                        Text.literal("Player Widget"),
+                        config.paperDollEnabled);
+        this.addDrawableChild(paperDollButton);
+        paperDollButton.setTooltip(Tooltip.of(Text.literal(
+                "Show a player model with WASD keystrokes and CPS counter\nnext to the Inventory HUD. Requires Inventory HUD to be on.")));
+        y += bh + pad;
+
+        inventoryOverlayScaleSlider = new InventoryOverlayScaleSlider(widgetX, y, bw, bh,
+                        config.inventoryOverlayScale);
+        this.addDrawableChild(inventoryOverlayScaleSlider);
+        inventoryOverlayScaleSlider.setTooltip(Tooltip.of(Text.literal(
+                "Scale multiplier for the Inventory HUD. Range: 0.5–3.0.\nAlso adjustable by scrolling in Edit HUD mode.")));
+        y += bh + pad + gap;
+
+        sectionHudProfitY = y;
+        y += sLH;
+
+        profitTrackerButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
+                        Text.literal("Show Profit HUD"),
+                        config.profitTrackerEnabled);
+        this.addDrawableChild(profitTrackerButton);
+        profitTrackerButton.setTooltip(Tooltip.of(Text.literal(
+                "Display a profit tracking overlay showing items collected\nand NPC profit earned during the current session.")));
+        y += bh + pad;
+
+        pestProfitButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
+                        Text.literal("Show Pest Profits"),
+                        config.pestProfitEnabled);
+        this.addDrawableChild(pestProfitButton);
+        pestProfitButton.setTooltip(Tooltip.of(Text.literal(
+                "Show the Pest Profit section inside the Profit HUD,\ntracking items gained while the pest killer is active.")));
+        y += bh + pad;
+
+        profitResetButton = new FlatButtonWidget(widgetX, y, bw, bh,
+                        Text.literal("Reset Session"),
+                        btn -> com.justfarming.JustFarming.getProfitTracker().reset());
+        this.addDrawableChild(profitResetButton);
+        profitResetButton.setTooltip(Tooltip.of(Text.literal(
+                "Clear all accumulated profit data and restart the session.")));
+        tabContentHeights[2] = y + bh - contentAreaTopY + tabScrollOffsets[2];
+
+        // ── Tab 3 – Settings ──────────────────────────────────────────────────
+        y = contentAreaTopY - tabScrollOffsets[3];
+        sectionSettingsCameraY = y;
         y += sLH;
 
         freelookButton = new FlatButtonWidget(widgetX, y, bw, bh,
@@ -360,8 +424,11 @@ public class FarmingConfigScreen extends Screen {
         freelookButton.setTooltip(Tooltip.of(Text.literal("Enable third-person camera behind the player.\nScroll wheel adjusts zoom distance.")));
         y += bh + pad + gap;
 
-        miscSeparatorY = y;
+        settingsCameraSeparatorY = y;
         y += Math.max(2, Math.round(4 * scale));
+
+        sectionSettingsMacroY = y;
+        y += sLH;
 
         unlockedMouseButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
                         Text.translatable("gui.just-farming.unlocked_mouse_label"),
@@ -389,101 +456,12 @@ public class FarmingConfigScreen extends Screen {
                         config.macroEnabledInGui);
         this.addDrawableChild(macroEnabledInGuiButton);
         macroEnabledInGuiButton.setTooltip(Tooltip.of(Text.literal(
-                "When enabled, the macro continues moving and breaking blocks\n" +
-                "even while any GUI (including this screen) is open.\n" +
+                "Continue moving and breaking blocks even while this GUI is open.\n" +
                 "Removes the brief pause when opening or closing a screen.")));
-        y += bh + pad + gap;
+        tabContentHeights[3] = y + bh - contentAreaTopY + tabScrollOffsets[3];
 
-        sectionInvOverlayY = y;
-        y += sLH;
-
-        inventoryOverlayButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
-                        Text.translatable("gui.just-farming.inventory_overlay_label"),
-                        config.inventoryOverlayEnabled);
-        this.addDrawableChild(inventoryOverlayButton);
-        inventoryOverlayButton.setTooltip(Tooltip.of(Text.literal(
-                "Show your main inventory (27 slots) as a HUD overlay.\n" +
-                "Adjust the X/Y sliders below to change its position.")));
-        y += bh + pad;
-
-        paperDollButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
-                        Text.literal("Paper Doll"),
-                        config.paperDollEnabled);
-        this.addDrawableChild(paperDollButton);
-        paperDollButton.setTooltip(Tooltip.of(Text.literal(
-                "Show a paper-doll player model to the right of the inventory HUD,\n" +
-                "with a WASD keystrokes + CPS counter below it.\n" +
-                "Requires the Inventory HUD Overlay to be enabled.")));
-        y += bh + pad;
-
-        inventoryHudLocationButton = new FlatButtonWidget(widgetX, y, bw, bh,
-                        Text.literal("Inventory HUD Location"),
-                        btn -> {
-                            applyConfig();
-                            if (this.client != null)
-                                this.client.setScreen(new InventoryHudLocationScreen(this, config));
-                        });
-        this.addDrawableChild(inventoryHudLocationButton);
-        inventoryHudLocationButton.setTooltip(Tooltip.of(Text.literal(
-                "Open the inventory HUD position editor.\n" +
-                "Drag the HUD to reposition it. Scroll to resize.")));
-        y += bh + pad;
-
-        inventoryOverlayXSlider = new InventoryOverlayXSlider(widgetX, y, bw, bh,
-                        config.inventoryOverlayX);
-        this.addDrawableChild(inventoryOverlayXSlider);
-        inventoryOverlayXSlider.setTooltip(Tooltip.of(Text.literal(
-                "Horizontal position (X) of the inventory overlay's top-left corner (pixels from left edge).")));
-        y += bh + pad;
-
-        inventoryOverlayYSlider = new InventoryOverlayYSlider(widgetX, y, bw, bh,
-                        config.inventoryOverlayY);
-        this.addDrawableChild(inventoryOverlayYSlider);
-        inventoryOverlayYSlider.setTooltip(Tooltip.of(Text.literal(
-                "Vertical position (Y) of the inventory overlay's top-left corner (pixels from top edge).")));
-        y += bh + pad;
-
-        inventoryOverlayScaleSlider = new InventoryOverlayScaleSlider(widgetX, y, bw, bh,
-                        config.inventoryOverlayScale);
-        this.addDrawableChild(inventoryOverlayScaleSlider);
-        inventoryOverlayScaleSlider.setTooltip(Tooltip.of(Text.literal(
-                "Scale multiplier for the inventory HUD overlay.\n" +
-                "1.0 = default size. Range: 0.5–3.0.")));
-        y += bh + pad + gap;
-
-        sectionProfitY = y;
-        y += sLH;
-
-        profitTrackerButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
-                        Text.literal("Farming Profit HUD"),
-                        config.profitTrackerEnabled);
-        this.addDrawableChild(profitTrackerButton);
-        profitTrackerButton.setTooltip(Tooltip.of(Text.literal(
-                "Show a HUD overlay tracking items collected and NPC profit\n" +
-                "earned during the current farming session.\n" +
-                "All prices are stored in the mod – no API required.")));
-        y += bh + pad;
-
-        pestProfitButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
-                        Text.literal("Pest Profit Section"),
-                        config.pestProfitEnabled);
-        this.addDrawableChild(pestProfitButton);
-        pestProfitButton.setTooltip(Tooltip.of(Text.literal(
-                "Show the Pest Profit section inside the Farming Profit HUD.\n" +
-                "Tracks items and coins gained while the pest killer is active.\n" +
-                "Also adds pest profit/hour to the Profit/Hour line.")));
-        y += bh + pad;
-
-        profitResetButton = new FlatButtonWidget(widgetX, y, bw, bh,
-                        Text.literal("Reset Profit Session"),
-                        btn -> com.justfarming.JustFarming.getProfitTracker().reset());
-        this.addDrawableChild(profitResetButton);
-        profitResetButton.setTooltip(Tooltip.of(Text.literal(
-                "Clear all accumulated profit data and restart the session.")));
-        tabContentHeights[2] = y + bh - contentAreaTopY + tabScrollOffsets[2];
-
-        // ── Tab 3 – Delays ────────────────────────────────────────────────────
-        y = contentAreaTopY - tabScrollOffsets[3];
+        // ── Tab 4 – Delays ────────────────────────────────────────────────────
+        y = contentAreaTopY - tabScrollOffsets[4];
         sectionGlobalRandomY = y;
         y += sLH;
         globalRandomSlider = new GlobalRandomSlider(widgetX, y, bw, bh, config.globalRandomizationMs);
@@ -584,10 +562,10 @@ public class FarmingConfigScreen extends Screen {
         this.addDrawableChild(pestKillerGoToNextPestSlider);
         pestKillerGoToNextPestSlider.setTooltip(Tooltip.of(Text.literal(
                 "Minimum delay after killing a pest before flying toward the next one. (ms)")));
-        tabContentHeights[3] = y + bh - contentAreaTopY + tabScrollOffsets[3];
+        tabContentHeights[4] = y + bh - contentAreaTopY + tabScrollOffsets[4];
 
-        // ── Tab 4 – Visitors ──────────────────────────────────────────────────
-        y = contentAreaTopY - tabScrollOffsets[4];
+        // ── Tab 5 – Visitors ──────────────────────────────────────────────────
+        y = contentAreaTopY - tabScrollOffsets[5];
         sectionVisitorsY = y;
         y += sLH;
 
@@ -638,9 +616,9 @@ public class FarmingConfigScreen extends Screen {
                 "Set to 0 (Disabled) to accept all visitors regardless of cost.")));
         y += bh + pad + gap;
         visitorStatusY = y;
-        tabContentHeights[4] = y - contentAreaTopY + tabScrollOffsets[4];
+        tabContentHeights[5] = y - contentAreaTopY + tabScrollOffsets[5];
 
-        // ── Always-visible: Close button anchored to the bottom ───────────────
+        // ── Always-visible: Save/Close button anchored to the bottom of the content area
         int closeBtnY = winY + winH - bh - pad;
         saveCloseButton = new FlatButtonWidget(widgetX, closeBtnY, bw, bh,
                         Text.translatable("gui.just-farming.close"),
@@ -649,7 +627,9 @@ public class FarmingConfigScreen extends Screen {
 
         // ── Always-visible: Preset cycling button in the bottom-left (nav panel) ─
         int presetBtnW = navW - pad * 2;
-        presetButton = new FlatButtonWidget(winX + pad, closeBtnY, presetBtnW, bh,
+        // Preset button moves up one slot to make room for Edit HUD button
+        int presetBtnY = closeBtnY - bh - pad;
+        presetButton = new FlatButtonWidget(winX + pad, presetBtnY, presetBtnW, bh,
                         getPresetButtonText(),
                         btn -> {
                             applyConfig();
@@ -659,7 +639,21 @@ public class FarmingConfigScreen extends Screen {
         presetButton.setTooltip(Tooltip.of(Text.literal(
                 "Blatant: all features on, 0 delays.\n" +
                 "Smart: human-like delays and default settings.\n" +
-                "Custom: your current settings (shown when you change anything).")));
+                "Custom: your current settings.")));
+
+        // Edit HUD button (nav panel, below preset)
+        editHudButton = new FlatButtonWidget(winX + pad, closeBtnY, presetBtnW, bh,
+                        Text.literal("Edit HUD"),
+                        btn -> {
+                            applyConfig();
+                            if (this.client != null)
+                                this.client.setScreen(new InventoryHudLocationScreen(this, config));
+                        });
+        this.addDrawableChild(editHudButton);
+        editHudButton.setTooltip(Tooltip.of(Text.literal(
+                "Open the HUD editor.\n" +
+                "Drag any HUD to reposition it.\n" +
+                "Scroll over the Inventory HUD to resize it.")));
 
         // ── Register onChange callbacks so preset switches to "Custom" on user edits ─
         Runnable markCustom = this::markPresetCustom;
@@ -674,19 +668,18 @@ public class FarmingConfigScreen extends Screen {
         pestKillerEnabledButton.setOnChange(markCustom);
         pestKillerWarpToPlotButton.setOnChange(markCustom);
         pestKillerVacuumRangeSlider.setOnChange(markCustom);
-        // Tab 2
+        // Tab 2 (HUD)
+        inventoryOverlayButton.setOnChange(markCustom);
+        paperDollButton.setOnChange(markCustom);
+        inventoryOverlayScaleSlider.setOnChange(markCustom);
+        profitTrackerButton.setOnChange(markCustom);
+        pestProfitButton.setOnChange(markCustom);
+        // Tab 3 (Settings)
         unlockedMouseButton.setOnChange(markCustom);
         gardenOnlyButton.setOnChange(markCustom);
         squeakyMousematButton.setOnChange(markCustom);
         macroEnabledInGuiButton.setOnChange(markCustom);
-        inventoryOverlayButton.setOnChange(markCustom);
-        paperDollButton.setOnChange(markCustom);
-        inventoryOverlayXSlider.setOnChange(markCustom);
-        inventoryOverlayYSlider.setOnChange(markCustom);
-        inventoryOverlayScaleSlider.setOnChange(markCustom);
-        profitTrackerButton.setOnChange(markCustom);
-        pestProfitButton.setOnChange(markCustom);
-        // Tab 3
+        // Tab 4 (Delays)
         globalRandomSlider.setOnChange(markCustom);
         laneSwapDelaySlider.setOnChange(markCustom);
         laneSwapRandomSlider.setOnChange(markCustom);
@@ -703,7 +696,7 @@ public class FarmingConfigScreen extends Screen {
         pestKillerTeleportDelaySliderInDelays.setOnChange(markCustom);
         pestKillerAfterTeleportSlider.setOnChange(markCustom);
         pestKillerGoToNextPestSlider.setOnChange(markCustom);
-        // Tab 4
+        // Tab 5 (Visitors)
         visitorsEnabledButton.setOnChange(markCustom);
         visitorsBuyFromBazaarButton.setOnChange(markCustom);
         visitorsMinCountSlider.setOnChange(markCustom);
@@ -738,50 +731,49 @@ public class FarmingConfigScreen extends Screen {
         titleScaleSlider.visible    = t1 && inContentBounds(titleScaleSlider);
         pestEspButton.visible       = t1 && inContentBounds(pestEspButton);
         pestTracerButton.visible    = t1 && inContentBounds(pestTracerButton);
-        pestKillerEnabledButton.visible         = t1 && inContentBounds(pestKillerEnabledButton);
-        pestKillerWarpToPlotButton.visible      = t1 && inContentBounds(pestKillerWarpToPlotButton);
-        pestKillerVacuumRangeSlider.visible     = t1 && inContentBounds(pestKillerVacuumRangeSlider);
+        pestKillerEnabledButton.visible     = t1 && inContentBounds(pestKillerEnabledButton);
+        pestKillerWarpToPlotButton.visible  = t1 && inContentBounds(pestKillerWarpToPlotButton);
+        pestKillerVacuumRangeSlider.visible = t1 && inContentBounds(pestKillerVacuumRangeSlider);
 
         boolean t2 = activeTab == 2;
-        freelookButton.visible        = t2 && inContentBounds(freelookButton);
-        unlockedMouseButton.visible   = t2 && inContentBounds(unlockedMouseButton);
-        gardenOnlyButton.visible      = t2 && inContentBounds(gardenOnlyButton);
-        squeakyMousematButton.visible = t2 && inContentBounds(squeakyMousematButton);
-        macroEnabledInGuiButton.visible = t2 && inContentBounds(macroEnabledInGuiButton);
-        inventoryOverlayButton.visible       = t2 && inContentBounds(inventoryOverlayButton);
-        paperDollButton.visible              = t2 && inContentBounds(paperDollButton);
-        inventoryHudLocationButton.visible    = t2 && inContentBounds(inventoryHudLocationButton);
-        inventoryOverlayXSlider.visible       = t2 && inContentBounds(inventoryOverlayXSlider);
-        inventoryOverlayYSlider.visible       = t2 && inContentBounds(inventoryOverlayYSlider);
-        inventoryOverlayScaleSlider.visible   = t2 && inContentBounds(inventoryOverlayScaleSlider);
-        profitTrackerButton.visible  = t2 && inContentBounds(profitTrackerButton);
-        pestProfitButton.visible     = t2 && inContentBounds(pestProfitButton);
-        profitResetButton.visible    = t2 && inContentBounds(profitResetButton);
+        inventoryOverlayButton.visible      = t2 && inContentBounds(inventoryOverlayButton);
+        paperDollButton.visible             = t2 && inContentBounds(paperDollButton);
+        inventoryOverlayScaleSlider.visible = t2 && inContentBounds(inventoryOverlayScaleSlider);
+        profitTrackerButton.visible         = t2 && inContentBounds(profitTrackerButton);
+        pestProfitButton.visible            = t2 && inContentBounds(pestProfitButton);
+        profitResetButton.visible           = t2 && inContentBounds(profitResetButton);
 
         boolean t3 = activeTab == 3;
-        globalRandomSlider.visible            = t3 && inContentBounds(globalRandomSlider);
-        laneSwapDelaySlider.visible       = t3 && inContentBounds(laneSwapDelaySlider);
-        laneSwapRandomSlider.visible      = t3 && inContentBounds(laneSwapRandomSlider);
-        rewarpDelaySlider.visible         = t3 && inContentBounds(rewarpDelaySlider);
-        rewarpRandomSlider.visible        = t3 && inContentBounds(rewarpRandomSlider);
-        mousematSwapToSlider.visible      = t3 && inContentBounds(mousematSwapToSlider);
-        mousematPreDelaySlider.visible    = t3 && inContentBounds(mousematPreDelaySlider);
-        mousematPostDelaySlider.visible   = t3 && inContentBounds(mousematPostDelaySlider);
-        mousematResumeDelaySlider.visible = t3 && inContentBounds(mousematResumeDelaySlider);
-        visitorsDelaySlider.visible           = t3 && inContentBounds(visitorsDelaySlider);
-        visitorsRandomSlider.visible          = t3 && inContentBounds(visitorsRandomSlider);
-        visitorsTeleportDelaySlider.visible   = t3 && inContentBounds(visitorsTeleportDelaySlider);
-        bazaarSearchDelaySlider.visible       = t3 && inContentBounds(bazaarSearchDelaySlider);
-        pestKillerTeleportDelaySliderInDelays.visible = t3 && inContentBounds(pestKillerTeleportDelaySliderInDelays);
-        pestKillerAfterTeleportSlider.visible = t3 && inContentBounds(pestKillerAfterTeleportSlider);
-        pestKillerGoToNextPestSlider.visible  = t3 && inContentBounds(pestKillerGoToNextPestSlider);
+        freelookButton.visible          = t3 && inContentBounds(freelookButton);
+        unlockedMouseButton.visible     = t3 && inContentBounds(unlockedMouseButton);
+        gardenOnlyButton.visible        = t3 && inContentBounds(gardenOnlyButton);
+        squeakyMousematButton.visible   = t3 && inContentBounds(squeakyMousematButton);
+        macroEnabledInGuiButton.visible = t3 && inContentBounds(macroEnabledInGuiButton);
 
         boolean t4 = activeTab == 4;
-        visitorsEnabledButton.visible         = t4 && inContentBounds(visitorsEnabledButton);
-        visitorsBuyFromBazaarButton.visible   = t4 && inContentBounds(visitorsBuyFromBazaarButton);
-        visitorsBlacklistButton.visible       = t4 && inContentBounds(visitorsBlacklistButton);
-        visitorsMinCountSlider.visible        = t4 && inContentBounds(visitorsMinCountSlider);
-        visitorsMaxPriceSlider.visible        = t4 && inContentBounds(visitorsMaxPriceSlider);
+        globalRandomSlider.visible            = t4 && inContentBounds(globalRandomSlider);
+        laneSwapDelaySlider.visible           = t4 && inContentBounds(laneSwapDelaySlider);
+        laneSwapRandomSlider.visible          = t4 && inContentBounds(laneSwapRandomSlider);
+        rewarpDelaySlider.visible             = t4 && inContentBounds(rewarpDelaySlider);
+        rewarpRandomSlider.visible            = t4 && inContentBounds(rewarpRandomSlider);
+        mousematSwapToSlider.visible          = t4 && inContentBounds(mousematSwapToSlider);
+        mousematPreDelaySlider.visible        = t4 && inContentBounds(mousematPreDelaySlider);
+        mousematPostDelaySlider.visible       = t4 && inContentBounds(mousematPostDelaySlider);
+        mousematResumeDelaySlider.visible     = t4 && inContentBounds(mousematResumeDelaySlider);
+        visitorsDelaySlider.visible           = t4 && inContentBounds(visitorsDelaySlider);
+        visitorsRandomSlider.visible          = t4 && inContentBounds(visitorsRandomSlider);
+        visitorsTeleportDelaySlider.visible   = t4 && inContentBounds(visitorsTeleportDelaySlider);
+        bazaarSearchDelaySlider.visible       = t4 && inContentBounds(bazaarSearchDelaySlider);
+        pestKillerTeleportDelaySliderInDelays.visible = t4 && inContentBounds(pestKillerTeleportDelaySliderInDelays);
+        pestKillerAfterTeleportSlider.visible = t4 && inContentBounds(pestKillerAfterTeleportSlider);
+        pestKillerGoToNextPestSlider.visible  = t4 && inContentBounds(pestKillerGoToNextPestSlider);
+
+        boolean t5 = activeTab == 5;
+        visitorsEnabledButton.visible       = t5 && inContentBounds(visitorsEnabledButton);
+        visitorsBuyFromBazaarButton.visible = t5 && inContentBounds(visitorsBuyFromBazaarButton);
+        visitorsBlacklistButton.visible     = t5 && inContentBounds(visitorsBlacklistButton);
+        visitorsMinCountSlider.visible      = t5 && inContentBounds(visitorsMinCountSlider);
+        visitorsMaxPriceSlider.visible      = t5 && inContentBounds(visitorsMaxPriceSlider);
     }
 
     @Override
@@ -823,7 +815,7 @@ public class FarmingConfigScreen extends Screen {
         // ── Content: current tab section title ────────────────────────────────
         int contentTitleY = winY + Math.max(4, Math.round(8 * scale));
         context.drawTextWithShadow(this.textRenderer,
-                Text.literal(TAB_NAMES[activeTab]).withColor(COL_TEXT),
+                Text.literal(TAB_NAMES[activeTab]).withColor(TAB_COLORS[activeTab]),
                 contentX + Math.round(8 * scale), contentTitleY, COL_TEXT);
 
         // ── Content: thin separator below title ───────────────────────────────
@@ -833,14 +825,14 @@ public class FarmingConfigScreen extends Screen {
         // ── Section labels for the active tab ─────────────────────────────────
         if (activeTab == 0) {
             if (yInContentBounds(sectionCropY))
-                drawSectionLabel(context, "Crop", sectionCropY);
+                drawSectionLabel(context, "Crop Settings", sectionCropY);
             if (yInContentBounds(actionSeparatorY))
                 context.fill(contentX + 16, actionSeparatorY, winR - 16, actionSeparatorY + 1, COL_SEP);
         } else if (activeTab == 1) {
             if (yInContentBounds(sectionPestsY))
-                drawSectionLabel(context, "Pests", sectionPestsY);
+                drawSectionLabel(context, "Detection", sectionPestsY);
             if (yInContentBounds(sectionPestKillerY))
-                drawSectionLabel(context, "Pest Killer", sectionPestKillerY);
+                drawSectionLabel(context, "Auto Pest Killer", sectionPestKillerY);
             // Show current pest killer state below the buttons when active
             if (pestKillerManager != null && pestKillerManager.isActive() && yInContentBounds(pestKillerStatusY)) {
                 String stateText = "State: " + pestKillerManager.getState().name();
@@ -850,17 +842,20 @@ public class FarmingConfigScreen extends Screen {
                         statusX, pestKillerStatusY, COL_TEXT_MUTED);
             }
         } else if (activeTab == 2) {
-            if (yInContentBounds(sectionMiscY))
-                drawSectionLabel(context, "Misc", sectionMiscY);
-            if (yInContentBounds(miscSeparatorY))
-                context.fill(contentX + 16, miscSeparatorY, winR - 16, miscSeparatorY + 1, COL_SEP);
-            if (yInContentBounds(sectionInvOverlayY))
-                drawSectionLabel(context, "Inventory Overlay", sectionInvOverlayY);
-            if (yInContentBounds(sectionProfitY))
-                drawSectionLabel(context, "Farming Profit HUD", sectionProfitY);
+            if (yInContentBounds(sectionHudInvY))
+                drawSectionLabel(context, "Inventory HUD", sectionHudInvY);
+            if (yInContentBounds(sectionHudProfitY))
+                drawSectionLabel(context, "Profit HUD", sectionHudProfitY);
         } else if (activeTab == 3) {
+            if (yInContentBounds(sectionSettingsCameraY))
+                drawSectionLabel(context, "Camera", sectionSettingsCameraY);
+            if (yInContentBounds(settingsCameraSeparatorY))
+                context.fill(contentX + 16, settingsCameraSeparatorY, winR - 16, settingsCameraSeparatorY + 1, COL_SEP);
+            if (yInContentBounds(sectionSettingsMacroY))
+                drawSectionLabel(context, "Macro", sectionSettingsMacroY);
+        } else if (activeTab == 4) {
             if (yInContentBounds(sectionGlobalRandomY))
-                drawSectionLabel(context, "Global Randomization", sectionGlobalRandomY);
+                drawSectionLabel(context, "Global", sectionGlobalRandomY);
             if (yInContentBounds(sectionLaneSwapY))
                 drawSectionLabel(context, "Lane Swap", sectionLaneSwapY);
             if (yInContentBounds(sectionRewarpDelayY))
@@ -871,11 +866,11 @@ public class FarmingConfigScreen extends Screen {
                 drawSectionLabel(context, "Visitor Delays", sectionVisitorDelaysY);
             if (yInContentBounds(sectionPestKillerDelaysY))
                 drawSectionLabel(context, "Pest Killer Delays", sectionPestKillerDelaysY);
-        } else if (activeTab == 4) {
+        } else if (activeTab == 5) {
             if (yInContentBounds(sectionVisitorsY))
                 drawSectionLabel(context, "Visitors", sectionVisitorsY);
             if (yInContentBounds(sectionVisitorFiltersY))
-                drawSectionLabel(context, "Visitor Filters", sectionVisitorFiltersY);
+                drawSectionLabel(context, "Filters", sectionVisitorFiltersY);
             // Show current visitor routine status below the buttons when active
             if (visitorManager != null && visitorManager.isActive() && yInContentBounds(visitorStatusY)) {
                 String stateText = "State: " + visitorManager.getState().name();
@@ -906,11 +901,13 @@ public class FarmingConfigScreen extends Screen {
 
     /** Draws a labelled section header spanning the content area. */
     private void drawSectionLabel(DrawContext context, String label, int y) {
+        int accentColor = (activeTab >= 0 && activeTab < TAB_COLORS.length)
+                ? TAB_COLORS[activeTab] : COL_ACCENT;
         int winR = winX + winW;
         // Accent bar: starts at contentX+6, width 3 px
         int accentBarEnd = contentX + 9;
         context.fill(contentX + 4, y, winR - 4, y + sLH, COL_SECTION_BG);
-        context.fill(contentX + 6, y + 1, accentBarEnd, y + sLH - 1, COL_ACCENT);
+        context.fill(contentX + 6, y + 1, accentBarEnd, y + sLH - 1, accentColor);
         context.drawTextWithShadow(this.textRenderer,
                 Text.literal(label).withColor(COL_TEXT),
                 accentBarEnd + 5, y + 1, COL_TEXT);
@@ -968,8 +965,6 @@ public class FarmingConfigScreen extends Screen {
         config.macroEnabledInGui    = macroEnabledInGuiButton.getValue();
         config.inventoryOverlayEnabled = inventoryOverlayButton.getValue();
         config.paperDollEnabled     = paperDollButton.getValue();
-        config.inventoryOverlayX    = inventoryOverlayXSlider.getPositionValue();
-        config.inventoryOverlayY    = inventoryOverlayYSlider.getPositionValue();
         config.inventoryOverlayScale = inventoryOverlayScaleSlider.getScaleValue();
         config.profitTrackerEnabled = profitTrackerButton.getValue();
         config.pestProfitEnabled    = pestProfitButton.getValue();
@@ -1265,9 +1260,11 @@ public class FarmingConfigScreen extends Screen {
             if (active) {
                 context.fill(getX(), getY(), getX() + getWidth(), getY() + getHeight(),
                         COL_TAB_ACTIVE);
-                // Accent left-edge indicator (3 px wide)
+                // Accent left-edge indicator (3 px wide) in tab-specific color
+                int tabColor = (tabIndex >= 0 && tabIndex < TAB_COLORS.length)
+                        ? TAB_COLORS[tabIndex] : COL_ACCENT;
                 context.fill(getX(), getY(), getX() + 3, getY() + getHeight(),
-                        COL_ACCENT);
+                        tabColor);
             } else if (hovered) {
                 context.fill(getX(), getY(), getX() + getWidth(), getY() + getHeight(),
                         0x14FFFFFF);
@@ -1900,118 +1897,6 @@ public class FarmingConfigScreen extends Screen {
         @Override
         protected void updateMessage() {
             setMessage(Text.literal(String.format("Vacuum Range: %d blocks", getRangeValue())));
-        }
-
-        @Override
-        public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
-            FlatButtonWidget.renderFlatSlider(context, getX(), getY(), getWidth(), getHeight(), value, getMessage());
-        }
-    }
-
-    /** Slider for the inventory overlay horizontal position (0–1920 px from left edge). */
-    private static class InventoryOverlayXSlider extends SliderWidget {
-
-        private static final int MIN = 0;
-        private static final int MAX = 1920;
-        private static final int GLFW_KEY_LEFT  = 263;
-        private static final int GLFW_KEY_RIGHT = 262;
-
-        private Runnable onChange;
-
-        InventoryOverlayXSlider(int x, int y, int width, int height, int initialValue) {
-            super(x, y, width, height, Text.empty(),
-                    (double)(Math.max(MIN, Math.min(MAX, initialValue)) - MIN) / (MAX - MIN));
-            updateMessage();
-        }
-
-        void setOnChange(Runnable r) { this.onChange = r; }
-
-        int getPositionValue() {
-            return MIN + (int) Math.round(value * (MAX - MIN));
-        }
-
-        @Override
-        protected void applyValue() {
-            int steps = MAX - MIN;
-            int rawInt = MIN + (int) Math.round(this.value * steps);
-            rawInt = Math.max(MIN, Math.min(MAX, rawInt));
-            this.value = (double)(rawInt - MIN) / steps;
-            if (onChange != null) onChange.run();
-        }
-
-        @Override
-        public boolean keyPressed(net.minecraft.client.input.KeyInput input) {
-            if (input.key() == GLFW_KEY_LEFT || input.key() == GLFW_KEY_RIGHT) {
-                double step = 5.0 / (MAX - MIN);
-                this.value = (input.key() == GLFW_KEY_LEFT)
-                        ? Math.max(0.0, this.value - step)
-                        : Math.min(1.0, this.value + step);
-                applyValue();
-                updateMessage();
-                return true;
-            }
-            return super.keyPressed(input);
-        }
-
-        @Override
-        protected void updateMessage() {
-            setMessage(Text.literal(String.format("Overlay X: %d px", getPositionValue())));
-        }
-
-        @Override
-        public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
-            FlatButtonWidget.renderFlatSlider(context, getX(), getY(), getWidth(), getHeight(), value, getMessage());
-        }
-    }
-
-    /** Slider for the inventory overlay vertical position (0–1080 px from bottom edge). */
-    private static class InventoryOverlayYSlider extends SliderWidget {
-
-        private static final int MIN = 0;
-        private static final int MAX = 1080;
-        private static final int GLFW_KEY_LEFT  = 263;
-        private static final int GLFW_KEY_RIGHT = 262;
-
-        private Runnable onChange;
-
-        InventoryOverlayYSlider(int x, int y, int width, int height, int initialValue) {
-            super(x, y, width, height, Text.empty(),
-                    (double)(Math.max(MIN, Math.min(MAX, initialValue)) - MIN) / (MAX - MIN));
-            updateMessage();
-        }
-
-        void setOnChange(Runnable r) { this.onChange = r; }
-
-        int getPositionValue() {
-            return MIN + (int) Math.round(value * (MAX - MIN));
-        }
-
-        @Override
-        protected void applyValue() {
-            int steps = MAX - MIN;
-            int rawInt = MIN + (int) Math.round(this.value * steps);
-            rawInt = Math.max(MIN, Math.min(MAX, rawInt));
-            this.value = (double)(rawInt - MIN) / steps;
-            if (onChange != null) onChange.run();
-        }
-
-        @Override
-        public boolean keyPressed(net.minecraft.client.input.KeyInput input) {
-            if (input.key() == GLFW_KEY_LEFT || input.key() == GLFW_KEY_RIGHT) {
-                double step = 5.0 / (MAX - MIN);
-                this.value = (input.key() == GLFW_KEY_LEFT)
-                        ? Math.max(0.0, this.value - step)
-                        : Math.min(1.0, this.value + step);
-                applyValue();
-                updateMessage();
-                return true;
-            }
-            return super.keyPressed(input);
-        }
-
-        @Override
-        protected void updateMessage() {
-            setMessage(Text.literal(String.format("Overlay Y: %d px", getPositionValue())));
         }
 
         @Override
