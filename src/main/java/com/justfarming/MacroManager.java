@@ -1203,27 +1203,31 @@ public class MacroManager {
     }
 
     /**
-     * Directly attacks the block the player is currently looking at via the
-     * interaction manager.
+     * Drives block breaking using the same left-click path as vanilla Minecraft:
+     * {@link net.minecraft.client.network.ClientPlayerInteractionManager#updateBlockBreakingProgress}.
      *
      * <p>This is the sole block-break driver when the macro is active.
      * {@code MinecraftClientMixin} suppresses vanilla's
      * {@code handleBlockBreaking()} call entirely while {@link #shouldBreak()}
      * is {@code true}, so there is no risk of a double-call resetting break
-     * progress.  Calling {@link net.minecraft.client.network.ClientPlayerInteractionManager#attackBlock}
-     * on the same block position every tick is idempotent: the first call sends
-     * {@code START_DESTROY_BLOCK}; subsequent calls for the same block are
-     * no-ops until the block changes.  {@code swingHand} is only called when
-     * {@code attackBlock} confirms the action was processed.
+     * progress.
+     *
+     * <p>Using {@code updateBlockBreakingProgress} instead of the raw
+     * {@code attackBlock} packet mirrors what the game sends when a real player
+     * holds left click.  For instant-mine blocks (crops, hardness&nbsp;0) it
+     * completes the break in a single tick, exactly as before.  For blocks with
+     * non-zero hardness it only advances break progress rather than sending a
+     * fresh {@code START_DESTROY_BLOCK} packet every tick, which prevents the
+     * macro from repeatedly interrupting the break sequence when the crosshair
+     * drifts onto a non-crop block such as dirt or logs.
      *
      * <p>A fresh {@code player.raycast()} call is used each tick rather than
      * reading the cached {@code client.crosshairTarget} because the crosshair
      * target is computed at the <em>start</em> of the render frame, before
      * {@link #onRenderTick()} updates the camera rotation.  Using the stale
      * cached value could cause the macro to target a block in the old camera
-     * direction, breaking crops that a player looking at the current yaw/pitch
-     * would never hit.  A fresh raycast always reflects the current look
-     * direction set by the rotation code.</p>
+     * direction.  A fresh raycast always reflects the current look direction
+     * set by the rotation code.</p>
      */
     public void directBreakBlock() {
         if (client.interactionManager == null || client.world == null || client.player == null) return;
@@ -1232,11 +1236,13 @@ public class MacroManager {
         if (!(hit instanceof BlockHitResult blockHit)) return;
         BlockPos pos = blockHit.getBlockPos();
         if (!client.world.getBlockState(pos).isAir()) {
-            boolean attacked = client.interactionManager.attackBlock(pos, blockHit.getSide());
-            if (attacked) {
-                client.player.swingHand(Hand.MAIN_HAND);
-                KeystrokesTracker.getInstance().registerAttack();
-            }
+            // Use updateBlockBreakingProgress – the same method vanilla calls when
+            // a player holds left click.  This mirrors real left-click behaviour:
+            // for instant-break crops it completes in one tick; for harder blocks
+            // it progresses without spamming START_DESTROY_BLOCK every tick.
+            client.interactionManager.updateBlockBreakingProgress(pos, blockHit.getSide());
+            client.player.swingHand(Hand.MAIN_HAND);
+            KeystrokesTracker.getInstance().registerAttack();
         }
     }
 
