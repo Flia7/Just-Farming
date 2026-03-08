@@ -961,6 +961,7 @@ public class PestKillerManager {
         pestKillWaitEnd = 0;
         lastSmoothLookTime = 0;
         initialAngularDist = 0f;
+        returnWarpSentAt = 0;
         resetPlotState();
 
         remainingPlots.clear();

@@ -880,6 +880,8 @@ public class VisitorManager {
         navAimAsideBlocks = 0f;
         lastSmoothLookTime = 0;
         initialAngularDist = 0f;
+        fastRotateActive  = false;
+        disableFlightStartTime = 0;
         returnWarpDelay   = 0;
         returnWarpSentAt  = 0;
         midRunRescanPerformed = false;
