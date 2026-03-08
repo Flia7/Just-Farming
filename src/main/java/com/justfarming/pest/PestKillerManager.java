@@ -659,7 +659,22 @@ public class PestKillerManager {
      */
     private static final double TALL_WALL_RISE_HEIGHT   = 12.0;
 
+    /**
+     * Minimum number of solid blocks (out of {@link #TALL_WALL_SCAN_HEIGHT})
+     * that must be detected ahead of the player to classify the path as a tall
+     * wall.  Pre-computed from {@code TALL_WALL_SCAN_HEIGHT * TALL_WALL_SOLID_FRACTION}
+     * = 8 × 0.5 = 4.
+     */
+    private static final int    TALL_WALL_MIN_SOLID_BLOCKS =
+            (int) Math.ceil(TALL_WALL_SCAN_HEIGHT * TALL_WALL_SOLID_FRACTION);
 
+    /**
+     * Horizontal radius (blocks) within which the player is considered to be
+     * already at the garden spawn position (set via {@code /just setspawn}).
+     * When the player is within this radius, the {@code /warp garden} command
+     * is skipped to avoid a wasteful round-trip teleport.
+     */
+    private static final double SPAWN_PROXIMITY_THRESHOLD  = 10.0;
 
     /**
      * Maximum radius (blocks) of the camera-aim drift applied during
@@ -1143,7 +1158,7 @@ public class PestKillerManager {
                     if (config != null && config.spawnSet && player != null) {
                         double dx = player.getX() - config.spawnX;
                         double dz = player.getZ() - config.spawnZ;
-                        if (Math.sqrt(dx * dx + dz * dz) < 10.0) {
+                        if (Math.sqrt(dx * dx + dz * dz) < SPAWN_PROXIMITY_THRESHOLD) {
                             alreadyAtSpawn = true;
                             LOGGER.info("[Just Farming-PestKiller] Player is already at garden spawn; skipping /warp garden.");
                         }
@@ -2651,7 +2666,7 @@ public class PestKillerManager {
                 solidCount++;
             }
         }
-        return solidCount >= (int) Math.ceil(TALL_WALL_SCAN_HEIGHT * TALL_WALL_SOLID_FRACTION);
+        return solidCount >= TALL_WALL_MIN_SOLID_BLOCKS;
     }
 
     /**
