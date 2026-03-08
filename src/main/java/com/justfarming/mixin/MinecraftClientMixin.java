@@ -2,8 +2,6 @@ package com.justfarming.mixin;
 
 import com.justfarming.JustFarming;
 import com.justfarming.MacroManager;
-import com.justfarming.pest.PestDetector;
-import com.justfarming.util.MouseGraceHelper;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.GameMenuScreen;
 import net.minecraft.client.gui.screen.Screen;
@@ -46,62 +44,17 @@ public class MinecraftClientMixin {
     }
 
     /**
-     * Two interrelated {@code setScreen} hooks:
-     *
-     * <ol>
-     *   <li><b>ESC menu suppression</b> – while the farming macro is running,
-     *       block the game-pause screen ({@link GameMenuScreen}) from opening so
-     *       that pressing Escape or Alt-Tab focus-loss cannot interrupt the macro.
-     *       The macro can therefore keep running while the game window is in the
-     *       background.</li>
-     *   <li><b>Cursor-ungrab grace period</b> – when a GUI is closed
-     *       ({@code screen == null}) while the macro is active inside the Garden,
-     *       start the 1-second grace window that prevents Minecraft from
-     *       immediately re-grabbing the cursor.  Outside the Garden or while the
-     *       macro is stopped the grace period is not started, so vanilla cursor
-     *       behaviour is preserved.</li>
-     * </ol>
+     * Suppress the game-pause screen ({@link GameMenuScreen}) while the farming
+     * macro is running so that pressing Escape or Alt-Tab focus-loss cannot
+     * interrupt the macro.
      */
     @Inject(method = "setScreen", at = @At("HEAD"), cancellable = true)
     private void onSetScreen(Screen screen, CallbackInfo ci) {
-        // ── ESC / game-menu suppression ──────────────────────────────────────
         if (screen instanceof GameMenuScreen) {
             MacroManager mm = JustFarming.getMacroManager();
             if (mm != null && mm.isAnyMacroStateActive()) {
                 ci.cancel();
-                return;
             }
-        }
-
-        // ── Cursor-ungrab grace period (only in Garden while macro runs) ────
-        if (screen == null) {
-            MacroManager mm = JustFarming.getMacroManager();
-            PestDetector pd = JustFarming.getPestDetector();
-            if (mm != null && pd != null && pd.isInGarden() && mm.isAnyMacroStateActive()) {
-                MouseGraceHelper.notifyGuiClosed();
-            }
-        }
-    }
-
-    /**
-     * Suppress vanilla's {@code handleBlockBreaking()} call whenever the farming
-     * macro is actively breaking blocks.
-     *
-     * <p>The macro calls {@link MacroManager#directBreakBlock()} directly every
-     * tick to send break packets to the server, which is reliable regardless of
-     * whether a GUI screen is open or closed.  Allowing vanilla's
-     * {@code handleBlockBreaking()} to also run would cause it to either call
-     * {@code cancelBlockBreaking()} (when {@code breaking=false}, e.g. because a
-     * screen is open) and send an {@code ABORT_DESTROY_BLOCK} packet that resets
-     * server-side break progress, or to call {@code updateBlockBreakingProgress()}
-     * a second time in the same tick and produce double-break artifacts.
-     * Suppressing it here gives the macro full ownership of the break loop.
-     */
-    @Inject(method = "handleBlockBreaking", at = @At("HEAD"), cancellable = true)
-    private void onHandleBlockBreaking(boolean breaking, CallbackInfo ci) {
-        MacroManager mm = JustFarming.getMacroManager();
-        if (mm != null && mm.shouldBreak()) {
-            ci.cancel();
         }
     }
 }

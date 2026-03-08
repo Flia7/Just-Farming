@@ -122,16 +122,17 @@ public class VisitorManager {
      * angular speed is independent of frame rate: at this rate the camera covers
      * 180° in one second, matching the pest-killer rotation speed for consistent
      * yaw/pitch tracking of visitor NPCs.
+     * Reduced by 35% from 180°/s to 117°/s for a more natural-looking movement.
      */
-    private static final float SMOOTH_LOOK_DEGREES_PER_SECOND = 180.0f;
+    private static final float SMOOTH_LOOK_DEGREES_PER_SECOND = 117.0f;
 
     /**
      * Faster camera rotation speed (degrees/second) used when the player is
      * already within {@link #VISITOR_DETECT_RADIUS} of a visitor and needs to
-     * align quickly but still smoothly (not a hard snap).  At 540°/s a 180°
-     * turn completes in ~0.3 s – noticeably fast but visually continuous.
+     * align quickly but still smoothly (not a hard snap).
+     * Reduced by 35% from 540°/s to 351°/s for a more natural-looking movement.
      */
-    private static final float FAST_LOOK_DEGREES_PER_SECOND = 540.0f;
+    private static final float FAST_LOOK_DEGREES_PER_SECOND = 351.0f;
 
     /** How long (ms) to hold the space key for each press in the disable-flight sequence. */
     private static final long DISABLE_FLIGHT_PRESS_MS  = 100L;
@@ -285,6 +286,23 @@ public class VisitorManager {
      * tremor is intentionally smaller than yaw tremor.
      */
     private static final float SMOOTH_LOOK_TREMOR_PITCH_SCALE = 0.5f;
+
+    /**
+     * Angular threshold (degrees) within which the camera is considered "on
+     * target" and only micro-rotation corrections are applied.  When both yaw
+     * and pitch errors are smaller than this value the camera makes tiny
+     * random adjustments rather than full rotations, simulating natural hand
+     * micro-tremor when a player holds their mouse still while aiming at a target.
+     */
+    private static final float MICRO_ROTATION_THRESHOLD_DEGREES = 2.0f;
+
+    /**
+     * Amplitude (degrees) of the micro-rotation corrections applied when the
+     * camera is already within {@link #MICRO_ROTATION_THRESHOLD_DEGREES} of
+     * the target.  Smaller than {@link #SMOOTH_LOOK_TREMOR_AMPLITUDE} to
+     * produce very subtle movements that keep the aim alive without drifting.
+     */
+    private static final float MICRO_ROTATION_AMPLITUDE = 0.08f;
 
     /**
      * How far ahead (blocks) to probe the terrain when navigating.
@@ -1135,15 +1153,19 @@ public class VisitorManager {
                     }
                     fastRotateActive = false;
 
-                    player.setYaw(aotvTeleportYaw);
-                    player.setPitch(aotvTeleportPitch);
+                    // Add small random offsets to the final yaw/pitch snap to vary the
+                    // landing position slightly between runs (more human-like behaviour).
+                    float randomizedSnapYaw   = aotvTeleportYaw   + (random.nextFloat() * 2f - 1f) * 3.0f;
+                    float randomizedSnapPitch = aotvTeleportPitch + (random.nextFloat() * 2f - 1f) * 2.0f;
+                    player.setYaw(randomizedSnapYaw);
+                    player.setPitch(randomizedSnapPitch);
                     player.getInventory().setSelectedSlot(aotvSlot);
                     if (client.options != null) {
                         client.options.useKey.setPressed(true);
                     }
                     aotvTeleportFired = true;
                     LOGGER.info("[Just Farming-Visitors] AOTV right-click fired (yaw={}, pitch={}).",
-                            (int) aotvTeleportYaw, (int) aotvTeleportPitch);
+                            (int) randomizedSnapYaw, (int) randomizedSnapPitch);
                     return;
                 }
 
@@ -2307,9 +2329,17 @@ public class VisitorManager {
 
         float pitchDiff = targetPitch - currentPitch;
 
-        // Already on target – nothing to do.  Threshold is set above the tremor
-        // amplitude so the camera does not oscillate around the aim point.
-        if (Math.abs(yawDiff) < 1.0f && Math.abs(pitchDiff) < 1.0f) return;
+        // When already close to the target, apply micro-rotation corrections to
+        // simulate the natural micro-tremor of a player holding their mouse still
+        // while aiming.  This makes the aim look alive rather than completely frozen.
+        if (Math.abs(yawDiff) < MICRO_ROTATION_THRESHOLD_DEGREES
+                && Math.abs(pitchDiff) < MICRO_ROTATION_THRESHOLD_DEGREES) {
+            float microYaw   = generateTremor(MICRO_ROTATION_AMPLITUDE);
+            float microPitch = generateTremor(MICRO_ROTATION_AMPLITUDE * SMOOTH_LOOK_TREMOR_PITCH_SCALE);
+            player.setYaw(currentYaw + microYaw);
+            player.setPitch(Math.max(-90f, Math.min(90f, currentPitch + microPitch)));
+            return;
+        }
 
         // Exponential ease-in: starts at base speed, accelerates as progress increases.
         float remaining = (float) Math.sqrt(yawDiff * yawDiff + pitchDiff * pitchDiff);

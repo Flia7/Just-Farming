@@ -1,8 +1,6 @@
 package com.justfarming;
 
-import com.justfarming.access.ClientPlayerInteractionManagerExtension;
 import com.justfarming.config.FarmingConfig;
-import com.justfarming.input.KeystrokesTracker;
 import com.justfarming.pest.PestDetector;
 import com.justfarming.pest.PestKillerManager;
 import com.justfarming.visitor.VisitorManager;
@@ -13,7 +11,6 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -271,15 +268,6 @@ public class MacroManager {
      */
     private int mousematPhaseRandomExtra = 0;
 
-    /**
-     * The block position targeted by the most recent {@link #directBreakBlock()}
-     * call that actually sent an attack packet.  Used to avoid counting the same
-     * block multiple times in the CPS tracker when the client hasn't yet received
-     * the block-break confirmation from the server.
-     */
-    private BlockPos lastDirectAttackPos = null;
-
-
     // -----------------------------------------------------------------------
     // Constructor / config
     // -----------------------------------------------------------------------
@@ -337,60 +325,11 @@ public class MacroManager {
     }
 
     /**
-     * Returns {@code true} when the macro should pause movement and block-breaking
-     * because a GUI screen is open while {@link FarmingConfig#macroEnabledInGui}
-     * is disabled.
-     *
-     * <p>When this returns {@code true}, {@link #tickMoving} releases all keys and
-     * returns immediately, and {@link #shouldBreak()} returns {@code false}.
-     *
-     * <p>The player's own inventory screen and the chat screen are always exempt:
-     * the macro keeps running seamlessly when the player presses E (inventory) or
-     * T (chat) so that there is no detectable movement pause.  This matches the
-     * behaviour of well-known reference mods and avoids a suspicious micro-stutter
-     * that anti-cheat systems can flag.  Server-opened screens (chests, NPC shops,
-     * etc.) still block the macro when {@code macroEnabledInGui} is disabled.
-     */
-    private boolean isGuiBlocking() {
-        if (config.macroEnabledInGui) return false;
-        if (client.currentScreen == null) return false;
-        // Inventory and chat are lightweight client screens – keep the macro running.
-        return !isNonBlockingScreen(client.currentScreen);
-    }
-
-    /**
-     * Returns {@code true} for GUI screens that must never interrupt the farming
-     * macro: the player's own inventory (opened with E) and the chat screen
-     * (opened with T).
-     *
-     * <p>These are purely client-side screens that do not require any interaction
-     * with the game's block-breaking or movement logic, so the macro can continue
-     * running transparently while they are open.  The same exemption is applied by
-     * {@link com.justfarming.mixin.MouseMixin} when deciding whether to report the
-     * cursor as locked to Minecraft's input-processing code.
-     *
-     * @param screen the currently open screen (must not be {@code null})
-     */
-    public static boolean isNonBlockingScreen(net.minecraft.client.gui.screen.Screen screen) {
-        return screen instanceof net.minecraft.client.gui.screen.ingame.InventoryScreen
-                || screen instanceof net.minecraft.client.gui.screen.ChatScreen
-                || screen instanceof com.justfarming.gui.FarmingConfigScreen
-                || screen instanceof com.justfarming.gui.CropSelectScreen
-                || screen instanceof com.justfarming.gui.CropSettingsScreen
-                || screen instanceof com.justfarming.gui.InventoryHudLocationScreen
-                || screen instanceof com.justfarming.gui.VisitorBlacklistScreen;
-    }
-
-    /**
      * Returns {@code true} when the macro is actively in a movement+breaking
      * phase (BACKWARD_LEFT, FORWARD_LEFT, etc.).
-     *
-     * <p>Returns {@code false} while a GUI is open and
-     * {@link FarmingConfig#macroEnabledInGui} is disabled, matching the user's
-     * expectation that the macro pauses when a screen is open in that mode.
+     * The macro always pauses when any GUI screen is open.
      */
     public boolean shouldBreak() {
-        if (isGuiBlocking()) return false;
         return running && (state == MacroState.BACKWARD_LEFT || state == MacroState.FORWARD_LEFT
                 || state == MacroState.FORWARD_RIGHT || state == MacroState.STRAFE_LEFT_ONLY
                 || state == MacroState.STRAFE_RIGHT_ONLY
@@ -1027,9 +966,8 @@ public class MacroManager {
      *   <li>Otherwise, sends only the hand-swing packet.</li>
      * </ul>
      *
-     * <p>Uses a fresh tick-position raycast (tickDelta&nbsp;=&nbsp;1.0f) for the
-     * same reason as {@link #directBreakBlock()}: consistency with the real
-     * player position at the time the ability fires.</p>
+     * <p>Uses a fresh tick-position raycast (tickDelta&nbsp;=&nbsp;1.0f) for
+     * consistency with the real player position at the time the ability fires.</p>
      */
     private void performMousematClick(ClientPlayerEntity player) {
         if (client.interactionManager != null) {
@@ -1130,10 +1068,10 @@ public class MacroManager {
      * Movement phase: presses the appropriate directional keys and monitors the
      * player's position for end-of-row or rewarp-trigger events.
      *
-     * <p>When a GUI screen is open and {@link FarmingConfig#macroEnabledInGui} is
-     * disabled, all keys are released and the method returns early so the player
-     * stops moving and breaking.  Position tracking is also suspended so that
-     * being blocked by the GUI is not misidentified as an end-of-row event.
+     * <p>All keys are released and the method returns early when any GUI screen
+     * is open so the player stops moving and breaking while menus are visible.
+     * Position tracking is also suspended so that being blocked by the GUI is
+     * not misidentified as an end-of-row event.
      *
      * @param forward    {@code true} = press the forward key.
      * @param back       {@code true} = press the back key.
@@ -1142,9 +1080,8 @@ public class MacroManager {
      */
     private void tickMoving(ClientPlayerEntity player, boolean forward, boolean back,
                             boolean strafeLeft, boolean strafeRight) {
-        // Pause all movement and breaking when the GUI is blocking
-        // (macroEnabledInGui = false while a screen is open).
-        if (isGuiBlocking()) {
+        // Pause all movement and breaking when any screen is open.
+        if (client.currentScreen != null) {
             prevGuiBlocking = true;
             releaseKeys();
             lastPos = null; // prevent stationary ticks from triggering stuck detection
@@ -1153,13 +1090,9 @@ public class MacroManager {
 
         prevGuiBlocking = false;
 
-        // Always drive block-breaking by sending the same packets that holding
-        // left click produces (attackBlock + updateBlockBreakingProgress).  This
-        // works reliably regardless of whether a GUI screen is open, because it
-        // bypasses the vanilla handleBlockBreaking() path which is skipped by
-        // Minecraft whenever a screen is present or when the programmatically-set
-        // attack-key pressed state is not recognised as a hardware event.
-        directBreakBlock();
+        // Simulate a left click by holding the attack key so vanilla's
+        // handleBlockBreaking() drives block-breaking naturally.
+        client.options.attackKey.setPressed(true);
 
         // Directional keys
         client.options.forwardKey.setPressed(forward);
@@ -1278,11 +1211,8 @@ public class MacroManager {
                         + randomJitter();
                 state = MacroState.WARPING;
                 // Release all keys immediately so block-breaking stops on this same tick.
-                // directBreakBlock() must not run after we transition away from a movement
-                // state, because shouldBreak() is now false (state == WARPING) and vanilla
-                // handleBlockBreaking() is no longer suppressed by the mixin.  Without this
-                // early return, attackBlock() would fire once more on the transition tick,
-                // potentially targeting a block that is outside the expected farming area.
+                // Once the state transitions to WARPING the attack key is released, so
+                // vanilla handleBlockBreaking() will not break any more blocks.
                 releaseKeys();
                 return;
             }
@@ -1294,55 +1224,6 @@ public class MacroManager {
         applyCustomKeyOverrides();
         // Block breaking is handled by vanilla's handleBlockBreaking() via the
         // attack key being held above.  No manual directBreakBlock() call needed.
-    }
-
-    /**
-     * Drives block breaking by sending a fresh {@code START_DESTROY_BLOCK}
-     * (attackBlock) packet every tick, matching what vanilla does when the player
-     * clicks on a new block.  For instant-mine crops (hardness&nbsp;0) this
-     * completes the break immediately.
-     *
-     * <p>A fresh {@code player.raycast()} call is used each tick rather than
-     * reading the cached {@code client.crosshairTarget} because the crosshair
-     * target is computed at the <em>start</em> of the render frame, before
-     * {@link #onRenderTick()} updates the camera rotation.  Using the stale
-     * cached value could cause the macro to target a block in the old camera
-     * direction.  A fresh raycast always reflects the current look direction
-     * set by the rotation code.</p>
-     */
-    public void directBreakBlock() {
-        if (client.interactionManager == null || client.world == null || client.player == null) return;
-        double reach = client.player.getAttributeValue(EntityAttributes.BLOCK_INTERACTION_RANGE);
-        HitResult hit = client.player.raycast(reach, 1.0f, false);
-        if (!(hit instanceof BlockHitResult blockHit)) return;
-        BlockPos pos = blockHit.getBlockPos();
-        if (!client.world.getBlockState(pos).isAir()) {
-            // Clear any stale block-breaking state so attackBlock() always sends a clean
-            // START_DESTROY_BLOCK without a preceding ABORT_DESTROY_BLOCK packet.
-            // This matches the packet sequence produced after a GUI is opened and closed
-            // (where Minecraft resets the state on the screen transition) and prevents
-            // the "weird packets before GUI is opened" issue.
-            ((ClientPlayerInteractionManagerExtension) client.interactionManager)
-                    .justFarming$resetBreakingState();
-            // Use attackBlock (START_DESTROY_BLOCK) every tick so each new crop in
-            // the crosshair is broken immediately.  This is the correct packet for
-            // instant-mine blocks and avoids stale InteractionManager break-state
-            // that caused only the first crop to break.
-            client.interactionManager.attackBlock(pos, blockHit.getSide());
-            client.player.swingHand(Hand.MAIN_HAND);
-            // Only register a CPS "click" when the target block position changes.
-            // Instant-mine blocks take 1–2 extra ticks to be confirmed air by the
-            // client, so without this guard the same block would be counted multiple
-            // times, inflating the CPS counter far above the real BPS rate.
-            if (!pos.equals(lastDirectAttackPos)) {
-                lastDirectAttackPos = pos;
-                KeystrokesTracker.getInstance().registerAttack();
-            }
-            com.justfarming.JustFarming.getProfitTracker().registerBlockBreak();
-        } else {
-            // Crosshair is over air – reset so the next non-air block is treated as new.
-            lastDirectAttackPos = null;
-        }
     }
 
     /**

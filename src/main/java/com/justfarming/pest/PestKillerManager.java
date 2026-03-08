@@ -1516,10 +1516,9 @@ public class PestKillerManager {
                     // Mark that at least one pest was killed on this plot so the scanner
                     // uses a shorter timeout before moving to the next plot.
                     atLeastOnePestKilledThisPlot = true;
-                    // Skip vacuum shot for this plot: pests were found via direct tracking,
-                    // so a shot is unnecessary. vacuumShotAttempted is reset in resetPlotState()
-                    // when the next plot begins.
-                    vacuumShotAttempted = true;
+                    // Allow a new vacuum shot after each kill so that hidden pests which
+                    // weren't directly visible can still be found via the particle trail.
+                    vacuumShotAttempted = false;
                     enterState(State.SCANNING);
                     return;
                 }
@@ -1966,15 +1965,19 @@ public class PestKillerManager {
             } else {
                 // Fire the next press when the scheduled time arrives.
                 if (now >= pestAotvNextEventTime) {
-                    // Snap to exact angle immediately before each click for precision.
-                    player.setYaw(pestAotvTargetYaw);
-                    player.setPitch(pestAotvTargetPitch);
+                    // Snap to angle immediately before each click for precision,
+                    // with a small random offset to vary the teleport landing position
+                    // slightly between hops (more human-like behaviour).
+                    float randomizedSnapYaw   = pestAotvTargetYaw   + (random.nextFloat() * 2f - 1f) * 2.0f;
+                    float randomizedSnapPitch = pestAotvTargetPitch + (random.nextFloat() * 2f - 1f) * 1.5f;
+                    player.setYaw(randomizedSnapYaw);
+                    player.setPitch(randomizedSnapPitch);
                     if (client.options != null) client.options.useKey.setPressed(true);
                     pestAotvClickHeld    = true;
                     pestAotvNextEventTime = now + PEST_AOTV_HOLD_MS;
                     LOGGER.info("[Just Farming-PestKiller] AOTV firing click {} of {} (slot={}, yaw={}).",
                             pestAotvClicksDone + 1, pestAotvTotalClicks,
-                            pestAotvSlot, (int) pestAotvTargetYaw);
+                            pestAotvSlot, (int) randomizedSnapYaw);
                 }
             }
             return true;
