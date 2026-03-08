@@ -117,10 +117,10 @@ public class InventoryHudLocationScreen extends Screen {
         highlightHud(context, profitHudX, profitHudY, profW, profH, mouseX, mouseY, DRAG_PROFIT);
 
         // ── HUD labels on hover/drag ───────────────────────────────────────────
-        drawHudLabel(context, mc, invHudX, invHudY, invW,
+        drawHudLabel(context, mc, invHudX, invHudY, invW, invH,
                 "Inventory HUD  \u2022  Scroll to resize",
                 mouseX, mouseY, DRAG_INV);
-        drawHudLabel(context, mc, profitHudX, profitHudY, profW,
+        drawHudLabel(context, mc, profitHudX, profitHudY, profW, profH,
                 "Profit HUD",
                 mouseX, mouseY, DRAG_PROFIT);
 
@@ -168,10 +168,9 @@ public class InventoryHudLocationScreen extends Screen {
 
     /** Draws a small label above a HUD when it is hovered or being dragged. */
     private void drawHudLabel(DrawContext context, MinecraftClient mc,
-                               int x, int y, int w, String label,
+                               int x, int y, int w, int h, String label,
                                int mouseX, int mouseY, int hudId) {
-        boolean hovered  = mouseX >= x && mouseX < x + w && mouseY >= y
-                && mouseY < y + InventoryHudRenderer.getOverlayHeight(invHudScale);
+        boolean hovered  = mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + h;
         boolean dragging = draggingHud == hudId;
         if (!hovered && !dragging) return;
         int lw = mc.textRenderer.getWidth(label);
