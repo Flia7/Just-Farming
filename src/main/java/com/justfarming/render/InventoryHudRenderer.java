@@ -60,15 +60,6 @@ public class InventoryHudRenderer {
     /** Top accent line colour for light mode. */
     public static final int ACCENT_COLOR_LIGHT = 0xA0203060;
 
-    /**
-     * Background colour drawn behind each inventory slot (dark mode).
-     */
-    private static final int SLOT_BG_DARK    = 0x30000810;
-    /**
-     * Background colour drawn behind each inventory slot (light mode).
-     */
-    private static final int SLOT_BG_LIGHT   = 0x40C0D0E8;
-
     /** Background colour (semi-transparent) – kept for compat. */
     public static final int BG_COLOR = BG_COLOR_DARK;
 
@@ -95,6 +86,17 @@ public class InventoryHudRenderer {
         boolean dark = config.darkMode;
         renderAt(context, mc, player, config.inventoryOverlayX, config.inventoryOverlayY,
                 config.inventoryOverlayScale, dark);
+
+        // Bottom accent stripe – only when profit HUD is not rendered below.
+        if (!config.profitTrackerEnabled) {
+            float scale = Math.max(0.25f, config.inventoryOverlayScale);
+            int totalW = getOverlayWidth(scale);
+            int totalH = getOverlayHeight(scale);
+            int accentColor = dark ? ACCENT_COLOR_DARK : ACCENT_COLOR_LIGHT;
+            context.fill(config.inventoryOverlayX, config.inventoryOverlayY + totalH - 1,
+                         config.inventoryOverlayX + totalW, config.inventoryOverlayY + totalH,
+                         accentColor);
+        }
     }
 
     /**
@@ -119,7 +121,6 @@ public class InventoryHudRenderer {
         int scaledBgPad  = Math.max(1, Math.round(BG_PAD * scale));
 
         int bgColor     = dark ? BG_COLOR_DARK    : BG_COLOR_LIGHT;
-        int slotColor   = dark ? SLOT_BG_DARK     : SLOT_BG_LIGHT;
         int accentColor = dark ? ACCENT_COLOR_DARK : ACCENT_COLOR_LIGHT;
 
         int totalW = scaledGridW + 2 * scaledBgPad;
@@ -150,7 +151,7 @@ public class InventoryHudRenderer {
                 int slotIndex = 9 + (row * COLS) + col;
                 int itemX = col * SLOT_SPACING;
                 int itemY = row * SLOT_SPACING;
-                context.fill(itemX, itemY, itemX + SLOT_SIZE, itemY + SLOT_SIZE, slotColor);
+                // No slot background fill – items render directly on the panel background.
                 ItemStack stack = player.getInventory().getStack(slotIndex);
                 if (!stack.isEmpty()) {
                     context.drawItem(stack, itemX, itemY);
