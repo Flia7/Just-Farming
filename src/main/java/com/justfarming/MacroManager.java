@@ -328,6 +328,15 @@ public class MacroManager {
     }
 
     /**
+     * Returns {@code true} when the macro is in any active state: running, waiting
+     * for visitors, or waiting for the pest killer.  Convenience helper to avoid
+     * repeating the three-way OR across multiple call sites.
+     */
+    public boolean isAnyMacroStateActive() {
+        return running || waitingForVisitors || waitingForPestKiller;
+    }
+
+    /**
      * Returns {@code true} when the macro should pause movement and block-breaking
      * because a GUI screen is open while {@link FarmingConfig#macroEnabledInGui}
      * is disabled.
