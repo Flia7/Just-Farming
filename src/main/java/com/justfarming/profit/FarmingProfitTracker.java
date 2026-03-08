@@ -62,6 +62,8 @@ public class FarmingProfitTracker {
     private int  breakCount = 0;  // number of valid entries
     /** Sliding window length for BPS calculation (milliseconds). */
     private static final long BPS_WINDOW_MS = 5_000L;
+    /** Milliseconds in one hour, used for profit/hour calculations. */
+    private static final double MS_PER_HOUR = 3_600_000.0;
 
     // ── Pest cooldown: keep attributing gains to pest for a short time ────────
     /** Timestamp of the last tick where the pest killer was active (-1 if never). */
@@ -359,7 +361,7 @@ public class FarmingProfitTracker {
             totalMs += System.currentTimeMillis() - farmingSessionStartMs;
         }
         if (totalMs <= 0) return 0.0;
-        return getFarmingProfit() / (totalMs / 3_600_000.0);
+        return getFarmingProfit() / (totalMs / MS_PER_HOUR);
     }
 
     /** Pest-kill profit per hour (coins/hour) based on total pest-killing time. */
@@ -369,7 +371,23 @@ public class FarmingProfitTracker {
             totalMs += System.currentTimeMillis() - pestSessionStartMs;
         }
         if (totalMs <= 0) return 0.0;
-        return getPestProfit() / (totalMs / 3_600_000.0);
+        return getPestProfit() / (totalMs / MS_PER_HOUR);
+    }
+
+    /**
+     * Combined (farming + pest) profit per hour based on total active session
+     * elapsed time.
+     *
+     * <p>Calculated as:
+     * (total farming profit + total pest profit) ÷ session elapsed seconds × 3600.
+     *
+     * @param includePest whether to include pest profit in the total
+     */
+    public double getCombinedProfitPerHour(boolean includePest) {
+        long elapsedMs = getSessionElapsedMs();
+        if (elapsedMs <= 0) return 0.0;
+        double totalProfit = getFarmingProfit() + (includePest ? getPestProfit() : 0.0);
+        return totalProfit / (elapsedMs / MS_PER_HOUR);
     }
 
     /**
