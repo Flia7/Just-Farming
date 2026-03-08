@@ -100,6 +100,14 @@ public class MacroManager {
      */
     private static final float ROTATION_TREMOR_PITCH_SCALE = 0.5f;
 
+    /**
+     * Exponential acceleration factor for camera rotation.
+     * At progress=0 (start), speed multiplier = 1×; at progress=1 (finish),
+     * speed multiplier = (1 + ROTATION_ACCEL_FACTOR) × base speed.
+     * This produces a natural ease-in: starts at normal speed and accelerates.
+     */
+    private static final float ROTATION_ACCEL_FACTOR = 3.0f;
+
     /** Duration (ms) for each space-key press in the disable-flight sequence. */
     private static final long DISABLE_FLIGHT_PRESS_MS = 100L;
     /** Gap (ms) between the two presses in the disable-flight sequence. */
@@ -155,6 +163,13 @@ public class MacroManager {
      * first interpolation step uses the default tick duration (50 ms).
      */
     private long lastRotationTime = 0;
+
+    /**
+     * Combined angular distance (degrees) at the moment rotation started.
+     * Used to compute the ease-in progress fraction for exponential acceleration.
+     * Reset to 0 whenever {@link #lastRotationTime} is reset to 0.
+     */
+    private float rotationInitialDist = 0f;
 
     /**
      * When a crop has a custom key configuration this flag tracks which
@@ -471,6 +486,7 @@ public class MacroManager {
         mousematActionTime = 0;
         mousematPhaseRandomExtra = 0;
         lastRotationTime = 0;
+        rotationInitialDist = 0f;
         disableFlightStartTime = 0;
         if (config.unlockedMouseEnabled) {
             client.mouse.unlockCursor();
@@ -500,6 +516,7 @@ public class MacroManager {
         prevGuiBlocking = false;
         state = MacroState.IDLE;
         lastRotationTime = 0;
+        rotationInitialDist = 0f;
         disableFlightStartTime = 0;
         releaseKeys();
         if (visitorManager != null && visitorManager.isActive()) {
@@ -611,12 +628,14 @@ public class MacroManager {
         if (player == null) return;
 
         long now = System.currentTimeMillis();
-        float deltaMs = (lastRotationTime == 0)
-                ? 50.0f
-                : Math.min(ROTATION_MAX_DELTA_MS, (float)(now - lastRotationTime));
+        float deltaMs;
+        if (lastRotationTime == 0) {
+            deltaMs = 50.0f;
+            rotationInitialDist = 0f; // reset for a fresh rotation start
+        } else {
+            deltaMs = Math.min(ROTATION_MAX_DELTA_MS, (float)(now - lastRotationTime));
+        }
         lastRotationTime = now;
-
-        float step = ROTATION_DEGREES_PER_SECOND * deltaMs / 1000.0f;
 
         float targetPitch = config.getEffectivePitch(config.selectedCrop);
         float targetYaw   = config.getEffectiveYaw(config.selectedCrop);
@@ -628,6 +647,15 @@ public class MacroManager {
         float pitchDiff = normalizeAngleDiff(targetPitch - currentPitch);
 
         if (Math.abs(yawDiff) < 0.1f && Math.abs(pitchDiff) < 0.1f) return;
+
+        // Exponential ease-in: starts at base speed, accelerates as rotation progresses.
+        float remaining = (float) Math.sqrt(yawDiff * yawDiff + pitchDiff * pitchDiff);
+        if (rotationInitialDist <= 0f || remaining > rotationInitialDist) {
+            rotationInitialDist = remaining;
+        }
+        float progress = (rotationInitialDist > 0f) ? 1.0f - remaining / rotationInitialDist : 0f;
+        float speedMult = 1.0f + ROTATION_ACCEL_FACTOR * progress;
+        float step = ROTATION_DEGREES_PER_SECOND * speedMult * deltaMs / 1000.0f;
 
         float newYaw   = currentYaw   + Math.max(-step, Math.min(step, yawDiff));
         float newPitch = currentPitch + Math.max(-step, Math.min(step, pitchDiff));
@@ -912,10 +940,8 @@ public class MacroManager {
                         }
                     }
                     if (mousematSlot < 0) {
-                        LOGGER.info("[Just Farming] Squeaky Mousemat not found in hotbar – skipping.");
-                        state = MacroState.DETECTING;
-                        startDetectTime = 0;
-                        detectStartPos = null;
+                        LOGGER.info("[Just Farming] Squeaky Mousemat not found in hotbar – falling back to rotation alignment.");
+                        state = MacroState.ALIGNING_ROTATION;
                         return;
                     }
                     mousematTargetSlot = mousematSlot;

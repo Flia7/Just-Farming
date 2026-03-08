@@ -207,14 +207,6 @@ public class JustFarming implements ClientModInitializer {
                                             return 1;
                                         }))
                                 .then(literal("setspawn")
-                                        .executes(ctx -> {
-                                            macroManager.setSpawnHere();
-                                            if (ctx.getSource().getPlayer() != null) {
-                                                ctx.getSource().getPlayer().sendMessage(
-                                                        net.minecraft.text.Text.literal("§a[Just Farming] Spawn overlay position set here."), true);
-                                            }
-                                            return 1;
-                                        })
                                         .then(literal("clear")
                                                 .executes(ctx -> {
                                                     macroManager.clearSpawn();
@@ -382,9 +374,23 @@ public class JustFarming implements ClientModInitializer {
         // When the pest killer is active, item drops go directly to the player's
         // collection storage and never pass through the inventory, so they must be
         // tracked from the chat message rather than from inventory diffs.
+        // Also intercepts the server "/setspawn" confirmation to set the spawn highlight.
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
             if (overlay) return; // ignore action bar messages
-            profitTracker.onChatMessage(message.getString(), pestKillerManager);
+            String text = message.getString();
+            profitTracker.onChatMessage(text, pestKillerManager);
+            // When the server confirms a /setspawn command, save the player's current
+            // position as the spawn highlight block (without sending any command ourselves).
+            if (text.contains("Your spawn location has been set")) {
+                macroManager.setSpawnHere();
+                net.minecraft.client.network.ClientPlayerEntity p =
+                        net.minecraft.client.MinecraftClient.getInstance().player;
+                if (p != null) {
+                    p.sendMessage(net.minecraft.text.Text.literal(
+                            "§a[Just Farming] Spawn overlay position set here."), false);
+                }
+                LOGGER.info("[Just Farming] Spawn highlight set from /setspawn confirmation.");
+            }
         });
 
         // Stop all active systems when the player disconnects from a server so
@@ -406,7 +412,7 @@ public class JustFarming implements ClientModInitializer {
             LOGGER.info("[Just Farming] Disconnected – all macros stopped.");
         });
 
-        LOGGER.info("[Just Farming] Ready. Toggle macro: R | Open GUI: I | Freelook: L | Alternate direction: N | Commands: /just rewarp, /just rewarp clear, /just visitor, /just pest, /just farm, /just setspawn, /just setspawn clear");
+        LOGGER.info("[Just Farming] Ready. Toggle macro: R | Open GUI: I | Freelook: L | Alternate direction: N | Commands: /just rewarp, /just rewarp clear, /just visitor, /just pest, /just farm, /just setspawn clear (spawn set automatically from /setspawn server confirmation)");
     }
 
     /** Returns the shared config instance. */
