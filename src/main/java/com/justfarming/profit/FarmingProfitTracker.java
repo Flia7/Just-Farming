@@ -7,6 +7,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -137,10 +138,105 @@ public class FarmingProfitTracker {
     /** Maps lower-cased plain name → Minecraft Item for icon rendering in the HUD. */
     private final Map<String, Item> itemIcons = new HashMap<>();
 
+    // ── Default item icons for known crops and drops ──────────────────────────
+    /**
+     * Well-known item name → Minecraft Item mappings that are pre-populated at
+     * construction time (and after each {@link #reset()}).  These ensure that
+     * every crop shows an icon in the Profit HUD even when the item has never
+     * physically appeared in the player's 36-slot inventory (e.g. items that
+     * went straight into a sack).
+     */
+    private static final Map<String, Item> DEFAULT_ICONS = new HashMap<>();
+    static {
+        // ── Base crops ──────────────────────────────────────────────────────
+        DEFAULT_ICONS.put("wheat",           Items.WHEAT);
+        DEFAULT_ICONS.put("carrot",          Items.CARROT);
+        DEFAULT_ICONS.put("potato",          Items.POTATO);
+        DEFAULT_ICONS.put("pumpkin",         Items.PUMPKIN);
+        DEFAULT_ICONS.put("melon",           Items.MELON);
+        DEFAULT_ICONS.put("melon slice",     Items.MELON_SLICE);
+        DEFAULT_ICONS.put("sugar cane",      Items.SUGAR_CANE);
+        DEFAULT_ICONS.put("nether wart",     Items.NETHER_WART);
+        DEFAULT_ICONS.put("cactus",          Items.CACTUS);
+        DEFAULT_ICONS.put("red mushroom",    Items.RED_MUSHROOM);
+        DEFAULT_ICONS.put("brown mushroom",  Items.BROWN_MUSHROOM);
+        DEFAULT_ICONS.put("cocoa beans",     Items.COCOA_BEANS);
+        DEFAULT_ICONS.put("seeds",           Items.WHEAT_SEEDS);
+        DEFAULT_ICONS.put("wheat seeds",     Items.WHEAT_SEEDS);
+        DEFAULT_ICONS.put("sunflower",       Items.SUNFLOWER);
+        // Hypixel SkyBlock items without a direct vanilla equivalent use the
+        // closest visual substitute.
+        DEFAULT_ICONS.put("wild rose",       Items.ROSE_BUSH);
+        DEFAULT_ICONS.put("moonflower",      Items.LILY_OF_THE_VALLEY);
+        // ── Enchanted / processed forms (reuse base icon, renderer adds glint) ─
+        DEFAULT_ICONS.put("enchanted wheat",              Items.WHEAT);
+        DEFAULT_ICONS.put("enchanted bread",              Items.BREAD);
+        DEFAULT_ICONS.put("enchanted carrot",             Items.CARROT);
+        DEFAULT_ICONS.put("enchanted golden carrot",      Items.GOLDEN_CARROT);
+        DEFAULT_ICONS.put("enchanted potato",             Items.POTATO);
+        DEFAULT_ICONS.put("enchanted baked potato",       Items.BAKED_POTATO);
+        DEFAULT_ICONS.put("enchanted pumpkin",            Items.PUMPKIN);
+        DEFAULT_ICONS.put("enchanted melon",              Items.MELON_SLICE);
+        DEFAULT_ICONS.put("enchanted melon slice",        Items.MELON_SLICE);
+        DEFAULT_ICONS.put("enchanted sugar",              Items.SUGAR);
+        DEFAULT_ICONS.put("enchanted sugar cane",         Items.SUGAR_CANE);
+        DEFAULT_ICONS.put("enchanted nether wart",        Items.NETHER_WART);
+        DEFAULT_ICONS.put("enchanted cactus green",       Items.CACTUS);
+        DEFAULT_ICONS.put("enchanted cactus",             Items.CACTUS);
+        DEFAULT_ICONS.put("enchanted red mushroom",       Items.RED_MUSHROOM);
+        DEFAULT_ICONS.put("enchanted brown mushroom",     Items.BROWN_MUSHROOM);
+        DEFAULT_ICONS.put("enchanted red mushroom block", Items.RED_MUSHROOM_BLOCK);
+        DEFAULT_ICONS.put("enchanted brown mushroom block", Items.BROWN_MUSHROOM_BLOCK);
+        DEFAULT_ICONS.put("enchanted cocoa beans",        Items.COCOA_BEANS);
+        DEFAULT_ICONS.put("enchanted cookie",             Items.COOKIE);
+        DEFAULT_ICONS.put("enchanted wild rose",          Items.ROSE_BUSH);
+        DEFAULT_ICONS.put("enchanted sunflower",          Items.SUNFLOWER);
+        DEFAULT_ICONS.put("enchanted moonflower",         Items.LILY_OF_THE_VALLEY);
+        DEFAULT_ICONS.put("enchanted seeds",              Items.WHEAT_SEEDS);
+        DEFAULT_ICONS.put("enchanted hay bale",           Items.HAY_BLOCK);
+        DEFAULT_ICONS.put("hay bale",                     Items.HAY_BLOCK);
+        DEFAULT_ICONS.put("mutant nether wart",           Items.NETHER_WART_BLOCK);
+        DEFAULT_ICONS.put("polished pumpkin",             Items.PUMPKIN);
+        DEFAULT_ICONS.put("enchanted melon block",        Items.MELON);
+        DEFAULT_ICONS.put("compacted wild rose",          Items.ROSE_BUSH);
+        // ── Universal pest drops ─────────────────────────────────────────────
+        DEFAULT_ICONS.put("compost",         Items.DIRT);
+        DEFAULT_ICONS.put("honey jar",       Items.HONEY_BOTTLE);
+        DEFAULT_ICONS.put("plant matter",    Items.OAK_LEAVES);
+        DEFAULT_ICONS.put("tasty cheese",    Items.YELLOW_DYE);
+        DEFAULT_ICONS.put("jelly",           Items.SLIME_BALL);
+        DEFAULT_ICONS.put("dung",            Items.BROWN_DYE);
+        DEFAULT_ICONS.put("coins",           Items.GOLD_NUGGET);
+        // ── Pest vinyls ──────────────────────────────────────────────────────
+        DEFAULT_ICONS.put("pest vinyl",      Items.MUSIC_DISC_13);
+    }
+
+    // ── Display-data cache (refreshed every 3 seconds) ────────────────────────
+    /** How often (ms) the Profit HUD display data is refreshed. */
+    public static final long DISPLAY_UPDATE_INTERVAL_MS = 3000L;
+    /** Wall-clock time of the last display-cache refresh, or {@code 0} if never. */
+    private long lastDisplayUpdateMs = 0L;
+    /** Cached farming entry list for HUD rendering. */
+    private List<ProfitEntry> displayFarmingEntries = List.of();
+    /** Cached pest entry list for HUD rendering. */
+    private List<ProfitEntry> displayPestEntries = List.of();
+    /** Cached total farming profit for HUD rendering. */
+    private double displayFarmingProfit = 0.0;
+    /** Cached total pest profit for HUD rendering. */
+    private double displayPestProfit = 0.0;
+    /** Cached combined profit/hour for HUD rendering. */
+    private double displayCombinedProfitPerHour = 0.0;
+    /** Whether pest profit was included in the last {@link #displayCombinedProfitPerHour} calculation. */
+    private boolean displayIncludePest = false;
+
     // ── Number of farming/pest ticks tracked (for "is active" queries) ───────
     private boolean trackerHasData = false;
 
-    // -------------------------------------------------------------------------
+    // ── Constructor ───────────────────────────────────────────────────────────
+
+    public FarmingProfitTracker() {
+        itemIcons.putAll(DEFAULT_ICONS);
+    }
 
     /**
      * Must be called once per game tick.  Snapshots the player's inventory,
@@ -449,6 +545,62 @@ public class FarmingProfitTracker {
         return totalProfit / (elapsedMs / MS_PER_HOUR);
     }
 
+    // ── Throttled display cache ───────────────────────────────────────────────
+
+    /**
+     * Refreshes the cached display data if {@link #DISPLAY_UPDATE_INTERVAL_MS}
+     * milliseconds have elapsed since the last refresh.  Cheap no-op otherwise.
+     * Call this once per HUD render frame, then read values via the
+     * {@code getDisplay*} accessors to get smoothly throttled, flicker-free
+     * profit data.
+     *
+     * @param includePest whether pest profit is included in the combined P/h
+     */
+    public void refreshDisplayCache(boolean includePest) {
+        long now = System.currentTimeMillis();
+        if (lastDisplayUpdateMs > 0 && now - lastDisplayUpdateMs < DISPLAY_UPDATE_INTERVAL_MS) return;
+        lastDisplayUpdateMs        = now;
+        displayFarmingEntries      = toEntries(farmingItems);
+        displayPestEntries         = toEntries(pestItems);
+        displayFarmingProfit       = getFarmingProfit();
+        displayPestProfit          = getPestProfit();
+        displayIncludePest         = includePest;
+        displayCombinedProfitPerHour = getCombinedProfitPerHour(includePest);
+    }
+
+    /**
+     * Returns the throttled farming entry list.
+     * Call {@link #refreshDisplayCache} once per render frame before using this.
+     */
+    public List<ProfitEntry> getDisplayFarmingEntries() { return displayFarmingEntries; }
+
+    /**
+     * Returns the throttled pest entry list.
+     * Call {@link #refreshDisplayCache} once per render frame before using this.
+     */
+    public List<ProfitEntry> getDisplayPestEntries() { return displayPestEntries; }
+
+    /** Returns the throttled total farming profit. */
+    public double getDisplayFarmingProfit() { return displayFarmingProfit; }
+
+    /** Returns the throttled total pest profit. */
+    public double getDisplayPestProfit() { return displayPestProfit; }
+
+    /**
+     * Returns the throttled combined profit/hour.
+     * Includes pest profit only if {@code includePest} was {@code true} in the
+     * most recent {@link #refreshDisplayCache} call.
+     */
+    public double getDisplayCombinedProfitPerHour() { return displayCombinedProfitPerHour; }
+
+    /**
+     * Returns the total display profit (farming + optional pest) using the
+     * throttled cached values.
+     */
+    public double getDisplayTotalProfit() {
+        return displayFarmingProfit + (displayIncludePest ? displayPestProfit : 0.0);
+    }
+
     /**
      * Parses one game chat message and attributes item/coin gains to the pest
      * profit section when the pest killer is active (or within its cooldown
@@ -525,6 +677,7 @@ public class FarmingProfitTracker {
         pestItems.clear();
         displayNames.clear();
         itemIcons.clear();
+        itemIcons.putAll(DEFAULT_ICONS);  // restore pre-populated defaults
         prevSnapshot.clear();
         farmingTotalMs     = 0;
         pestTotalMs        = 0;
@@ -539,6 +692,13 @@ public class FarmingProfitTracker {
         trackerHasData = false;
         breakHead  = 0;
         breakCount = 0;
+        // Invalidate display cache so the cleared state is shown immediately.
+        lastDisplayUpdateMs = 0L;
+        displayFarmingEntries = List.of();
+        displayPestEntries    = List.of();
+        displayFarmingProfit  = 0.0;
+        displayPestProfit     = 0.0;
+        displayCombinedProfitPerHour = 0.0;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

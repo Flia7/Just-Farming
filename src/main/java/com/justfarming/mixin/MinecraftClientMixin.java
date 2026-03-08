@@ -2,9 +2,10 @@ package com.justfarming.mixin;
 
 import com.justfarming.JustFarming;
 import com.justfarming.MacroManager;
-import org.spongepowered.asm.mixin.Mixin;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.option.KeyBinding;
+import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
@@ -39,6 +40,19 @@ public class MinecraftClientMixin {
             return; // skip unpressAll whenever the macro is active
         }
         KeyBinding.unpressAll();
+    }
+
+    /**
+     * Detect when a GUI screen is closed ({@code screen == null}) and start the
+     * 1-second cursor-ungrab grace period in {@link MouseMixin}.  This prevents
+     * Minecraft from immediately re-grabbing the cursor as the screen closes,
+     * which causes a perceptible micro-stutter in mouse input.
+     */
+    @Inject(method = "setScreen", at = @At("HEAD"))
+    private void onSetScreen(Screen screen, CallbackInfo ci) {
+        if (screen == null) {
+            MouseMixin.notifyGuiClosed();
+        }
     }
 
     /**

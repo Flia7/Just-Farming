@@ -136,7 +136,7 @@ public class InventoryHudLocationScreen extends Screen {
                 mouseX, mouseY, DRAG_PROFIT);
 
         // ── Hint text at the top ───────────────────────────────────────────────
-        String hint = "\u2022  Drag any HUD to move all    \u2022  Scroll anywhere to resize all  \u2022  Scale: "
+        String hint = "\u2022  Drag any HUD to move all    \u2022  Scroll over a HUD to resize  \u2022  Scale: "
                 + String.format("%.1f", invHudScale);
         int hintW = mc.textRenderer.getWidth(hint);
         context.drawTextWithShadow(mc.textRenderer,
@@ -297,7 +297,16 @@ public class InventoryHudLocationScreen extends Screen {
     public boolean mouseScrolled(double mouseX, double mouseY,
                                   double horizontalAmount, double verticalAmount) {
         if (verticalAmount == 0) return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
-        // Scrolling anywhere in the Edit HUD screen rescales all HUDs together.
+        // Only rescale when the cursor is over a draggable HUD element.
+        int invW  = InventoryHudRenderer.getOverlayWidth(invHudScale);
+        int invH  = InventoryHudRenderer.getOverlayHeight(invHudScale);
+        int profW = ProfitHudRenderer.getPanelWidth(invHudScale);
+        int profH = ProfitHudRenderer.getApproxHeight(config.pestProfitEnabled);
+        boolean overInv    = mouseX >= invHudX    && mouseX < invHudX    + invW
+                          && mouseY >= invHudY    && mouseY < invHudY    + invH;
+        boolean overProfit = mouseX >= profitHudX && mouseX < profitHudX + profW
+                          && mouseY >= profitHudY && mouseY < profitHudY + profH;
+        if (!overInv && !overProfit) return false;
         float d = (float) (verticalAmount > 0 ? SCALE_STEP : -SCALE_STEP);
         float newScale = Math.round((invHudScale + d) * 10f) / 10f;
         invHudScale = Math.max(SCALE_MIN, Math.min(SCALE_MAX, newScale));

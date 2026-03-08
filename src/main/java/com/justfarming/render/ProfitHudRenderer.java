@@ -207,6 +207,9 @@ public class ProfitHudRenderer {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc == null || mc.player == null) return;
 
+        // Refresh the throttled display cache (no-op if updated <3s ago).
+        tracker.refreshDisplayCache(config.pestProfitEnabled);
+
         TextRenderer tr = mc.textRenderer;
         // Anchor the profit panel directly below the inventory HUD (and paper-doll
         // panel) so all three widgets appear as one connected block.  The
@@ -257,7 +260,7 @@ public class ProfitHudRenderer {
         context.drawTextWithShadow(tr, "Farming", x + PAD_X, curY, COL_TITLE());
         curY += LINE_H;
         curY = drawItemsAndTotal(context, tr, x, curY,
-                tracker.getFarmingEntries(), tracker.getFarmingProfit(),
+                tracker.getDisplayFarmingEntries(), tracker.getDisplayFarmingProfit(),
                 "Total Farming Profit");
 
         // ── Pests sub-section (optional, garden-only) ──────────────────────────
@@ -266,7 +269,7 @@ public class ProfitHudRenderer {
             context.drawTextWithShadow(tr, "Pests", x + PAD_X, curY, COL_TITLE());
             curY += LINE_H;
             curY = drawItemsAndTotal(context, tr, x, curY,
-                    tracker.getPestEntries(), tracker.getPestProfit(),
+                    tracker.getDisplayPestEntries(), tracker.getDisplayPestProfit(),
                     "Total Pest Profit");
         }
 
@@ -275,14 +278,13 @@ public class ProfitHudRenderer {
         context.drawTextWithShadow(tr, "Stats", x + PAD_X, curY, COL_TITLE());
         curY += LINE_H;
 
-        // Time Elapsed at item scale
+        // Time Elapsed – always real-time so the clock ticks normally.
         String timeElapsed = "Time Elapsed: " + formatElapsedTime(tracker.getSessionElapsedMs());
         drawScaledText(context, tr, x + PAD_X, curY, timeElapsed, COL_ITEM());
         curY += scaledLineH();
 
-        // Combined Profit/Hour (farming + pests) at item scale
-        // Formula: (total farming profit + total pest profit) / session elapsed seconds × 3600
-        double combinedPh = tracker.getCombinedProfitPerHour(config.pestProfitEnabled);
+        // Combined Profit/Hour (farming + pests) at item scale – throttled to 3s.
+        double combinedPh = tracker.getDisplayCombinedProfitPerHour();
         String phLabel = "Profit/Hour:";
         String phValue = "+" + formatCoins(combinedPh) + "/h";
         var matrices = context.getMatrices();
@@ -296,9 +298,8 @@ public class ProfitHudRenderer {
         matrices.popMatrix();
         curY += scaledLineH();
 
-        // Total Profit (farming + pests) at item scale
-        double totalProfit = tracker.getFarmingProfit()
-                + (config.pestProfitEnabled ? tracker.getPestProfit() : 0.0);
+        // Total Profit (farming + pests) at item scale – throttled to 3s.
+        double totalProfit = tracker.getDisplayTotalProfit();
         String tpLabel = "Total Profit:";
         String tpValue = "+" + formatCoins(totalProfit);
         matrices.pushMatrix();
@@ -312,6 +313,7 @@ public class ProfitHudRenderer {
         // ── Bottom accent stripe ──────────────────────────────────────────────
         context.fill(x, y + height - 1, x + pw, y + height, COL_ACCENT());
     }
+
 
     // ── Section helpers ───────────────────────────────────────────────────────
 
@@ -444,13 +446,13 @@ public class ProfitHudRenderer {
         // Separator + Farming subtitle + items + total
         h += separatorH();
         h += LINE_H;            // "Farming" label
-        h += sectionItemsH(tracker.getFarmingEntries());
+        h += sectionItemsH(tracker.getDisplayFarmingEntries());
 
         // Pests (optional, garden-only)
         if (config.pestProfitEnabled && inGarden) {
             h += separatorH();
             h += LINE_H;        // "Pests" label
-            h += sectionItemsH(tracker.getPestEntries());
+            h += sectionItemsH(tracker.getDisplayPestEntries());
         }
 
         // Separator + Stats + time elapsed + profit/hour + total profit rows
