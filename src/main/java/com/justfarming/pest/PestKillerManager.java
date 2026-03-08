@@ -1387,11 +1387,8 @@ public class PestKillerManager {
                         && vacuumParticleTracker.hasDirection()) {
                     Vec3d waypoint = vacuumParticleTracker.getWaypoint();
                     if (waypoint != null) {
-                        LOGGER.info("[Just Farming-PestKiller] Particle trail detected early; "
-                                + "rotating and following to ({}, {}, {}).",
-                                String.format("%.1f", waypoint.x),
-                                String.format("%.1f", waypoint.y),
-                                String.format("%.1f", waypoint.z));
+                        LOGGER.info("[Just Farming-PestKiller] Particle trail detected early; rotating and following to ({}).",
+                                String.format("%.1f, %.1f, %.1f", waypoint.x, waypoint.y, waypoint.z));
                         particleWaypoint = waypoint;
                         // Keep the tracker running so FOLLOWING_PARTICLES can
                         // continuously update the waypoint as more particles arrive.
