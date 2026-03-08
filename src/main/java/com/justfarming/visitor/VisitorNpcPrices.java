@@ -43,7 +43,7 @@ public final class VisitorNpcPrices {
         NPC_PRICES.put("enchanted wheat",           960.0);
         NPC_PRICES.put("enchanted bread",            60.0);
         NPC_PRICES.put("enchanted carrot",          480.0);
-        NPC_PRICES.put("enchanted golden carrot",  25600.0);
+        NPC_PRICES.put("enchanted golden carrot",  76800.0);
         NPC_PRICES.put("enchanted potato",          480.0);
         NPC_PRICES.put("enchanted baked potato",  76800.0);
         NPC_PRICES.put("enchanted pumpkin",        1600.0);
@@ -92,9 +92,14 @@ public final class VisitorNpcPrices {
 
         // ── Pets (sold via George) ────────────────────────────────────────────
         NPC_PRICES.put("rat pet",                  5000.0);
-        // Slug pet NPC value varies by rarity; use epic (500k) as the default
-        // since both epic and legendary share the same in-game display name.
+        // Slug pet NPC value varies by rarity; store both variants.
         NPC_PRICES.put("slug pet",               500000.0);
+        NPC_PRICES.put("slug pet (epic)",        500000.0);
+        NPC_PRICES.put("slug pet (legendary)", 5000000.0);
+        NPC_PRICES.put("cropie",                 25000.0);
+        NPC_PRICES.put("squash",                 25000.0);
+        NPC_PRICES.put("fermento",              250000.0);
+        NPC_PRICES.put("helianthus",            500000.0);
     }
 
     /**
