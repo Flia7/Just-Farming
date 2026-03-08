@@ -57,10 +57,14 @@ public class ProfitHudRenderer {
     // ── Colour palette ─────────────────────────────────────────────────────────
 
     // Dark mode colours
-    /** Semi-transparent dark blue panel background (dark mode). */
-    private static final int COL_BG_DARK     = 0xA8080C1A;
-    /** Cyan separator / border tint (dark mode). */
+    /** Semi-transparent dark blue panel background matching the config GUI (dark mode). */
+    private static final int COL_BG_DARK     = 0xD2080C1A;
+    /** Cyan border/separator tint (dark mode). */
     private static final int COL_SEP_DARK    = 0x2800C8FF;
+    /** Cyan border outline (dark mode). */
+    private static final int COL_BORDER_DARK = 0x6000C8FF;
+    /** Bright cyan accent stripe (dark mode). */
+    private static final int COL_ACCENT_DARK = 0xA000C8FF;
     /** Light lavender – sub-titles (dark mode). */
     private static final int COL_TITLE_DARK  = 0xFFEAF2FF;
     /** Light grey – individual item rows (dark mode). */
@@ -72,9 +76,13 @@ public class ProfitHudRenderer {
 
     // Light mode colours
     /** Semi-transparent light panel background (light mode). */
-    private static final int COL_BG_LIGHT     = 0xD0EEF4F8;
+    private static final int COL_BG_LIGHT     = 0xF0EEF4F8;
     /** Separator tint (light mode). */
     private static final int COL_SEP_LIGHT    = 0x50304870;
+    /** Border outline (light mode). */
+    private static final int COL_BORDER_LIGHT = 0x60203060;
+    /** Accent stripe (light mode). */
+    private static final int COL_ACCENT_LIGHT = 0xA0203060;
     /** Dark – sub-titles (light mode). */
     private static final int COL_TITLE_LIGHT  = 0xFF0F1E3C;
     /** Medium dark – individual item rows (light mode). */
@@ -105,6 +113,8 @@ public class ProfitHudRenderer {
 
     private int COL_BG()     { return isDark() ? COL_BG_DARK     : COL_BG_LIGHT;     }
     private int COL_SEP()    { return isDark() ? COL_SEP_DARK    : COL_SEP_LIGHT;    }
+    private int COL_BORDER() { return isDark() ? COL_BORDER_DARK : COL_BORDER_LIGHT; }
+    private int COL_ACCENT() { return isDark() ? COL_ACCENT_DARK : COL_ACCENT_LIGHT; }
     private int COL_TITLE()  { return isDark() ? COL_TITLE_DARK  : COL_TITLE_LIGHT;  }
     private int COL_ITEM()   { return isDark() ? COL_ITEM_DARK   : COL_ITEM_LIGHT;   }
     private int COL_PROFIT() { return isDark() ? COL_PROFIT_DARK : COL_PROFIT_LIGHT; }
@@ -142,9 +152,18 @@ public class ProfitHudRenderer {
         int y = config.profitHudY;
 
         int height = computeHeight(tracker, inGarden);
+        int pw = panelW();
 
-        // Background only – no border outline
-        context.fill(x, y, x + panelW(), y + height, COL_BG());
+        // Background
+        context.fill(x, y, x + pw, y + height, COL_BG());
+
+        // Top accent stripe (1px) – bright cyan matching the config GUI header.
+        context.fill(x, y, x + pw, y + 1, COL_ACCENT());
+
+        // Thin border outline around the remaining three sides (accent covers top).
+        context.fill(x,          y + height - 1, x + pw,     y + height,     COL_BORDER());
+        context.fill(x,          y,              x + 1,      y + height,     COL_BORDER());
+        context.fill(x + pw - 1, y,              x + pw,     y + height,     COL_BORDER());
 
         int curY = y + PAD_Y;
 
