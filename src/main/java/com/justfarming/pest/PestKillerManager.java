@@ -349,6 +349,12 @@ public class PestKillerManager {
 
     // ── Wardrobe state ───────────────────────────────────────────────────────
 
+    /** Minimum wardrobe slot number (page 1 starts at slot 1). */
+    private static final int MIN_WARDROBE_SLOT = 1;
+    /** Maximum wardrobe slot number (page 2 ends at slot 18). */
+    private static final int MAX_WARDROBE_SLOT = 18;
+    /** First slot that requires navigating to page 2 in the wardrobe. */
+    private static final int WARDROBE_PAGE2_START = 10;
     /** Maximum time (ms) to wait for the wardrobe GUI to open after /wardrobe. */
     private static final long WARDROBE_OPEN_TIMEOUT_MS  = 4000L;
     /** How long (ms) to wait after clicking a button in the wardrobe GUI. */
@@ -987,8 +993,10 @@ public class PestKillerManager {
                 if (client.currentScreen instanceof HandledScreen<?> screen) {
                     String title = screen.getTitle().getString().toLowerCase();
                     if (title.contains("wardrobe")) {
-                        int targetSlot = config != null ? config.pestWardrobeSlot : 1;
-                        if (targetSlot >= 10) {
+                        int targetSlot = config != null
+                                ? Math.max(MIN_WARDROBE_SLOT, Math.min(MAX_WARDROBE_SLOT, config.pestWardrobeSlot))
+                                : MIN_WARDROBE_SLOT;
+                        if (targetSlot >= WARDROBE_PAGE2_START) {
                             // Need to navigate to page 2 first
                             enterState(State.WARDROBE_NEXT_PAGE);
                         } else {
@@ -1024,7 +1032,9 @@ public class PestKillerManager {
             case WARDROBE_SLOT -> {
                 if (!wardrobeSlotClicked) {
                     if (client.currentScreen instanceof HandledScreen<?> screen) {
-                        int targetSlot = config != null ? Math.max(1, Math.min(18, config.pestWardrobeSlot)) : 1;
+                        int targetSlot = config != null
+                                ? Math.max(MIN_WARDROBE_SLOT, Math.min(MAX_WARDROBE_SLOT, config.pestWardrobeSlot))
+                                : MIN_WARDROBE_SLOT;
                         // After "Next Page", page 2 shows slots 10-18 labelled as "Slot 10", "Slot 11", etc.
                         // On page 1, slots 1-9 are labelled "Slot 1", "Slot 2", etc.
                         String slotLabel = "slot " + targetSlot;
