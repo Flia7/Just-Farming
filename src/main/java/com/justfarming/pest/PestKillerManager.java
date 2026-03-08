@@ -656,14 +656,6 @@ public class PestKillerManager {
             (int) Math.ceil(TALL_WALL_SCAN_HEIGHT * TALL_WALL_SOLID_FRACTION);
 
     /**
-     * Horizontal radius (blocks) within which the player is considered to be
-     * already at the garden spawn position (set via {@code /just setspawn}).
-     * When the player is within this radius, the {@code /warp garden} command
-     * is skipped to avoid a wasteful round-trip teleport.
-     */
-    private static final double SPAWN_PROXIMITY_THRESHOLD  = 10.0;
-
-    /**
      * Maximum radius (blocks) of the camera-aim drift applied during
      * {@link State#KILLING_PEST}.  The camera aims at a point within this sphere
      * around the pest rather than locking exactly on it, producing more natural
@@ -1143,11 +1135,13 @@ public class PestKillerManager {
                     // (set via /just setspawn) to avoid a wasteful round-trip.
                     boolean alreadyAtSpawn = false;
                     if (config != null && config.spawnSet && player != null) {
-                        double dx = player.getX() - config.spawnX;
-                        double dz = player.getZ() - config.spawnZ;
-                        if (Math.sqrt(dx * dx + dz * dz) < SPAWN_PROXIMITY_THRESHOLD) {
+                        int playerBlockX = (int) Math.floor(player.getX());
+                        int playerBlockZ = (int) Math.floor(player.getZ());
+                        int spawnBlockX  = (int) Math.floor(config.spawnX);
+                        int spawnBlockZ  = (int) Math.floor(config.spawnZ);
+                        if (playerBlockX == spawnBlockX && playerBlockZ == spawnBlockZ) {
                             alreadyAtSpawn = true;
-                            LOGGER.info("[Just Farming-PestKiller] Player is already at garden spawn; skipping /warp garden.");
+                            LOGGER.info("[Just Farming-PestKiller] Player is exactly at garden spawn block; skipping /warp garden.");
                         }
                     }
                     if (config != null && config.pestKillerWarpToPlot && currentPlotName != null) {
@@ -2301,6 +2295,7 @@ public class PestKillerManager {
                 player.getInventory().setSelectedSlot(aotvSlot);
             }
             client.options.forwardKey.setPressed(true);
+            client.options.sprintKey.setPressed(true);
             client.options.jumpKey.setPressed(true);  // ascend via jump, not camera pitch
             client.options.sneakKey.setPressed(false);
             client.options.leftKey.setPressed(false);
@@ -2406,6 +2401,7 @@ public class PestKillerManager {
         // Allow forward movement alongside strafe so the player still approaches
         // the target while the unstuck manoeuvre is active.
         client.options.forwardKey.setPressed(shouldFly);
+        client.options.sprintKey.setPressed(shouldFly);
         client.options.jumpKey.setPressed(shouldJump || stuckClimbNeeded);
         client.options.sneakKey.setPressed(shouldSneak);
         client.options.leftKey.setPressed(isStrafeActive && strafeDirection < 0);
@@ -2767,6 +2763,7 @@ public class PestKillerManager {
         client.options.jumpKey.setPressed(false);
         client.options.sneakKey.setPressed(false);
         client.options.useKey.setPressed(false);
+        client.options.sprintKey.setPressed(false);
     }
 
     /**
