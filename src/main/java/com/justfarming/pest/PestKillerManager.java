@@ -220,12 +220,13 @@ public class PestKillerManager {
 
     /**
      * Base Y coordinate (blocks) to target when flying to a plot centre.
-     * 80 keeps the player comfortably above all crops while remaining within
-     * entity-scan range of ground-level pests.  The actual target height is
-     * randomised to {@code PLOT_CENTRE_Y_BASE + [0, PLOT_CENTRE_Y_RANGE)}
-     * (i.e. 80–85) on every plot visit to look more human-like.
+     * 82 keeps the player 2 blocks above typical crop height (≈ 80) while
+     * remaining within entity-scan range of ground-level pests.  The actual
+     * target height is randomised to
+     * {@code PLOT_CENTRE_Y_BASE + [0, PLOT_CENTRE_Y_RANGE)} (i.e. 82–87) on
+     * every plot visit to look more human-like.
      */
-    private static final double PLOT_CENTRE_Y_BASE  = 80.0;
+    private static final double PLOT_CENTRE_Y_BASE  = 82.0;
 
     /**
      * Random range (blocks) added on top of {@link #PLOT_CENTRE_Y_BASE} when
@@ -699,8 +700,9 @@ public class PestKillerManager {
      * solid block below.  When the ground is this close, sneak-descent is
      * suppressed and the jump key is held to keep the player airborne at all
      * times – the pest macro must never land on crops or the garden floor.
+     * Set to 5 so the player always stays well above the crop canopy.
      */
-    private static final int  GROUND_CLEARANCE_BLOCKS     = 3;
+    private static final int  GROUND_CLEARANCE_BLOCKS     = 5;
 
     /**
      * How long (ms) to hold the back key while rising during the ceiling-avoidance
@@ -787,6 +789,15 @@ public class PestKillerManager {
     /** Shared particle tracker singleton used for vacuum-shot guidance. */
     private final VacuumParticleTracker vacuumParticleTracker = VacuumParticleTracker.getInstance();
 
+    /**
+     * When {@code true}, the RETURNING state skips the {@code /warp garden}
+     * command and transitions directly to {@link State#DONE}.  Set by the
+     * farming macro when the visitor routine is about to run (which will send
+     * its own {@code /tptoplot barn}), so the pest killer does not perform an
+     * unnecessary round-trip through the garden.
+     */
+    private boolean skipReturnWarp = false;
+
     private final MinecraftClient client;
     private FarmingConfig config;
     private final PestEntityDetector pestEntityDetector;
@@ -804,6 +815,17 @@ public class PestKillerManager {
     /** Update the config reference (called after GUI saves). */
     public void setConfig(FarmingConfig config) {
         this.config = config;
+    }
+
+    /**
+     * Configures whether the routine should skip the {@code /warp garden}
+     * command when it finishes.  Pass {@code true} when the visitor macro is
+     * about to run so the pest killer hands off directly without an extra warp.
+     *
+     * @param skip {@code true} = omit the return warp; {@code false} = warp as normal
+     */
+    public void setSkipReturnWarp(boolean skip) {
+        this.skipReturnWarp = skip;
     }
 
     // ── Public API ───────────────────────────────────────────────────────────
@@ -841,6 +863,7 @@ public class PestKillerManager {
         pestAimOffsetTarget = Vec3d.ZERO;
         pestAimOffsetUpdateTime = 0;
         closeApproachNeeded = false;
+        skipReturnWarp = false;
         resetAotvState();
         resetPlotState();
     }
@@ -1415,7 +1438,11 @@ public class PestKillerManager {
                     // bring the player within kill range are fired (e.g. 2 hops for a
                     // pest 24 blocks away with a kill radius of 8 blocks).
                     if (handlePestAotvToward(player, pestPos, getEffectiveKillRadius())) return;
-                    flyToward(player, pestPos);
+                    // Hover 2 blocks above the pest so the player never touches the
+                    // floor – the vacuum beam reaches downward through blocks so being
+                    // slightly above is harmless and keeps the player airborne.
+                    Vec3d hoverTarget = new Vec3d(pestPos.x, pestPos.y + 2.0, pestPos.z);
+                    flyToward(player, hoverTarget);
                 }
             }
 
@@ -1530,7 +1557,14 @@ public class PestKillerManager {
             }
 
             case RETURNING -> {
-                if (returnWarpSentAt == 0) {
+                if (skipReturnWarp) {
+                    // Visitor routine is about to run; skip the /warp garden so
+                    // the macro doesn't perform an unnecessary round-trip.
+                    LOGGER.info("[Just Farming-PestKiller] skipReturnWarp=true; "
+                            + "skipping /warp garden so visitor routine can /tptoplot barn.");
+                    skipReturnWarp = false;
+                    enterState(State.DONE);
+                } else if (returnWarpSentAt == 0) {
                     sendCommand("warp garden");
                     returnWarpSentAt = now;
                     LOGGER.info("[Just Farming-PestKiller] Sent /warp garden after pest kill.");
@@ -1769,10 +1803,14 @@ public class PestKillerManager {
             // of the target.  For plot-centre travel approachRadius is 0 so all the
             // distance is covered; for pest travel approachRadius is the kill radius so
             // only the hops required to enter kill range are fired.
+            // Fire one fewer hop than the raw calculation to avoid overshooting the
+            // target (creative flight covers the remaining short distance quickly).
             double remainingDist = Math.max(0.0, dist - approachRadius);
             // Already within approach radius – no teleport needed.
             if (remainingDist <= 0.0) return false;
-            int clicks = (int) Math.ceil(remainingDist / PEST_AOTV_TELEPORT_DIST);
+            int clicks = (int) Math.ceil(remainingDist / PEST_AOTV_TELEPORT_DIST) - 1;
+            // If subtracting one leaves zero hops, let normal flight handle it.
+            if (clicks <= 0) return false;
             clicks = Math.min(clicks, PEST_AOTV_MAX_CLICKS);
 
             // Compute the yaw and pitch toward the target so diagonal/downward

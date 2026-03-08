@@ -119,6 +119,17 @@ public class PaperDollRenderer {
      */
     private static final float MIN_KEYSTROKE_SCALE = 0.2f;
 
+    /**
+     * Returns the total width (panel + gap) in screen pixels of the paper-doll panel
+     * at the given HUD scale, used by {@link ProfitHudRenderer} to compute its combined width.
+     *
+     * @param scale the current {@link FarmingConfig#inventoryOverlayScale}
+     */
+    public static int getTotalWidth(float scale) {
+        float s = Math.max(0.25f, scale);
+        return Math.round((PANEL_W + PANEL_GAP) * s);
+    }
+
     // ── State ─────────────────────────────────────────────────────────────────
 
     private final FarmingConfig config;

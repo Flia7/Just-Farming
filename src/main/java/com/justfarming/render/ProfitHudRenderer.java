@@ -121,11 +121,16 @@ public class ProfitHudRenderer {
     private int COL_OTHER()  { return isDark() ? COL_OTHER_DARK  : COL_OTHER_LIGHT;  }
 
     /**
-     * Returns the panel width in pixels, matching the current inventory HUD width
-     * so both overlays stay the same width regardless of the user's scale setting.
+     * Returns the panel width in pixels, matching the combined width of the
+     * inventory HUD and (when enabled) the paper-doll panel so both overlays
+     * appear as one cohesive block above the profit panel.
      */
     private int panelW() {
-        return InventoryHudRenderer.getOverlayWidth(config.inventoryOverlayScale);
+        int w = InventoryHudRenderer.getOverlayWidth(config.inventoryOverlayScale);
+        if (config.inventoryOverlayEnabled && config.paperDollEnabled) {
+            w += PaperDollRenderer.getTotalWidth(config.inventoryOverlayScale);
+        }
+        return w;
     }
 
     // ── Public entry point ────────────────────────────────────────────────────
@@ -148,8 +153,13 @@ public class ProfitHudRenderer {
         if (mc == null || mc.player == null) return;
 
         TextRenderer tr = mc.textRenderer;
-        int x = config.profitHudX;
-        int y = config.profitHudY;
+        // Anchor the profit panel directly below the inventory HUD (and paper-doll
+        // panel) so all three widgets appear as one connected block.  The
+        // inventoryOverlayX/Y values are used even when inventoryOverlayEnabled is
+        // false so the user's configured position is still respected.
+        int x = config.inventoryOverlayX;
+        int y = config.inventoryOverlayY
+                + InventoryHudRenderer.getOverlayHeight(config.inventoryOverlayScale);
 
         int height = computeHeight(tracker, inGarden);
         int pw = panelW();
@@ -159,11 +169,6 @@ public class ProfitHudRenderer {
 
         // Top accent stripe (1px) – bright cyan matching the config GUI header.
         context.fill(x, y, x + pw, y + 1, COL_ACCENT());
-
-        // Thin border outline around the remaining three sides (accent covers top).
-        context.fill(x,          y + height - 1, x + pw,     y + height,     COL_BORDER());
-        context.fill(x,          y,              x + 1,      y + height,     COL_BORDER());
-        context.fill(x + pw - 1, y,              x + pw,     y + height,     COL_BORDER());
 
         int curY = y + PAD_Y;
 

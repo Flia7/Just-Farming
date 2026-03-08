@@ -748,6 +748,9 @@ public class MacroManager {
                     // When unlockedMouseEnabled is on, keep the cursor unlocked so the
                     // user can still interact with other windows during the pest-killer
                     // routine (the MouseMixin suppresses lockCursor while waiting).
+                    // If the visitor routine is about to follow, tell the pest killer to
+                    // skip its /warp garden so we go straight to /tptoplot barn.
+                    pestKillerManager.setSkipReturnWarp(shouldRunVisitorRoutine());
                     pestKillerManager.start(new ArrayList<>(pestPlots));
                     LOGGER.info("[Just Farming] Pest killer enabled – stopping farming macro, starting pest killer routine.");
                 } else if (shouldRunVisitorRoutine()) {
@@ -1118,31 +1121,15 @@ public class MacroManager {
             return;
         }
 
-        // Detect a GUI-close transition (was blocking last tick, not blocking this tick).
-        boolean justClosedGui = prevGuiBlocking;
         prevGuiBlocking = false;
 
-        // Hold attack – lets vanilla's handleBlockBreaking() run naturally,
-        // which uses client.crosshairTarget so only the block in the actual
-        // crosshair is broken (fixes breaking of off-crosshair / immature crops).
-        client.options.attackKey.setPressed(true);
-
-        // When a GUI screen is open, Minecraft's game loop skips handleBlockBreaking()
-        // entirely (even though isCursorLocked() returns true via MouseMixin).  Drive
-        // block breaking manually so it still works with macroEnabledInGui = true.
-        // Also drive manually on the first tick after a GUI closes so no crops are
-        // missed during the transition before vanilla's handleBlockBreaking resumes.
-        if (client.currentScreen != null) {
-            directBreakBlock(); // also calls registerAttack() + registerBlockBreak()
-        } else if (justClosedGui) {
-            // GUI just closed this tick – kick-start breaking immediately to avoid
-            // a one-tick gap that would require a physical LMB press to restart.
-            directBreakBlock();
-        } else {
-            // No GUI – vanilla's handleBlockBreaking() will fire; track manually here.
-            KeystrokesTracker.getInstance().registerAttack();
-            com.justfarming.JustFarming.getProfitTracker().registerBlockBreak();
-        }
+        // Always drive block-breaking by sending the same packets that holding
+        // left click produces (attackBlock + updateBlockBreakingProgress).  This
+        // works reliably regardless of whether a GUI screen is open, because it
+        // bypasses the vanilla handleBlockBreaking() path which is skipped by
+        // Minecraft whenever a screen is present or when the programmatically-set
+        // attack-key pressed state is not recognised as a hardware event.
+        directBreakBlock();
 
         // Directional keys
         client.options.forwardKey.setPressed(forward);

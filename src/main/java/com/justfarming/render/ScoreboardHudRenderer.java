@@ -71,9 +71,14 @@ public class ScoreboardHudRenderer {
      * {@link FarmingConfig#customScoreboardEnabled} is {@code false} or when
      * there is no scoreboard objective assigned to the sidebar slot.
      *
-     * @param context   the draw context
+     * <p>The last scoreboard entry (typically the date or server/lobby ID on
+     * Hypixel) is replaced with the current macro status supplied by the caller.
+     *
+     * @param context     the draw context
+     * @param macroStatus text describing the current macro state (e.g. "Idle",
+     *                    "Breaking Crops", "Killing Pests", "Accepting Visitors")
      */
-    public void render(DrawContext context) {
+    public void render(DrawContext context, String macroStatus) {
         if (!config.customScoreboardEnabled) return;
 
         MinecraftClient mc = MinecraftClient.getInstance();
@@ -99,20 +104,32 @@ public class ScoreboardHudRenderer {
         String headerText = "★ JUST FARMING ★";
         int headerW = tr.getWidth(headerText);
 
-        // Find widest content line (entry text only, no score numbers)
-        int maxLineW = headerW;
+        // Build display lines; replace the last entry (date/server lobby) with
+        // the current macro status.
         List<String> lineTexts = new ArrayList<>();
         for (ScoreboardEntry entry : entries) {
-            String displayLine = getEntryDisplayLine(sb, entry);
-            maxLineW = Math.max(maxLineW, tr.getWidth(displayLine));
-            lineTexts.add(displayLine);
+            lineTexts.add(getEntryDisplayLine(sb, entry));
+        }
+        // Replace the last scoreboard entry (date/server lobby on Hypixel) with
+        // the current macro status.  getMacroStatusText() always returns a
+        // non-null, non-blank string so no fallback is needed here.
+        if (!lineTexts.isEmpty()) {
+            lineTexts.set(lineTexts.size() - 1, macroStatus);
+        } else {
+            lineTexts.add(macroStatus);
+        }
+
+        // Find widest content line
+        int maxLineW = headerW;
+        for (String line : lineTexts) {
+            maxLineW = Math.max(maxLineW, tr.getWidth(line));
         }
 
         int panelW = maxLineW + PAD_X * 2 + 2;
         int panelH = PAD_Y                   // top padding
                 + HEADER_H                   // header title
                 + ACCENT_H + 2              // accent line + gap
-                + entries.size() * LINE_H   // entry rows
+                + lineTexts.size() * LINE_H  // entry rows
                 + PAD_Y;                    // bottom padding
 
         // ── Position: right side, centered vertically ──────────────────────────
@@ -145,10 +162,14 @@ public class ScoreboardHudRenderer {
 
         // ── Scoreboard lines (centered, no score numbers) ─────────────────────
         int innerW = panelW - PAD_X * 2;
-        for (String text : lineTexts) {
+        for (int i = 0; i < lineTexts.size(); i++) {
+            String text = lineTexts.get(i);
+            // The last line is the macro status – render it in the accent colour
+            // so it stands out from the regular scoreboard entries.
+            int lineColor = (i == lineTexts.size() - 1) ? colAccent : colText;
             int textW = tr.getWidth(text);
             int textX = panelX + PAD_X + (innerW - textW) / 2;
-            context.drawTextWithShadow(tr, text, textX, curY, colText);
+            context.drawTextWithShadow(tr, text, textX, curY, lineColor);
             curY += LINE_H;
         }
     }
