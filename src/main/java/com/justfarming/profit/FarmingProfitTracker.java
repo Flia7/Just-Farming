@@ -47,9 +47,13 @@ public class FarmingProfitTracker {
     private long pestSessionStartMs    = -1;
     private long pestTotalMs           = 0;
 
-    // ── Overall session start time (for the HUD title elapsed timer) ─────────
-    /** Wall-clock time when the first farming or pest activity began this session. */
-    private long sessionFirstStartMs   = -1;
+    // ── Active-session elapsed time (only counts while a macro is running) ───
+    /** Accumulated milliseconds during which at least one macro was active. */
+    private long sessionActiveTotalMs    = 0;
+    /** Wall-clock start of the current active segment; -1 when no macro is running. */
+    private long sessionActiveStartMs    = -1;
+    /** Whether any macro was active in the previous tick. */
+    private boolean wasAnyMacroActive    = false;
 
     // ── BPS (blocks per second) tracking via a sliding-window buffer ─────────
     /** Circular timestamp buffer for recent block breaks. */
@@ -130,22 +134,35 @@ public class FarmingProfitTracker {
      * @param client          the current Minecraft client (may be {@code null}-safe)
      * @param macroManager    the farming macro manager
      * @param pestKillerManager the pest killer manager
+     * @param isVisitorActive whether the visitor routine is currently running
      */
     public void onTick(MinecraftClient client,
                        MacroManager macroManager,
-                       PestKillerManager pestKillerManager) {
+                       PestKillerManager pestKillerManager,
+                       boolean isVisitorActive) {
         if (client == null || client.player == null) return;
 
         boolean isPestActive = pestKillerManager != null && pestKillerManager.isActive();
         boolean isFarming    = !isPestActive
                 && macroManager != null && macroManager.isRunning();
+        boolean isAnyMacroActive = isFarming || isPestActive || isVisitorActive;
 
         long nowMs = System.currentTimeMillis();
 
-        // ── Track overall session start ──────────────────────────────────────
-        if ((isFarming || isPestActive) && sessionFirstStartMs < 0) {
-            sessionFirstStartMs = nowMs;
+        // ── Track active-session elapsed time (only when any macro is running) ──
+        if (isAnyMacroActive) {
+            if (!wasAnyMacroActive) {
+                // Macro just started: begin accumulating
+                sessionActiveStartMs = nowMs;
+            }
+        } else {
+            if (wasAnyMacroActive && sessionActiveStartMs >= 0) {
+                // Macro just stopped: commit the elapsed segment
+                sessionActiveTotalMs += nowMs - sessionActiveStartMs;
+                sessionActiveStartMs = -1;
+            }
         }
+        wasAnyMacroActive = isAnyMacroActive;
 
         // ── Track pest cooldown window ────────────────────────────────────────
         if (isPestActive) {
@@ -277,12 +294,18 @@ public class FarmingProfitTracker {
     }
 
     /**
-     * Returns the total elapsed milliseconds since this session's first farming
-     * or pest activity began.  Returns {@code 0} before any activity.
+     * Returns the total elapsed milliseconds during which at least one macro
+     * (farming, pest killer, or visitor) was running this session.
+     * Pauses automatically when no macro is active, so the timer only advances
+     * while farming, killing pests, or running the visitor routine.
+     * Returns {@code 0} before any activity.
      */
     public long getSessionElapsedMs() {
-        if (sessionFirstStartMs < 0) return 0;
-        return System.currentTimeMillis() - sessionFirstStartMs;
+        long total = sessionActiveTotalMs;
+        if (wasAnyMacroActive && sessionActiveStartMs >= 0) {
+            total += System.currentTimeMillis() - sessionActiveStartMs;
+        }
+        return total;
     }
 
     /**
@@ -429,7 +452,9 @@ public class FarmingProfitTracker {
         pestTotalMs        = 0;
         farmingSessionStartMs = -1;
         pestSessionStartMs    = -1;
-        sessionFirstStartMs   = -1;
+        sessionActiveTotalMs  = 0;
+        sessionActiveStartMs  = -1;
+        wasAnyMacroActive     = false;
         lastPestActiveMs      = -1;
         wasFarming    = false;
         wasPestActive = false;

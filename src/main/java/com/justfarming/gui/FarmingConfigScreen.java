@@ -145,6 +145,8 @@ public class FarmingConfigScreen extends Screen {
     private FlatBoolToggleWidget          pestKillerEnabledButton;
     private FlatBoolToggleWidget          pestKillerWarpToPlotButton;
     private PestKillerVacuumRangeSlider   pestKillerVacuumRangeSlider;
+    private FlatBoolToggleWidget          pestWardrobeButton;
+    private WardrobeSlotSlider            pestWardrobeSlotSlider;
     private FarmingToolSlotSlider         farmingToolSlotSlider;
 
     // ── Tab 4 – Misc: dark/light mode ─────────────────────────────────────────
@@ -155,7 +157,7 @@ public class FarmingConfigScreen extends Screen {
 
     // ── Section-label Y positions (set in init, used in render) ───────────────
     private int sectionCropY, actionSeparatorY;
-    private int sectionPestsY, sectionPestKillerY, pestKillerStatusY;
+    private int sectionPestsY, sectionPestKillerY, sectionWardrobeY, pestKillerStatusY;
     // HUD tab (tab 3 in TAB_NAMES array)
     private int sectionHudInvY, sectionHudProfitY, sectionHudDisplayY;
     // Settings tab (tab 4 in TAB_NAMES array)
@@ -355,6 +357,23 @@ public class FarmingConfigScreen extends Screen {
         this.addDrawableChild(pestKillerVacuumRangeSlider);
         pestKillerVacuumRangeSlider.setTooltip(Tooltip.of(Text.literal(
                 "Max distance (blocks) at which the vacuum activates.")));
+        y += bh + pad + gap;
+
+        sectionWardrobeY = y;
+        y += sLH;
+
+        pestWardrobeButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
+                        Text.literal("Wardrobe Armor Swap"),
+                        config.pestWardrobeEnabled);
+        this.addDrawableChild(pestWardrobeButton);
+        pestWardrobeButton.setTooltip(Tooltip.of(Text.literal(
+                "Open /wardrobe when the pest killer starts\nand equip the selected armor set.")));
+        y += bh + pad;
+
+        pestWardrobeSlotSlider = new WardrobeSlotSlider(widgetX, y, bw, bh, config.pestWardrobeSlot);
+        this.addDrawableChild(pestWardrobeSlotSlider);
+        pestWardrobeSlotSlider.setTooltip(Tooltip.of(Text.literal(
+                "Wardrobe slot to equip (1–9: page 1, 10–18: page 2).")));
         y += bh + pad + gap;
         pestKillerStatusY = y;
         tabContentHeights[1] = y - contentAreaTopY + tabScrollOffsets[1];
@@ -662,9 +681,9 @@ public class FarmingConfigScreen extends Screen {
                         btn -> close());
         this.addDrawableChild(saveCloseButton);
 
-        // Edit HUD button (nav panel, bottom-left)
+        // Edit HUD button (nav panel, bottom-left, just above the save/close button)
         int editHudBtnW = navW - pad * 2;
-        editHudButton = new FlatButtonWidget(winX + pad, closeBtnY - bh - pad, editHudBtnW, bh,
+        editHudButton = new FlatButtonWidget(winX + pad, closeBtnY - bh - 3, editHudBtnW, bh,
                         Text.literal("Edit HUD"),
                         btn -> {
                             applyConfig();
@@ -709,6 +728,8 @@ public class FarmingConfigScreen extends Screen {
         pestKillerEnabledButton.visible     = t1 && inContentBounds(pestKillerEnabledButton);
         pestKillerWarpToPlotButton.visible  = t1 && inContentBounds(pestKillerWarpToPlotButton);
         pestKillerVacuumRangeSlider.visible = t1 && inContentBounds(pestKillerVacuumRangeSlider);
+        pestWardrobeButton.visible          = t1 && inContentBounds(pestWardrobeButton);
+        pestWardrobeSlotSlider.visible      = t1 && inContentBounds(pestWardrobeSlotSlider);
 
         boolean t2 = activeTab == 2;
         visitorsEnabledButton.visible       = t2 && inContentBounds(visitorsEnabledButton);
@@ -810,6 +831,8 @@ public class FarmingConfigScreen extends Screen {
                 drawSectionLabel(context, "Detection", sectionPestsY);
             if (yInContentBounds(sectionPestKillerY))
                 drawSectionLabel(context, "Auto Pest Killer", sectionPestKillerY);
+            if (yInContentBounds(sectionWardrobeY))
+                drawSectionLabel(context, "Wardrobe Swap", sectionWardrobeY);
             // Show current pest killer state below the buttons when active
             if (pestKillerManager != null && pestKillerManager.isActive() && yInContentBounds(pestKillerStatusY)) {
                 String stateText = "State: " + pestKillerManager.getState().name();
@@ -962,6 +985,8 @@ public class FarmingConfigScreen extends Screen {
         config.pestKillerAfterTeleportDelay = pestKillerAfterTeleportSlider.getDelayValue();
         config.pestKillerGoToNextPestDelay = pestKillerGoToNextPestSlider.getDelayValue();
         config.pestKillerVacuumRange    = pestKillerVacuumRangeSlider.getRangeValue();
+        config.pestWardrobeEnabled      = pestWardrobeButton.getValue();
+        config.pestWardrobeSlot         = pestWardrobeSlotSlider.getSlotValue();
         config.farmingToolHotbarSlot    = farmingToolSlotSlider.getSlotValue();
         config.customScoreboardEnabled  = customScoreboardButton.getValue();
         config.hideHudsOnTabF3          = hideHudsOnTabF3Button.getValue();
@@ -1750,6 +1775,62 @@ public class FarmingConfigScreen extends Screen {
         @Override
         protected void updateMessage() {
             setMessage(Text.literal(String.format("Vacuum Range: %d blocks", getRangeValue())));
+        }
+
+        @Override
+        public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
+            FlatButtonWidget.renderFlatSlider(context, getX(), getY(), getWidth(), getHeight(), value, getMessage());
+        }
+    }
+
+    /**
+     * Slider for selecting the wardrobe armor slot to equip (1–18, step 1).
+     * Slots 1–9 are on page 1; slots 10–18 are on page 2.
+     */
+    private static class WardrobeSlotSlider extends SliderWidget {
+
+        private static final int MIN = 1;
+        private static final int MAX = 18;
+        private static final int GLFW_KEY_LEFT  = 263;
+        private static final int GLFW_KEY_RIGHT = 262;
+
+        WardrobeSlotSlider(int x, int y, int width, int height, int initialValue) {
+            super(x, y, width, height, Text.empty(),
+                    (double)(Math.max(MIN, Math.min(MAX, initialValue)) - MIN) / (MAX - MIN));
+            updateMessage();
+        }
+
+        int getSlotValue() {
+            return MIN + (int) Math.round(value * (MAX - MIN));
+        }
+
+        @Override
+        protected void applyValue() {
+            int steps = MAX - MIN;
+            int rawInt = MIN + (int) Math.round(this.value * steps);
+            rawInt = Math.max(MIN, Math.min(MAX, rawInt));
+            this.value = (double)(rawInt - MIN) / steps;
+        }
+
+        @Override
+        public boolean keyPressed(net.minecraft.client.input.KeyInput input) {
+            if (input.key() == GLFW_KEY_LEFT || input.key() == GLFW_KEY_RIGHT) {
+                double step = 1.0 / (MAX - MIN);
+                this.value = (input.key() == GLFW_KEY_LEFT)
+                        ? Math.max(0.0, this.value - step)
+                        : Math.min(1.0, this.value + step);
+                applyValue();
+                updateMessage();
+                return true;
+            }
+            return super.keyPressed(input);
+        }
+
+        @Override
+        protected void updateMessage() {
+            int slot = getSlotValue();
+            String page = slot >= 10 ? " (Page 2)" : " (Page 1)";
+            setMessage(Text.literal(String.format("Wardrobe Slot: %d%s", slot, page)));
         }
 
         @Override

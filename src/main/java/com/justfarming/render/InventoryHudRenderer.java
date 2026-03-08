@@ -45,15 +45,22 @@ public class InventoryHudRenderer {
     /** Background padding around the item grid at scale 1.0. */
     private static final int BG_PAD = 3;
 
-    /** Background colour (semi-transparent black) – also used by the paper-doll panel. */
-    public static final int BG_COLOR = 0xA0000000;
+    /** Background colour for dark mode. */
+    public static final int BG_COLOR_DARK   = 0xA0000000;
+    /** Background colour for light mode. */
+    public static final int BG_COLOR_LIGHT  = 0xA8EEF4F8;
 
     /**
-     * Slot background colour drawn behind each inventory slot to create a
-     * visible grid of empty-slot squares.  Slightly lighter than
-     * {@link #BG_COLOR} so individual slots are distinguishable even when empty.
+     * Background colour drawn behind each inventory slot (dark mode).
      */
-    private static final int SLOT_BG_COLOR = 0x50000000;
+    private static final int SLOT_BG_DARK    = 0x50000000;
+    /**
+     * Background colour drawn behind each inventory slot (light mode).
+     */
+    private static final int SLOT_BG_LIGHT   = 0x40C0D0E8;
+
+    /** Background colour (semi-transparent) – kept for compat. */
+    public static final int BG_COLOR = BG_COLOR_DARK;
 
     private final FarmingConfig config;
 
@@ -75,8 +82,9 @@ public class InventoryHudRenderer {
         ClientPlayerEntity player = mc.player;
         if (player == null) return;
 
+        boolean dark = config.darkMode;
         renderAt(context, mc, player, config.inventoryOverlayX, config.inventoryOverlayY,
-                config.inventoryOverlayScale);
+                config.inventoryOverlayScale, dark);
     }
 
     /**
@@ -85,17 +93,29 @@ public class InventoryHudRenderer {
      */
     public static void renderAt(DrawContext context, MinecraftClient mc,
                                  ClientPlayerEntity player, int bgX, int bgY, float scaleIn) {
+        renderAt(context, mc, player, bgX, bgY, scaleIn, true);
+    }
+
+    /**
+     * Renders the inventory overlay at the given position and scale with explicit theme.
+     */
+    public static void renderAt(DrawContext context, MinecraftClient mc,
+                                 ClientPlayerEntity player, int bgX, int bgY, float scaleIn,
+                                 boolean dark) {
         float scale = Math.max(0.25f, scaleIn);
 
         int scaledGridW  = Math.round(GRID_W  * scale);
         int scaledGridH  = Math.round(GRID_H  * scale);
         int scaledBgPad  = Math.max(1, Math.round(BG_PAD * scale));
 
+        int bgColor   = dark ? BG_COLOR_DARK  : BG_COLOR_LIGHT;
+        int slotColor = dark ? SLOT_BG_DARK   : SLOT_BG_LIGHT;
+
         // Draw a semi-transparent background behind the grid.
         context.fill(bgX, bgY,
                 bgX + scaledGridW + 2 * scaledBgPad,
                 bgY + scaledGridH + 2 * scaledBgPad,
-                BG_COLOR);
+                bgColor);
 
         // Items are rendered inside the background, offset by scaledBgPad.
         int startX = bgX + scaledBgPad;
@@ -104,7 +124,6 @@ public class InventoryHudRenderer {
         int scaledSlotSpacing = Math.round(SLOT_SPACING * scale);
 
         // Render the 27 inventory slots (rows 1–3, Minecraft slot indices 9–35).
-        // Apply scale via the Matrix3x2fStack so item icons and count labels scale correctly.
         var matrices = context.getMatrices();
         matrices.pushMatrix();
         matrices.translate(startX, startY);
@@ -112,12 +131,9 @@ public class InventoryHudRenderer {
         for (int row = 0; row < ROWS; row++) {
             for (int col = 0; col < COLS; col++) {
                 int slotIndex = 9 + (row * COLS) + col;
-                // Positions are in unscaled slot space (scale is applied via matrix)
                 int itemX = col * SLOT_SPACING;
                 int itemY = row * SLOT_SPACING;
-                // Draw a dark slot background behind every slot (even empty ones)
-                // so the inventory grid is always visible.
-                context.fill(itemX, itemY, itemX + SLOT_SIZE, itemY + SLOT_SIZE, SLOT_BG_COLOR);
+                context.fill(itemX, itemY, itemX + SLOT_SIZE, itemY + SLOT_SIZE, slotColor);
                 ItemStack stack = player.getInventory().getStack(slotIndex);
                 if (!stack.isEmpty()) {
                     context.drawItem(stack, itemX, itemY);

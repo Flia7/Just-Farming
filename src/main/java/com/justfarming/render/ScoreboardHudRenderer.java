@@ -34,16 +34,19 @@ public class ScoreboardHudRenderer {
 
     // ── Colours ───────────────────────────────────────────────────────────────
 
-    /** Semi-transparent dark background. */
-    private static final int COL_BG        = 0xA8000000;
-    /** Header accent line below the title. */
-    private static final int COL_ACCENT    = 0xFF3AFF8A;  // bright green
-    /** The "Just Farming" header text colour. */
-    private static final int COL_HEADER    = 0xFF3AFF8A;  // bright green
-    /** Header star colour (decorative). */
-    private static final int COL_STAR      = 0xFFFFD700;  // gold
-    /** Default text colour for scoreboard lines. */
-    private static final int COL_TEXT      = 0xFFFFFFFF;  // white
+    // Dark mode
+    private static final int COL_BG_DARK     = 0xA8000000;
+    private static final int COL_ACCENT_DARK = 0xFF3AFF8A;
+    private static final int COL_HEADER_DARK = 0xFF3AFF8A;
+    private static final int COL_STAR_DARK   = 0xFFFFD700;
+    private static final int COL_TEXT_DARK   = 0xFFFFFFFF;
+
+    // Light mode
+    private static final int COL_BG_LIGHT     = 0xD0EEF4F8;
+    private static final int COL_ACCENT_LIGHT = 0xFF1A6040;
+    private static final int COL_HEADER_LIGHT = 0xFF1A6040;
+    private static final int COL_STAR_LIGHT   = 0xFF9060A0;
+    private static final int COL_TEXT_LIGHT   = 0xFF0F1E3C;
 
     // ── Layout ────────────────────────────────────────────────────────────────
 
@@ -117,20 +120,27 @@ public class ScoreboardHudRenderer {
         int panelX = screenW - panelW - MARGIN_RIGHT;
         int panelY = (screenH - panelH) / 2;
 
+        boolean dark = config.darkMode;
+        int colBg     = dark ? COL_BG_DARK     : COL_BG_LIGHT;
+        int colAccent = dark ? COL_ACCENT_DARK : COL_ACCENT_LIGHT;
+        int colStar   = dark ? COL_STAR_DARK   : COL_STAR_LIGHT;
+        int colHeader = dark ? COL_HEADER_DARK : COL_HEADER_LIGHT;
+        int colText   = dark ? COL_TEXT_DARK   : COL_TEXT_LIGHT;
+
         // ── Background ────────────────────────────────────────────────────────
-        context.fill(panelX, panelY, panelX + panelW, panelY + panelH, COL_BG);
+        context.fill(panelX, panelY, panelX + panelW, panelY + panelH, colBg);
 
         int curY = panelY + PAD_Y;
 
         // ── Header ────────────────────────────────────────────────────────────
         // Draw the two stars in gold and the "JUST FARMING" text in green
         int headerX = panelX + PAD_X;
-        drawHeaderLine(context, tr, headerX, curY, panelW - PAD_X * 2);
+        drawHeaderLine(context, tr, headerX, curY, panelW - PAD_X * 2, colStar, colHeader);
         curY += HEADER_H;
 
         // Accent line (full width minus padding)
         context.fill(panelX + PAD_X, curY,
-                panelX + panelW - PAD_X, curY + ACCENT_H, COL_ACCENT);
+                panelX + panelW - PAD_X, curY + ACCENT_H, colAccent);
         curY += ACCENT_H + 2;
 
         // ── Scoreboard lines (centered, no score numbers) ─────────────────────
@@ -138,7 +148,7 @@ public class ScoreboardHudRenderer {
         for (String text : lineTexts) {
             int textW = tr.getWidth(text);
             int textX = panelX + PAD_X + (innerW - textW) / 2;
-            context.drawTextWithShadow(tr, text, textX, curY, COL_TEXT);
+            context.drawTextWithShadow(tr, text, textX, curY, colText);
             curY += LINE_H;
         }
     }
@@ -148,16 +158,16 @@ public class ScoreboardHudRenderer {
      * the centre text in the accent green, all centred in the available width.
      */
     private void drawHeaderLine(DrawContext ctx, TextRenderer tr,
-                                int x, int y, int availW) {
-        // Stars in gold, "JUST FARMING" in green – assembled as three parts
+                                int x, int y, int availW,
+                                int colStar, int colHeader) {
         String leftStar  = "★ ";
         String title     = "JUST FARMING";
         String rightStar = " ★";
         int totalW = tr.getWidth(leftStar) + tr.getWidth(title) + tr.getWidth(rightStar);
         int startX = x + Math.max(0, (availW - totalW) / 2);
-        ctx.drawTextWithShadow(tr, leftStar,  startX,                                  y, COL_STAR);
-        ctx.drawTextWithShadow(tr, title,     startX + tr.getWidth(leftStar),          y, COL_HEADER);
-        ctx.drawTextWithShadow(tr, rightStar, startX + tr.getWidth(leftStar + title),  y, COL_STAR);
+        ctx.drawTextWithShadow(tr, leftStar,  startX,                                  y, colStar);
+        ctx.drawTextWithShadow(tr, title,     startX + tr.getWidth(leftStar),          y, colHeader);
+        ctx.drawTextWithShadow(tr, rightStar, startX + tr.getWidth(leftStar + title),  y, colStar);
     }
 
     /**

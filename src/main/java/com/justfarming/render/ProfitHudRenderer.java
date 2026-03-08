@@ -56,18 +56,33 @@ public class ProfitHudRenderer {
 
     // ── Colour palette ─────────────────────────────────────────────────────────
 
-    /** Semi-transparent black panel background. */
-    private static final int COL_BG     = 0xA8000000;
-    /** Separator / border tint. */
-    private static final int COL_SEP    = 0x28FFFFFF;
-    /** White – sub-titles. */
-    private static final int COL_TITLE  = 0xFFFFFFFF;
-    /** Light grey – individual item rows. */
-    private static final int COL_ITEM   = 0xFFBBBBBB;
-    /** Green – positive profit values. */
-    private static final int COL_PROFIT = 0xFF55FF55;
-    /** "Other" row colour (dimmer). */
-    private static final int COL_OTHER  = 0xFF999999;
+    // Dark mode colours
+    /** Semi-transparent dark panel background (dark mode). */
+    private static final int COL_BG_DARK     = 0xA8000000;
+    /** Separator / border tint (dark mode). */
+    private static final int COL_SEP_DARK    = 0x28FFFFFF;
+    /** White – sub-titles (dark mode). */
+    private static final int COL_TITLE_DARK  = 0xFFFFFFFF;
+    /** Light grey – individual item rows (dark mode). */
+    private static final int COL_ITEM_DARK   = 0xFFBBBBBB;
+    /** Green – positive profit values (dark mode). */
+    private static final int COL_PROFIT_DARK = 0xFF55FF55;
+    /** "Other" row colour (dark mode, dimmer). */
+    private static final int COL_OTHER_DARK  = 0xFF999999;
+
+    // Light mode colours
+    /** Semi-transparent light panel background (light mode). */
+    private static final int COL_BG_LIGHT     = 0xD0EEF4F8;
+    /** Separator tint (light mode). */
+    private static final int COL_SEP_LIGHT    = 0x50304870;
+    /** Dark – sub-titles (light mode). */
+    private static final int COL_TITLE_LIGHT  = 0xFF0F1E3C;
+    /** Medium dark – individual item rows (light mode). */
+    private static final int COL_ITEM_LIGHT   = 0xFF304870;
+    /** Dark green – positive profit values (light mode). */
+    private static final int COL_PROFIT_LIGHT = 0xFF1A8040;
+    /** Muted row colour (light mode). */
+    private static final int COL_OTHER_LIGHT  = 0xFF607090;
 
     /** Maximum individual item rows before collapsing the rest into "Other". */
     private static final int MAX_ITEMS = 4;
@@ -83,6 +98,17 @@ public class ProfitHudRenderer {
     public ProfitHudRenderer(FarmingConfig config) {
         this.config = config;
     }
+
+    // ── Theme helpers ─────────────────────────────────────────────────────────
+
+    private boolean isDark() { return config.darkMode; }
+
+    private int COL_BG()     { return isDark() ? COL_BG_DARK     : COL_BG_LIGHT;     }
+    private int COL_SEP()    { return isDark() ? COL_SEP_DARK    : COL_SEP_LIGHT;    }
+    private int COL_TITLE()  { return isDark() ? COL_TITLE_DARK  : COL_TITLE_LIGHT;  }
+    private int COL_ITEM()   { return isDark() ? COL_ITEM_DARK   : COL_ITEM_LIGHT;   }
+    private int COL_PROFIT() { return isDark() ? COL_PROFIT_DARK : COL_PROFIT_LIGHT; }
+    private int COL_OTHER()  { return isDark() ? COL_OTHER_DARK  : COL_OTHER_LIGHT;  }
 
     /**
      * Returns the panel width in pixels, matching the current inventory HUD width
@@ -105,6 +131,7 @@ public class ProfitHudRenderer {
      */
     public void render(DrawContext context, FarmingProfitTracker tracker, boolean inGarden) {
         if (!config.profitTrackerEnabled) return;
+        if (!inGarden) return;  // #1: only show profit HUD inside the garden
         if (tracker == null) return;
 
         MinecraftClient mc = MinecraftClient.getInstance();
@@ -117,7 +144,7 @@ public class ProfitHudRenderer {
         int height = computeHeight(tracker, inGarden);
 
         // Background only – no border outline
-        context.fill(x, y, x + panelW(), y + height, COL_BG);
+        context.fill(x, y, x + panelW(), y + height, COL_BG());
 
         int curY = y + PAD_Y;
 
@@ -130,12 +157,12 @@ public class ProfitHudRenderer {
 
         // ── BPS row (item scale) ──────────────────────────────────────────────
         drawScaledText(context, tr, x + PAD_X, curY,
-                "BPS: " + formatBps(tracker.getAverageBps()), COL_ITEM);
+                "BPS: " + formatBps(tracker.getAverageBps()), COL_ITEM());
         curY += scaledLineH();
 
         // ── Farming sub-section ───────────────────────────────────────────────
         curY = drawSeparator(context, x, curY);
-        context.drawTextWithShadow(tr, "Farming", x + PAD_X, curY, COL_TITLE);
+        context.drawTextWithShadow(tr, "Farming", x + PAD_X, curY, COL_TITLE());
         curY += LINE_H;
         curY = drawItemsAndTotal(context, tr, x, curY,
                 tracker.getFarmingEntries(), tracker.getFarmingProfit(),
@@ -144,7 +171,7 @@ public class ProfitHudRenderer {
         // ── Pests sub-section (optional, garden-only) ──────────────────────────
         if (config.pestProfitEnabled && inGarden) {
             curY = drawSeparator(context, x, curY);
-            context.drawTextWithShadow(tr, "Pests", x + PAD_X, curY, COL_TITLE);
+            context.drawTextWithShadow(tr, "Pests", x + PAD_X, curY, COL_TITLE());
             curY += LINE_H;
             curY = drawItemsAndTotal(context, tr, x, curY,
                     tracker.getPestEntries(), tracker.getPestProfit(),
@@ -153,12 +180,12 @@ public class ProfitHudRenderer {
 
         // ── Stats sub-section ─────────────────────────────────────────────────
         curY = drawSeparator(context, x, curY);
-        context.drawTextWithShadow(tr, "Stats", x + PAD_X, curY, COL_TITLE);
+        context.drawTextWithShadow(tr, "Stats", x + PAD_X, curY, COL_TITLE());
         curY += LINE_H;
 
         // Time Elapsed at item scale
         String timeElapsed = "Time Elapsed: " + formatElapsedTime(tracker.getSessionElapsedMs());
-        drawScaledText(context, tr, x + PAD_X, curY, timeElapsed, COL_ITEM);
+        drawScaledText(context, tr, x + PAD_X, curY, timeElapsed, COL_ITEM());
         curY += scaledLineH();
 
         // Combined Profit/Hour (farming + pests) at item scale
@@ -172,8 +199,8 @@ public class ProfitHudRenderer {
         matrices.scale(ITEM_SCALE, ITEM_SCALE);
         int unscaledW = Math.round((panelW() - PAD_X * 2) / ITEM_SCALE);
         int phRightX  = unscaledW - tr.getWidth(phValue);
-        context.drawTextWithShadow(tr, phLabel, 0, 0, COL_TITLE);
-        context.drawTextWithShadow(tr, phValue, phRightX, 0, COL_PROFIT);
+        context.drawTextWithShadow(tr, phLabel, 0, 0, COL_TITLE());
+        context.drawTextWithShadow(tr, phValue, phRightX, 0, COL_PROFIT());
         matrices.popMatrix();
     }
 
@@ -196,17 +223,17 @@ public class ProfitHudRenderer {
                 otherProfit += entry.profit();
             } else {
                 drawItemRow(ctx, tr, x, curY,
-                        entry.displayName(), entry.count(), entry.profit(), COL_ITEM);
+                        entry.displayName(), entry.count(), entry.profit(), COL_ITEM());
                 curY += scaledLineH();
                 shown++;
             }
         }
         if (otherProfit > 0) {
-            drawItemRow(ctx, tr, x, curY, "Other", -1, otherProfit, COL_OTHER);
+            drawItemRow(ctx, tr, x, curY, "Other", -1, otherProfit, COL_OTHER());
             curY += scaledLineH();
         }
         if (entries.isEmpty()) {
-            drawScaledText(ctx, tr, x + PAD_X, curY, "  No items yet", COL_OTHER);
+            drawScaledText(ctx, tr, x + PAD_X, curY, "  No items yet", COL_OTHER());
             curY += scaledLineH();
         }
 
@@ -218,8 +245,8 @@ public class ProfitHudRenderer {
         matrices.scale(ITEM_SCALE, ITEM_SCALE);
         int unscaledW = Math.round((panelW() - PAD_X * 2) / ITEM_SCALE);
         int rightX    = unscaledW - tr.getWidth(totalStr);
-        ctx.drawTextWithShadow(tr, totalLabel, 0, 0, COL_TITLE);
-        ctx.drawTextWithShadow(tr, totalStr, rightX, 0, COL_PROFIT);
+        ctx.drawTextWithShadow(tr, totalLabel, 0, 0, COL_TITLE());
+        ctx.drawTextWithShadow(tr, totalStr, rightX, 0, COL_PROFIT());
         matrices.popMatrix();
         curY += scaledLineH();
 
@@ -246,7 +273,7 @@ public class ProfitHudRenderer {
         int rightX       = unscaledW - tr.getWidth(profitStr);
 
         ctx.drawTextWithShadow(tr, countStr + name, 0, 0, textColor);
-        ctx.drawTextWithShadow(tr, profitStr, rightX, 0, COL_PROFIT);
+        ctx.drawTextWithShadow(tr, profitStr, rightX, 0, COL_PROFIT());
 
         matrices.popMatrix();
     }
@@ -265,7 +292,7 @@ public class ProfitHudRenderer {
     /** Draws a separator line and returns the Y position after the resulting gap. */
     private int drawSeparator(DrawContext ctx, int x, int curY) {
         curY += SEPARATOR_PRE_GAP;
-        ctx.fill(x + PAD_X, curY, x + panelW() - PAD_X, curY + SEP_H, COL_SEP);
+        ctx.fill(x + PAD_X, curY, x + panelW() - PAD_X, curY + SEP_H, COL_SEP());
         curY += SEP_H + SECTION_GAP;
         return curY;
     }
