@@ -99,8 +99,8 @@ public class PaperDollRenderer {
         }
 
         // ── Player model (full panel height) ──────────────────────────────────
-        // Entity display size: 65% of the full panel height, minimum 4 px.
-        int entitySize = Math.max(4, (int) (panelH * 0.65f));
+        // Entity display size: 65% of 65% (≈ 42.25%) of the full panel height, minimum 4 px.
+        int entitySize = Math.max(4, (int) (panelH * 0.65f * 0.65f));
 
         // mouseX=0 → face toward viewer; small negative mouseY → slight upward
         // tilt so the face is visible rather than the top of the head.

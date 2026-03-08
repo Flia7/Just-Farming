@@ -207,9 +207,14 @@ public class ProfitHudRenderer {
         int height = computeHeight(tracker, inGarden);
         int pw = panelW();
 
-        // Background – no top accent stripe so the panel connects seamlessly to
-        // the inventory HUD and paper-doll panel above it.
+        // Background – the panel normally connects seamlessly to the inventory HUD
+        // and paper-doll panel above it.  When the inventory HUD is disabled there
+        // is nothing above this panel, so a blue accent stripe is drawn at the top
+        // to give it a visual "header" border.
         context.fill(x, y, x + pw, y + height, COL_BG());
+        if (!config.inventoryOverlayEnabled) {
+            context.fill(x, y, x + pw, y + 1, COL_ACCENT());
+        }
 
         // ── Keystrokes widget – right side of the header ──────────────────────
         // Scale keystrokes so KS_HEIGHT fits in the header section height.
@@ -217,10 +222,11 @@ public class ProfitHudRenderer {
         float ksScale = Math.max(KS_MIN_SCALE,
                 (float) headerH / KS_HEIGHT * 0.90f);
         int ksW = Math.round(KS_WIDTH  * ksScale);
-        // Right-align within the panel with PAD_X margin; offset down by half a
-        // keystroke block height so the widget clears the separator line below it.
+        // Right-align within the panel with PAD_X margin; shifted up by one
+        // keystroke-key height compared to the default half-key offset.
         int ksX = x + pw - PAD_X - ksW;
-        int ksY = y + PAD_Y + Math.round(KS_KEY_SIZE * ksScale * 0.5f);
+        int ksY = y + PAD_Y + Math.round(KS_KEY_SIZE * ksScale * 0.5f)
+                - Math.round((KS_KEY_SIZE + KS_KEY_GAP) * ksScale);
         renderKeystrokes(context, tr, ksX, ksY, ksW, ksScale, isDark());
 
         int curY = y + PAD_Y;
