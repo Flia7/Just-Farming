@@ -85,14 +85,6 @@ public class FarmingProfitTracker {
             "mosquito melody", "locust lullaby", "mite march"
     ));
 
-    /**
-     * Number of base items that compact into one enchanted item in Hypixel SkyBlock.
-     * When 160 mushrooms (or any other crop) disappear from the inventory and no
-     * enchanted form was seen, we infer a compaction event and add 1 enchanted item
-     * per 160-unit batch.
-     */
-    private static final long ENCHANTED_COMPACTION_RATIO = 160L;
-
     // ── Chat-message patterns for pest drop tracking ──────────────────────────
     /**
      * Matches Hypixel SkyBlock "You received" item-drop messages produced when
@@ -310,17 +302,11 @@ public class FarmingProfitTracker {
         // farming, attribute gains to farming even if a recent pest kill is still
         // in the cooldown window.
         if (isFarming || trackAsPest) {
-            // Iterate over all keys from both current snapshot and previous snapshot
-            // so that items that disappeared entirely (e.g. fully compacted out of
-            // inventory) also reduce the accumulated count.
             Set<String> allKeys = new HashSet<>(snapshot.keySet());
             allKeys.addAll(prevSnapshot.keySet());
             Map<String, Long> target = isFarming ? farmingItems : pestItems;
 
-            // First pass: record all item gains and track which enchanted keys
-            // appeared in the inventory this tick (to avoid double-counting with
-            // compaction detection below).
-            Set<String> enchantedGainedThisTick = new HashSet<>();
+            // Record all item gains (positive deltas only).
             for (String key : allKeys) {
                 long current = snapshot.getOrDefault(key, 0L);
                 long prev    = prevSnapshot.getOrDefault(key, 0L);
@@ -328,45 +314,6 @@ public class FarmingProfitTracker {
                 if (delta > 0) {
                     trackerHasData = true;
                     target.merge(key, delta, Long::sum);
-                    if (key.startsWith("enchanted ")) {
-                        enchantedGainedThisTick.add(key);
-                    }
-                }
-            }
-
-            // Second pass: handle item decreases.  When base items disappear and
-            // their enchanted equivalent did NOT appear in the 36-slot inventory
-            // this tick, they likely compacted into a sack.  Add the equivalent
-            // enchanted count so the profit HUD still reflects the farm output.
-            for (String key : allKeys) {
-                long current = snapshot.getOrDefault(key, 0L);
-                long prev    = prevSnapshot.getOrDefault(key, 0L);
-                long delta   = current - prev;
-                if (delta < 0) {
-                    // Internal map keys are always lower-cased (see plainKey()); the
-                    // "Enchanted " prefix used in display names is capitalized.
-                    String enchKey = "enchanted " + key;
-                    if (!enchantedGainedThisTick.contains(enchKey)
-                            && target.containsKey(key)
-                            && VisitorNpcPrices.getPrice(enchKey) > 0) {
-                        // Enchanted form has a known price and wasn't seen in the
-                        // inventory: assume it compacted into a sack.
-                        long numEnchanted = (-delta) / ENCHANTED_COMPACTION_RATIO;
-                        if (numEnchanted > 0) {
-                            trackerHasData = true;
-                            target.merge(enchKey, numEnchanted, Long::sum);
-                            // Derive a nice display name from the base item's name.
-                            String baseNice = displayNames.getOrDefault(key, capitalize(key));
-                            displayNames.putIfAbsent(enchKey, "Enchanted " + baseNice);
-                            // Reuse the base item's icon; the renderer will add the glint.
-                            if (itemIcons.containsKey(key)) {
-                                itemIcons.putIfAbsent(enchKey, itemIcons.get(key));
-                            }
-                        }
-                    }
-                    // Reduce the previously accumulated base-item count so the
-                    // base and compacted results are not both counted.
-                    applyNegativeDelta(target, key, delta);
                 }
             }
         }
@@ -710,21 +657,6 @@ public class FarmingProfitTracker {
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
-
-    /**
-     * Subtracts {@code delta} (a negative value) from the accumulated count for
-     * {@code key} in {@code target}.  If the resulting count is zero or below,
-     * the entry is removed entirely.  This is used to handle compaction events
-     * where base items compact into their enchanted form, so the base-item total
-     * does not double-count the same crops that are now represented by the
-     * enchanted entry.
-     */
-    private static void applyNegativeDelta(Map<String, Long> target, String key, long delta) {
-        target.computeIfPresent(key, (k, v) -> {
-            long newVal = v + delta;
-            return newVal <= 0 ? null : newVal;
-        });
-    }
 
     private static String capitalize(String s) {
         if (s == null || s.isEmpty()) return "";
