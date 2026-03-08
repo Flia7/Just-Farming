@@ -43,12 +43,11 @@ public final class VisitorNpcPrices {
         NPC_PRICES.put("enchanted wheat",           960.0);
         NPC_PRICES.put("enchanted bread",            60.0);
         NPC_PRICES.put("enchanted carrot",          480.0);
-        NPC_PRICES.put("enchanted golden carrot",  76800.0);
+        NPC_PRICES.put("enchanted golden carrot",  25600.0);
         NPC_PRICES.put("enchanted potato",          480.0);
         NPC_PRICES.put("enchanted baked potato",  76800.0);
         NPC_PRICES.put("enchanted pumpkin",        1600.0);
-        NPC_PRICES.put("enchanted melon slice",     320.0);
-        NPC_PRICES.put("enchanted melon",         51200.0);
+        NPC_PRICES.put("enchanted melon",           320.0);
         NPC_PRICES.put("enchanted sugar",           640.0);
         NPC_PRICES.put("enchanted nether wart",     640.0);
         NPC_PRICES.put("enchanted cactus green",    640.0);
@@ -65,28 +64,37 @@ public final class VisitorNpcPrices {
         NPC_PRICES.put("hay bale",                   54.0);
         NPC_PRICES.put("enchanted hay bale",      153600.0);
         NPC_PRICES.put("mutant nether wart",      102400.0);
-        NPC_PRICES.put("enchanted red mushroom block",   51200.0);
-        NPC_PRICES.put("enchanted brown mushroom block", 51200.0);
+        NPC_PRICES.put("enchanted red mushroom block",   256000.0);
+        NPC_PRICES.put("enchanted brown mushroom block", 256000.0);
         NPC_PRICES.put("enchanted cactus",        102400.0);
         NPC_PRICES.put("enchanted sugar cane",    102400.0);
         NPC_PRICES.put("polished pumpkin",        256000.0);
+        NPC_PRICES.put("enchanted melon block",    51200.0);
 
         // ── Compacted / bulk variants ────────────────────────────────────────
         NPC_PRICES.put("compacted wild rose",     102400.0);
 
-        // ── Pest-kill drops ──────────────────────────────────────────────────
-        // Compost is a common pest-kill reward in the Garden.
-        NPC_PRICES.put("compost",                   4.0);
-        // Ink sac is occasionally dropped by slugs / flies.
-        NPC_PRICES.put("ink sac",                   5.6);
-        // Pumpkin seeds and melon seeds (dropped by various pests).
-        NPC_PRICES.put("pumpkin seeds",             3.0);
-        NPC_PRICES.put("melon seeds",               3.0);
-        NPC_PRICES.put("beetroot seeds",            3.0);
-        // String (dropped by spider pests).
-        NPC_PRICES.put("string",                    2.0);
-        // Stardust (rare pest drop, tradeable item).
-        NPC_PRICES.put("stardust",                  1.0);
+        // ── Universal pest drops ─────────────────────────────────────────────
+        NPC_PRICES.put("compost",                     4.0);
+        NPC_PRICES.put("honey jar",                   4.0);
+        NPC_PRICES.put("plant matter",                4.0);
+        NPC_PRICES.put("tasty cheese",                4.0);
+        NPC_PRICES.put("jelly",                       4.0);
+        NPC_PRICES.put("dung",                        4.0);
+
+        // ── Rare / special pest drops ─────────────────────────────────────────
+        NPC_PRICES.put("beady eyes",               1000.0);
+        NPC_PRICES.put("clipped wings",            1000.0);
+        NPC_PRICES.put("atmospheric filter",     100000.0);
+        NPC_PRICES.put("chirping stereo",        100000.0);
+        NPC_PRICES.put("pest vinyl",              50000.0);
+        NPC_PRICES.put("wriggling larva",        250000.0);
+
+        // ── Pets (sold via George) ────────────────────────────────────────────
+        NPC_PRICES.put("rat pet",                  5000.0);
+        // Slug pet NPC value varies by rarity; use epic (500k) as the default
+        // since both epic and legendary share the same in-game display name.
+        NPC_PRICES.put("slug pet",               500000.0);
     }
 
     /**
