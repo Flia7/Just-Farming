@@ -57,12 +57,12 @@ public class ProfitHudRenderer {
     // ── Colour palette ─────────────────────────────────────────────────────────
 
     // Dark mode colours
-    /** Semi-transparent dark panel background (dark mode). */
-    private static final int COL_BG_DARK     = 0xA8000000;
-    /** Separator / border tint (dark mode). */
-    private static final int COL_SEP_DARK    = 0x28FFFFFF;
-    /** White – sub-titles (dark mode). */
-    private static final int COL_TITLE_DARK  = 0xFFFFFFFF;
+    /** Semi-transparent dark blue panel background (dark mode). */
+    private static final int COL_BG_DARK     = 0xA8080C1A;
+    /** Cyan separator / border tint (dark mode). */
+    private static final int COL_SEP_DARK    = 0x2800C8FF;
+    /** Light lavender – sub-titles (dark mode). */
+    private static final int COL_TITLE_DARK  = 0xFFEAF2FF;
     /** Light grey – individual item rows (dark mode). */
     private static final int COL_ITEM_DARK   = 0xFFBBBBBB;
     /** Green – positive profit values (dark mode). */

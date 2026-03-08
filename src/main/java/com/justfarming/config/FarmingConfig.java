@@ -383,6 +383,16 @@ public class FarmingConfig {
     public int pestWardrobeSlot = 1;
 
     /**
+     * Wardrobe slot to restore when the pest killer finishes all infested plots.
+     * When {@link #pestWardrobeEnabled} is {@code true}, the routine opens the
+     * wardrobe and equips this slot after returning to the garden, restoring the
+     * farming armor set.  Set to {@code 0} to disable the restore step.
+     *
+     * <p>Range: 0–18 (0 = disabled).  Default {@code 1}.
+     */
+    public int pestWardrobeRestoreSlot = 1;
+
+    /**
      * How long (in milliseconds) to wait after the plot teleport command lands
      * before scanning for pest entities.  Increase this if the server is slow
      * to load entity data after a teleport.

@@ -35,11 +35,11 @@ public class ScoreboardHudRenderer {
     // ── Colours ───────────────────────────────────────────────────────────────
 
     // Dark mode
-    private static final int COL_BG_DARK     = 0xA8000000;
-    private static final int COL_ACCENT_DARK = 0xFF3AFF8A;
-    private static final int COL_HEADER_DARK = 0xFF3AFF8A;
+    private static final int COL_BG_DARK     = 0xA8080C1A;
+    private static final int COL_ACCENT_DARK = 0xFF00C8FF;
+    private static final int COL_HEADER_DARK = 0xFF00C8FF;
     private static final int COL_STAR_DARK   = 0xFFFFD700;
-    private static final int COL_TEXT_DARK   = 0xFFFFFFFF;
+    private static final int COL_TEXT_DARK   = 0xFFEAF2FF;
 
     // Light mode
     private static final int COL_BG_LIGHT     = 0xD0EEF4F8;

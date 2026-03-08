@@ -147,10 +147,8 @@ public class FarmingConfigScreen extends Screen {
     private PestKillerVacuumRangeSlider   pestKillerVacuumRangeSlider;
     private FlatBoolToggleWidget          pestWardrobeButton;
     private WardrobeSlotSlider            pestWardrobeSlotSlider;
+    private WardrobeRestoreSlotSlider     pestWardrobeRestoreSlotSlider;
     private FarmingToolSlotSlider         farmingToolSlotSlider;
-
-    // ── Tab 4 – Misc: dark/light mode ─────────────────────────────────────────
-    private FlatBoolToggleWidget darkModeButton;
 
     // ── Always-visible widget ─────────────────────────────────────────────────
     private FlatButtonWidget saveCloseButton;
@@ -162,7 +160,6 @@ public class FarmingConfigScreen extends Screen {
     private int sectionHudInvY, sectionHudProfitY, sectionHudDisplayY;
     // Settings tab (tab 4 in TAB_NAMES array)
     private int sectionSettingsCameraY, sectionSettingsMacroY, settingsCameraSeparatorY;
-    private int sectionSettingsThemeY;
     // Delays tab (tab 4)
     private int sectionGlobalRandomY, sectionLaneSwapY, sectionRewarpDelayY, sectionMousematDelayY, sectionVisitorDelaysY, sectionPestKillerDelaysY;
     // Visitors tab (tab 5)
@@ -374,6 +371,12 @@ public class FarmingConfigScreen extends Screen {
         this.addDrawableChild(pestWardrobeSlotSlider);
         pestWardrobeSlotSlider.setTooltip(Tooltip.of(Text.literal(
                 "Wardrobe slot to equip (1–9: page 1, 10–18: page 2).")));
+        y += bh + pad;
+
+        pestWardrobeRestoreSlotSlider = new WardrobeRestoreSlotSlider(widgetX, y, bw, bh, config.pestWardrobeRestoreSlot);
+        this.addDrawableChild(pestWardrobeRestoreSlotSlider);
+        pestWardrobeRestoreSlotSlider.setTooltip(Tooltip.of(Text.literal(
+                "Wardrobe slot to restore after killing all pests (0 = disabled).")));
         y += bh + pad + gap;
         pestKillerStatusY = y;
         tabContentHeights[1] = y - contentAreaTopY + tabScrollOffsets[1];
@@ -494,26 +497,6 @@ public class FarmingConfigScreen extends Screen {
         macroEnabledInGuiButton.setTooltip(Tooltip.of(Text.literal(
                 "Continue moving and breaking blocks even while this GUI is open.\n" +
                 "Removes the brief pause when opening or closing a screen.")));
-        y += bh + pad + gap;
-
-        sectionSettingsThemeY = y;
-        y += sLH;
-
-        darkModeButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
-                        Text.literal("Dark Mode"),
-                        config.darkMode);
-        darkModeButton.setOnChange(() -> {
-            config.darkMode = darkModeButton.getValue();
-            config.save();
-            // Re-activate theme so all open screens pick up the change immediately.
-            GuiTheme.activate(config);
-            refreshThemeColors();
-            // Rebuild widgets so colours are applied (clearChildren + re-init).
-            clearAndInit();
-        });
-        this.addDrawableChild(darkModeButton);
-        darkModeButton.setTooltip(Tooltip.of(Text.literal(
-                "Toggle between dark mode (default) and light mode\nfor all Just Farming GUI screens.")));
         tabContentHeights[4] = y + bh - contentAreaTopY + tabScrollOffsets[4];
 
         // ── Tab 5 – Delays ────────────────────────────────────────────────────
@@ -730,6 +713,7 @@ public class FarmingConfigScreen extends Screen {
         pestKillerVacuumRangeSlider.visible = t1 && inContentBounds(pestKillerVacuumRangeSlider);
         pestWardrobeButton.visible          = t1 && inContentBounds(pestWardrobeButton);
         pestWardrobeSlotSlider.visible      = t1 && inContentBounds(pestWardrobeSlotSlider);
+        pestWardrobeRestoreSlotSlider.visible = t1 && inContentBounds(pestWardrobeRestoreSlotSlider);
 
         boolean t2 = activeTab == 2;
         visitorsEnabledButton.visible       = t2 && inContentBounds(visitorsEnabledButton);
@@ -753,7 +737,6 @@ public class FarmingConfigScreen extends Screen {
         gardenOnlyButton.visible        = t4 && inContentBounds(gardenOnlyButton);
         squeakyMousematButton.visible   = t4 && inContentBounds(squeakyMousematButton);
         macroEnabledInGuiButton.visible = t4 && inContentBounds(macroEnabledInGuiButton);
-        darkModeButton.visible          = t4 && inContentBounds(darkModeButton);
 
         boolean t5 = activeTab == 5;
         globalRandomSlider.visible            = t5 && inContentBounds(globalRandomSlider);
@@ -868,8 +851,6 @@ public class FarmingConfigScreen extends Screen {
                 context.fill(contentX + 16, settingsCameraSeparatorY, winR - 16, settingsCameraSeparatorY + 1, COL_SEP);
             if (yInContentBounds(sectionSettingsMacroY))
                 drawSectionLabel(context, "Macro", sectionSettingsMacroY);
-            if (yInContentBounds(sectionSettingsThemeY))
-                drawSectionLabel(context, "Theme", sectionSettingsThemeY);
         } else if (activeTab == 5) {
             if (yInContentBounds(sectionGlobalRandomY))
                 drawSectionLabel(context, "Global", sectionGlobalRandomY);
@@ -987,6 +968,7 @@ public class FarmingConfigScreen extends Screen {
         config.pestKillerVacuumRange    = pestKillerVacuumRangeSlider.getRangeValue();
         config.pestWardrobeEnabled      = pestWardrobeButton.getValue();
         config.pestWardrobeSlot         = pestWardrobeSlotSlider.getSlotValue();
+        config.pestWardrobeRestoreSlot  = pestWardrobeRestoreSlotSlider.getRestoreSlotValue();
         config.farmingToolHotbarSlot    = farmingToolSlotSlider.getSlotValue();
         config.customScoreboardEnabled  = customScoreboardButton.getValue();
         config.hideHudsOnTabF3          = hideHudsOnTabF3Button.getValue();
@@ -1831,6 +1813,63 @@ public class FarmingConfigScreen extends Screen {
             int slot = getSlotValue();
             String page = slot >= 10 ? " (Page 2)" : " (Page 1)";
             setMessage(Text.literal(String.format("Wardrobe Slot: %d%s", slot, page)));
+        }
+
+        @Override
+        public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
+            FlatButtonWidget.renderFlatSlider(context, getX(), getY(), getWidth(), getHeight(), value, getMessage());
+        }
+    }
+
+    /** Slider for the wardrobe restore slot (0 = disabled, 1–18). */
+    private static class WardrobeRestoreSlotSlider extends SliderWidget {
+
+        private static final int MIN = 0;
+        private static final int MAX = 18;
+        private static final int GLFW_KEY_LEFT  = 263;
+        private static final int GLFW_KEY_RIGHT = 262;
+
+        WardrobeRestoreSlotSlider(int x, int y, int width, int height, int initialValue) {
+            super(x, y, width, height, Text.empty(),
+                    (double)(Math.max(MIN, Math.min(MAX, initialValue)) - MIN) / (MAX - MIN));
+            updateMessage();
+        }
+
+        int getRestoreSlotValue() {
+            return MIN + (int) Math.round(value * (MAX - MIN));
+        }
+
+        @Override
+        protected void applyValue() {
+            int steps = MAX - MIN;
+            int rawInt = MIN + (int) Math.round(this.value * steps);
+            rawInt = Math.max(MIN, Math.min(MAX, rawInt));
+            this.value = (double)(rawInt - MIN) / steps;
+        }
+
+        @Override
+        public boolean keyPressed(net.minecraft.client.input.KeyInput input) {
+            if (input.key() == GLFW_KEY_LEFT || input.key() == GLFW_KEY_RIGHT) {
+                double step = 1.0 / (MAX - MIN);
+                this.value = (input.key() == GLFW_KEY_LEFT)
+                        ? Math.max(0.0, this.value - step)
+                        : Math.min(1.0, this.value + step);
+                applyValue();
+                updateMessage();
+                return true;
+            }
+            return super.keyPressed(input);
+        }
+
+        @Override
+        protected void updateMessage() {
+            int slot = getRestoreSlotValue();
+            if (slot == 0) {
+                setMessage(Text.literal("Restore Armor: Off"));
+            } else {
+                String page = slot >= 10 ? " (Page 2)" : " (Page 1)";
+                setMessage(Text.literal(String.format("Restore Armor: Slot %d%s", slot, page)));
+            }
         }
 
         @Override

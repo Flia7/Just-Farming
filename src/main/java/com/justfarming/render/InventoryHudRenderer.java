@@ -45,15 +45,15 @@ public class InventoryHudRenderer {
     /** Background padding around the item grid at scale 1.0. */
     private static final int BG_PAD = 3;
 
-    /** Background colour for dark mode. */
-    public static final int BG_COLOR_DARK   = 0xA0000000;
+    /** Background colour for dark mode (dark blue matching the GUI theme). */
+    public static final int BG_COLOR_DARK   = 0xA0080C1A;
     /** Background colour for light mode. */
     public static final int BG_COLOR_LIGHT  = 0xA8EEF4F8;
 
     /**
      * Background colour drawn behind each inventory slot (dark mode).
      */
-    private static final int SLOT_BG_DARK    = 0x50000000;
+    private static final int SLOT_BG_DARK    = 0x30000810;
     /**
      * Background colour drawn behind each inventory slot (light mode).
      */
