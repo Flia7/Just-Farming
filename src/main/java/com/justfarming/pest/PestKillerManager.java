@@ -2657,8 +2657,10 @@ public class PestKillerManager {
 
     private void returnToFarm() {
         returnWarpSentAt = 0;
-        // If wardrobe swap was used and a restore slot is configured, restore armor first.
-        if (config != null && config.pestWardrobeEnabled && config.pestWardrobeRestoreSlot >= 1) {
+        // If wardrobe swap was used and a valid restore slot is configured, restore armor first.
+        if (config != null && config.pestWardrobeEnabled
+                && config.pestWardrobeRestoreSlot >= MIN_WARDROBE_SLOT
+                && config.pestWardrobeRestoreSlot <= MAX_WARDROBE_SLOT) {
             wardrobeRestoreNextPageClicked = false;
             wardrobeRestoreSlotClicked     = false;
             enterState(State.WARDROBE_RESTORE_OPENING);
