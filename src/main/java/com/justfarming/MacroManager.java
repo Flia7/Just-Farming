@@ -1,5 +1,6 @@
 package com.justfarming;
 
+import com.justfarming.access.ClientPlayerInteractionManagerExtension;
 import com.justfarming.config.FarmingConfig;
 import com.justfarming.input.KeystrokesTracker;
 import com.justfarming.pest.PestDetector;
@@ -1287,6 +1288,13 @@ public class MacroManager {
         if (!(hit instanceof BlockHitResult blockHit)) return;
         BlockPos pos = blockHit.getBlockPos();
         if (!client.world.getBlockState(pos).isAir()) {
+            // Clear any stale block-breaking state so attackBlock() always sends a clean
+            // START_DESTROY_BLOCK without a preceding ABORT_DESTROY_BLOCK packet.
+            // This matches the packet sequence produced after a GUI is opened and closed
+            // (where Minecraft resets the state on the screen transition) and prevents
+            // the "weird packets before GUI is opened" issue.
+            ((ClientPlayerInteractionManagerExtension) client.interactionManager)
+                    .justFarming$resetBreakingState();
             // Use attackBlock (START_DESTROY_BLOCK) every tick so each new crop in
             // the crosshair is broken immediately.  This is the correct packet for
             // instant-mine blocks and avoids stale InteractionManager break-state
