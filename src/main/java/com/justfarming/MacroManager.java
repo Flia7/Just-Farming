@@ -386,23 +386,9 @@ public class MacroManager {
 
     /**
      * Returns {@code true} when the visitor routine should be started at the current rewarp.
-     *
-     * <p>If the Hypixel Garden tab list reports a "Visitors: N" entry, the count is compared
-     * to {@link com.justfarming.config.FarmingConfig#visitorsMinCount}: the routine only
-     * runs when {@code N >= minCount}.  If the tab list does not contain a visitor count
-     * (e.g. the widget is not present), the routine always runs so no visits are missed.
      */
     private boolean shouldRunVisitorRoutine() {
         if (!config.visitorsEnabled || visitorManager == null) return false;
-        if (pestDetector != null && pestDetector.isVisitorCountDetected()) {
-            int minCount = Math.max(1, config.visitorsMinCount);
-            int tabCount = pestDetector.getVisitorCount();
-            if (tabCount < minCount) {
-                LOGGER.info("[Just Farming] Tab list shows {} visitor(s), fewer than minimum {}; skipping visitor routine.",
-                        tabCount, minCount);
-                return false;
-            }
-        }
         return true;
     }
 

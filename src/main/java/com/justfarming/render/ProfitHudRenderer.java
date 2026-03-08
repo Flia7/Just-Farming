@@ -8,6 +8,8 @@ import com.justfarming.profit.FarmingProfitTracker.ProfitEntry;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
 import net.minecraft.text.Text;
 
 import java.text.NumberFormat;
@@ -104,6 +106,13 @@ public class ProfitHudRenderer {
      * appear smaller than the full-size sub-title lines.
      */
     private static final float ITEM_SCALE = 0.85f;
+
+    /** Screen pixel size of the item icon rendered to the left of each profit row. */
+    private static final int ICON_SIZE = 8;
+    /** Pixel gap between the item icon and the row's text content. */
+    private static final int ICON_GAP  = 2;
+    /** Native pixel size of a Minecraft item icon (16×16). */
+    private static final float MC_ITEM_ICON_SIZE = 16.0f;
 
     // ── Keystrokes constants (Canelex KeyStrokes Revamp style) ───────────────
 
@@ -322,17 +331,17 @@ public class ProfitHudRenderer {
                 otherProfit += entry.profit();
             } else {
                 drawItemRow(ctx, tr, x, curY,
-                        entry.displayName(), entry.count(), entry.profit(), COL_ITEM());
+                        entry.displayName(), entry.count(), entry.profit(), COL_ITEM(), entry.item());
                 curY += scaledLineH();
                 shown++;
             }
         }
         if (otherProfit > 0) {
-            drawItemRow(ctx, tr, x, curY, "Other", -1, otherProfit, COL_OTHER());
+            drawItemRow(ctx, tr, x, curY, "Other", -1, otherProfit, COL_OTHER(), null);
             curY += scaledLineH();
         }
         if (entries.isEmpty()) {
-            drawScaledText(ctx, tr, x + PAD_X, curY, "  No items yet", COL_OTHER());
+            drawScaledText(ctx, tr, x + PAD_X + ICON_SIZE + ICON_GAP, curY, "No items yet", COL_OTHER());
             curY += scaledLineH();
         }
 
@@ -353,25 +362,46 @@ public class ProfitHudRenderer {
     }
 
     /**
-     * Draws one item row at reduced scale:
-     * {@code "  1,234 Sugar Cane   +4,936"}.
+     * Draws one item row at reduced scale with an optional item icon on the left:
+     * {@code "[icon] 1,234 Sugar Cane   +4,936"}.
      *
      * @param count item count, or {@code -1} to omit the count (for "Other")
+     * @param item  the Minecraft item whose texture is shown as a small icon, or
+     *              {@code null} to skip icon rendering (e.g. for the "Other" row)
      */
     private void drawItemRow(DrawContext ctx, TextRenderer tr,
                              int panelX, int y,
-                             String name, long count, double profit, int textColor) {
+                             String name, long count, double profit, int textColor, Item item) {
+        // Abbreviate "Enchanted " prefix to save space ("Enc, Cocoa Bean" etc.).
+        String displayName = name.startsWith("Enchanted ")
+                ? "Enc, " + name.substring("Enchanted ".length())
+                : name;
+
+        // ── Item icon (optional) ──────────────────────────────────────────────
+        if (item != null) {
+            var matrices = ctx.getMatrices();
+            matrices.pushMatrix();
+            // Scale the native MC_ITEM_ICON_SIZE×MC_ITEM_ICON_SIZE item icon down to ICON_SIZE×ICON_SIZE screen pixels.
+            float iconScale = ICON_SIZE / MC_ITEM_ICON_SIZE;
+            matrices.translate(panelX + PAD_X, y);
+            matrices.scale(iconScale, iconScale);
+            ctx.drawItem(new ItemStack(item), 0, 0);
+            matrices.popMatrix();
+        }
+
+        // ── Text (count + name left-aligned, profit right-aligned) ────────────
+        int iconOffset = ICON_SIZE + ICON_GAP;
         var matrices = ctx.getMatrices();
         matrices.pushMatrix();
-        matrices.translate(panelX + PAD_X, y);
+        matrices.translate(panelX + PAD_X + iconOffset, y);
         matrices.scale(ITEM_SCALE, ITEM_SCALE);
 
-        int unscaledW    = Math.round((panelW() - PAD_X * 2) / ITEM_SCALE);
+        int unscaledW    = Math.round((panelW() - PAD_X * 2 - iconOffset) / ITEM_SCALE);
         String countStr  = (count >= 0) ? formatCount(count) + " " : "";
         String profitStr = "+" + formatCoins(profit);
         int rightX       = unscaledW - tr.getWidth(profitStr);
 
-        ctx.drawTextWithShadow(tr, countStr + name, 0, 0, textColor);
+        ctx.drawTextWithShadow(tr, countStr + displayName, 0, 0, textColor);
         ctx.drawTextWithShadow(tr, profitStr, rightX, 0, COL_PROFIT());
 
         matrices.popMatrix();

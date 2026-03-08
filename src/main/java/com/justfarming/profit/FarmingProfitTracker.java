@@ -5,6 +5,7 @@ import com.justfarming.pest.PestKillerManager;
 import com.justfarming.visitor.VisitorNpcPrices;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 
 import java.util.ArrayList;
@@ -124,6 +125,10 @@ public class FarmingProfitTracker {
     /** Maps lower-cased plain name → prettified (original case) display name. */
     private final Map<String, String> displayNames = new HashMap<>();
 
+    // ── Cached item icons (lower-cased plain name → Minecraft Item) ──────────
+    /** Maps lower-cased plain name → Minecraft Item for icon rendering in the HUD. */
+    private final Map<String, Item> itemIcons = new HashMap<>();
+
     // ── Number of farming/pest ticks tracked (for "is active" queries) ───────
     private boolean trackerHasData = false;
 
@@ -201,18 +206,24 @@ public class FarmingProfitTracker {
         // farming, attribute gains to farming even if a recent pest kill is still
         // in the cooldown window.
         if (isFarming || trackAsPest) {
-            for (Map.Entry<String, Long> entry : snapshot.entrySet()) {
-                String key     = entry.getKey();
-                long current   = entry.getValue();
-                long prev      = prevSnapshot.getOrDefault(key, 0L);
-                long delta     = current - prev;
+            // Iterate over all keys from both current snapshot and previous snapshot
+            // so that items that disappeared entirely (e.g. fully compacted out of
+            // inventory) also reduce the accumulated count.
+            Set<String> allKeys = new HashSet<>(snapshot.keySet());
+            allKeys.addAll(prevSnapshot.keySet());
+            Map<String, Long> target = isFarming ? farmingItems : pestItems;
+            for (String key : allKeys) {
+                long current = snapshot.getOrDefault(key, 0L);
+                long prev    = prevSnapshot.getOrDefault(key, 0L);
+                long delta   = current - prev;
                 if (delta > 0) {
                     trackerHasData = true;
-                    if (isFarming) {
-                        farmingItems.merge(key, delta, Long::sum);
-                    } else {
-                        pestItems.merge(key, delta, Long::sum);
-                    }
+                    target.merge(key, delta, Long::sum);
+                } else if (delta < 0) {
+                    // Item count decreased (e.g. items compacted into enchanted form).
+                    // Reduce the accumulated count so we don't double-count both the
+                    // base item and the compacted result.
+                    applyNegativeDelta(target, key, delta);
                 }
             }
         }
@@ -232,6 +243,7 @@ public class FarmingProfitTracker {
             if (key.isEmpty()) continue;
             map.merge(key, (long) stack.getCount(), Long::sum);
             displayNames.putIfAbsent(key, niceDisplayName(stack));
+            itemIcons.putIfAbsent(key, stack.getItem());
         }
         return map;
     }
@@ -334,7 +346,7 @@ public class FarmingProfitTracker {
             double price = VisitorNpcPrices.getPrice(key);
             double profit = count * price;
             String nice  = displayNames.getOrDefault(key, capitalize(key));
-            list.add(new ProfitEntry(nice, count, profit));
+            list.add(new ProfitEntry(nice, count, profit, itemIcons.get(key)));
         }
         list.sort(Comparator.comparingDouble(ProfitEntry::profit).reversed());
         return list;
@@ -465,6 +477,7 @@ public class FarmingProfitTracker {
         farmingItems.clear();
         pestItems.clear();
         displayNames.clear();
+        itemIcons.clear();
         prevSnapshot.clear();
         farmingTotalMs     = 0;
         pestTotalMs        = 0;
@@ -483,6 +496,21 @@ public class FarmingProfitTracker {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
+    /**
+     * Subtracts {@code delta} (a negative value) from the accumulated count for
+     * {@code key} in {@code target}.  If the resulting count is zero or below,
+     * the entry is removed entirely.  This is used to handle compaction events
+     * where base items compact into their enchanted form, so the base-item total
+     * does not double-count the same crops that are now represented by the
+     * enchanted entry.
+     */
+    private static void applyNegativeDelta(Map<String, Long> target, String key, long delta) {
+        target.computeIfPresent(key, (k, v) -> {
+            long newVal = v + delta;
+            return newVal <= 0 ? null : newVal;
+        });
+    }
+
     private static String capitalize(String s) {
         if (s == null || s.isEmpty()) return "";
         return Character.toUpperCase(s.charAt(0)) + s.substring(1);
@@ -492,7 +520,8 @@ public class FarmingProfitTracker {
 
     /**
      * A single row in the profit display: item display name, total count
-     * collected, and total NPC profit value.
+     * collected, total NPC profit value, and the Minecraft item for icon rendering.
+     * {@code item} may be {@code null} when the item type is not known.
      */
-    public record ProfitEntry(String displayName, long count, double profit) {}
+    public record ProfitEntry(String displayName, long count, double profit, Item item) {}
 }
