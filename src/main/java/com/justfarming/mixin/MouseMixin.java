@@ -42,39 +42,6 @@ public class MouseMixin {
     }
 
     /**
-     * When the macro is running and <em>no</em> GUI screen is open, suppress
-     * Minecraft's {@code unlockCursor()} so the GLFW cursor mode never
-     * transitions from DISABLED to NORMAL.  This prevents the brief input-state
-     * glitch (micro-delay) that the GLFW cursor-mode change would otherwise cause.
-     *
-     * <p>When a screen <em>is</em> open, the suppression is lifted so the cursor
-     * becomes visible and the player can interact with GUI elements normally.
-     * The {@link #redirectUnpressAll} mixin already prevents key-state resets
-     * on screen transitions, so allowing the cursor to unlock here does not
-     * interrupt the macro.
-     *
-     * <p>Game inputs remain fully active because {@link #onIsCursorLocked} still
-     * reports the cursor as locked to Minecraft's input system.
-     *
-     * <p>When {@code unlockedMouseEnabled} is {@code true}, {@link #onLockCursor}
-     * already keeps the cursor in NORMAL mode at all times; the suppression here
-     * ensures the same zero-delay behaviour for users who have that option off.
-     */
-    @Inject(method = "unlockCursor", at = @At("HEAD"), cancellable = true)
-    private void onUnlockCursor(CallbackInfo ci) {
-        MacroManager mm = JustFarming.getMacroManager();
-        if (mm != null && mm.isRunning()) {
-            MinecraftClient client = MinecraftClient.getInstance();
-            // A screen is open: let the cursor unlock so the player can see
-            // and interact with the GUI without experiencing input lag.
-            if (client != null && client.currentScreen != null) {
-                return;
-            }
-            ci.cancel(); // no screen open: keep GLFW cursor DISABLED to prevent micro-delay
-        }
-    }
-
-    /**
      * When the macro is running with the "unlock mouse" option enabled, suppress
      * Minecraft's automatic cursor re-lock (which normally fires when a screen
      * closes or focus is regained). This lets the user interact with other
