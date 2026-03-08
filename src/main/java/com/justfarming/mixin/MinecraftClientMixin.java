@@ -2,6 +2,7 @@ package com.justfarming.mixin;
 
 import com.justfarming.JustFarming;
 import com.justfarming.MacroManager;
+import com.justfarming.util.MouseGraceHelper;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.option.KeyBinding;

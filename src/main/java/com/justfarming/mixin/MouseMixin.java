@@ -3,6 +3,7 @@ package com.justfarming.mixin;
 import com.justfarming.JustFarming;
 import com.justfarming.MacroManager;
 import com.justfarming.config.FarmingConfig;
+import com.justfarming.util.MouseGraceHelper;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.Mouse;
 import org.spongepowered.asm.mixin.Mixin;
