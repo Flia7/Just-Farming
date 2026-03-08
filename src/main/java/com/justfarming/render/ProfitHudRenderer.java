@@ -8,6 +8,7 @@ import com.justfarming.profit.FarmingProfitTracker.ProfitEntry;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.component.DataComponentTypes;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.text.Text;
@@ -385,7 +386,12 @@ public class ProfitHudRenderer {
             float iconScale = ICON_SIZE / MC_ITEM_ICON_SIZE;
             matrices.translate(panelX + PAD_X, y);
             matrices.scale(iconScale, iconScale);
-            ctx.drawItem(new ItemStack(item), 0, 0);
+            ItemStack iconStack = new ItemStack(item);
+            // Enchanted items show the base item icon with the enchantment glint.
+            if (name.startsWith("Enchanted ")) {
+                iconStack.set(DataComponentTypes.ENCHANTMENT_GLINT_OVERRIDE, true);
+            }
+            ctx.drawItem(iconStack, 0, 0);
             matrices.popMatrix();
         }
 
