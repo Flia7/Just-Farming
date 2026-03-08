@@ -52,21 +52,22 @@ public class MouseMixin {
      * for the visitor or pest-killer routine to finish, so the cursor stays
      * unlocked throughout the entire rewarp–visit–return cycle.
      *
-     * <p>Additionally, cursor re-locking is suppressed for 1 second after any
-     * GUI screen is closed (the "grace period"), preventing a micro-stutter
-     * caused by Minecraft immediately re-grabbing the cursor on screen close.
+     * <p>Additionally, cursor re-locking is suppressed for 1 second after a GUI
+     * screen is closed while the macro is active inside the Garden (the "grace
+     * period").  After the grace period the cursor is explicitly re-locked by the
+     * tick handler in {@link com.justfarming.JustFarming}, unless
+     * {@code unlockedMouseEnabled} is keeping it free permanently.
      */
     @Inject(method = "lockCursor", at = @At("HEAD"), cancellable = true)
     private void onLockCursor(CallbackInfo ci) {
-        // 1-second grace period after any GUI close.
+        // 1-second grace period after a GUI closes while the macro is running in the Garden.
         if (System.currentTimeMillis() < MouseGraceHelper.guiCloseGraceUntilMs) {
             ci.cancel();
             return;
         }
         MacroManager mm = JustFarming.getMacroManager();
         FarmingConfig cfg = JustFarming.getConfig();
-        if (mm != null && cfg != null && cfg.unlockedMouseEnabled
-                && (mm.isRunning() || mm.isWaitingForVisitors() || mm.isWaitingForPestKiller())) {
+        if (mm != null && cfg != null && cfg.unlockedMouseEnabled && mm.isAnyMacroStateActive()) {
             ci.cancel();
         }
     }
