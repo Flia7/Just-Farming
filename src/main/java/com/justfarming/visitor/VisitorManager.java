@@ -155,6 +155,12 @@ public class VisitorManager {
     private static final float SMOOTH_LOOK_MAX_DELTA_MS = 250.0f;
 
     /**
+     * Exponential acceleration factor for camera rotation.
+     * At progress=0 speed = 1× base; at progress=1 speed = (1 + factor)× base.
+     */
+    private static final float SMOOTH_LOOK_ACCEL_FACTOR = 3.0f;
+
+    /**
      * Maximum random yaw offset (degrees) applied to the walking direction so the
      * visitor approach path varies slightly between runs (humanlike behaviour).
      */
@@ -522,6 +528,8 @@ public class VisitorManager {
     private float targetPitch = 0f;
     /** Wall-clock time (ms) of the previous smoothRotateCamera call; 0 = not yet called. */
     private long  lastSmoothLookTime = 0;
+    /** Combined angular distance at rotation start; used for exponential acceleration. */
+    private float initialAngularDist = 0f;
     /**
      * When {@code true}, {@link #onRenderTick()} rotates the camera at
      * {@link #FAST_LOOK_DEGREES_PER_SECOND} rather than the normal rate.
@@ -871,6 +879,7 @@ public class VisitorManager {
         walkJitterNextUpdate = 0;
         navAimAsideBlocks = 0f;
         lastSmoothLookTime = 0;
+        initialAngularDist = 0f;
         fastRotateActive  = false;
         disableFlightStartTime = 0;
         returnWarpDelay   = 0;
@@ -1003,6 +1012,7 @@ public class VisitorManager {
                             // detectAndConfigureAotv (toward V5 at safe pitch).
                             aotvTeleportFired = false;
                             lastSmoothLookTime = 0;
+                            initialAngularDist = 0f;
                             // Prime targetYaw/targetPitch to the AOTV direction NOW so that
                             // onRenderTick() starts rotating the camera toward the correct
                             // aim point from the very first render frame.  Without this,
@@ -2264,12 +2274,12 @@ public class VisitorManager {
     /**
      * Move the player's yaw and pitch one step closer to
      * {@link #targetYaw}/{@link #targetPitch} at the given {@code degreesPerSecond}
-     * rate.  Higher values produce faster camera tracking which is required at
-     * elevated SkyBlock movement speeds to maintain accurate directional control.
+     * base rate, with exponential ease-in acceleration.  Higher base values produce
+     * faster camera tracking which is required at elevated SkyBlock movement speeds.
      *
      * <p>Camera movement is fully delta-based: each call computes the angular delta
      * proportional to the elapsed wall-clock time since the previous call
-     * ({@code deltaMs / 1000 * degreesPerSecond}) and adds it to the current
+     * ({@code deltaMs / 1000 * effectiveSpeed}) and adds it to the current
      * rotation, rather than computing a new absolute Vec3d target.  This ensures
      * smooth, frame-rate-independent rotation without sudden jumps after lag spikes.
      */
@@ -2277,14 +2287,15 @@ public class VisitorManager {
         long now = System.currentTimeMillis();
         // Cap the elapsed time to SMOOTH_LOOK_MAX_DELTA_MS so a severe lag spike
         // does not teleport the camera by applying a huge angular delta in one step.
-        float deltaMs = (lastSmoothLookTime == 0)
-                ? SMOOTH_LOOK_INITIAL_DELTA_MS
-                : Math.min(SMOOTH_LOOK_MAX_DELTA_MS, (float)(now - lastSmoothLookTime));
+        float deltaMs;
+        if (lastSmoothLookTime == 0) {
+            deltaMs = SMOOTH_LOOK_INITIAL_DELTA_MS;
+            initialAngularDist = 0f; // reset for a fresh rotation start
+        } else {
+            deltaMs = Math.min(SMOOTH_LOOK_MAX_DELTA_MS, (float)(now - lastSmoothLookTime));
+        }
         // Always advance the timestamp so the next call computes an accurate delta.
         lastSmoothLookTime = now;
-
-        // Maximum angular delta this step, proportional to actual elapsed time.
-        float step = degreesPerSecond * deltaMs / 1000.0f;
 
         float currentYaw   = player.getYaw();
         float currentPitch = player.getPitch();
@@ -2299,6 +2310,16 @@ public class VisitorManager {
         // Already on target – nothing to do.  Threshold is set above the tremor
         // amplitude so the camera does not oscillate around the aim point.
         if (Math.abs(yawDiff) < 1.0f && Math.abs(pitchDiff) < 1.0f) return;
+
+        // Exponential ease-in: starts at base speed, accelerates as progress increases.
+        float remaining = (float) Math.sqrt(yawDiff * yawDiff + pitchDiff * pitchDiff);
+        if (initialAngularDist <= 0f || remaining > initialAngularDist) {
+            initialAngularDist = remaining;
+        }
+        float progress = (initialAngularDist > 0f) ? 1.0f - remaining / initialAngularDist : 0f;
+        float speedMult = 1.0f + SMOOTH_LOOK_ACCEL_FACTOR * progress;
+        // Maximum angular delta this step, proportional to actual elapsed time.
+        float step = degreesPerSecond * speedMult * deltaMs / 1000.0f;
 
         // Compute rotation deltas: clamp each axis to at most one step, then add
         // a tiny tremor that mimics the natural micro-vibration of a real mouse.

@@ -210,6 +210,12 @@ public class PestKillerManager {
     private static final float SMOOTH_LOOK_TREMOR_PITCH_SCALE = 0.5f;
 
     /**
+     * Exponential acceleration factor for camera rotation.
+     * At progress=0 speed = 1× base; at progress=1 speed = (1 + factor)× base.
+     */
+    private static final float SMOOTH_LOOK_ACCEL_FACTOR = 3.0f;
+
+    /**
      * Maximum angular error (degrees) the camera can be off-target before
      * the forward key is suppressed to avoid flying in the wrong direction.
      */
@@ -397,6 +403,8 @@ public class PestKillerManager {
     private float targetPitch = 0f;
     /** Wall-clock time (ms) of the last smooth-look call; 0 = not yet called. */
     private long  lastSmoothLookTime = 0;
+    /** Combined angular distance at rotation start; used for exponential acceleration. */
+    private float initialAngularDist = 0f;
 
     // Humanised camera-aim drift (KILLING_PEST state)
     /** Current camera-aim offset applied on top of the pest's actual position. */
@@ -952,6 +960,7 @@ public class PestKillerManager {
         preVacuumSlot = -1;
         pestKillWaitEnd = 0;
         lastSmoothLookTime = 0;
+        initialAngularDist = 0f;
         returnWarpSentAt = 0;
         resetPlotState();
 
@@ -1865,6 +1874,7 @@ public class PestKillerManager {
             pestAotvClickHeld        = false;
             pestAotvAllClicksDoneTime = 0L;
             lastSmoothLookTime = 0; // reset so camera rotation starts smoothly
+            initialAngularDist = 0f;
             releaseMovementKeys();
             LOGGER.info("[Just Farming-PestKiller] AOTV sequence started: {} hop(s) toward "
                     + "({}, {}, {}), yaw={}, pitch={}, dist={} blocks, approachRadius={} blocks.",
@@ -1875,16 +1885,24 @@ public class PestKillerManager {
         long elapsed = now - pestAotvSeqStart;
 
         // ── Phase 1: smooth-rotate toward the target ────────────────────────────
-        if (elapsed < PEST_AOTV_AIM_MS) {
+        // Continue until the camera is within threshold OR the aim window expires.
+        float aimYawErr   = pestAotvTargetYaw - player.getYaw();
+        while (aimYawErr >  180f) aimYawErr -= 360f;
+        while (aimYawErr < -180f) aimYawErr += 360f;
+        float aimPitchErr = pestAotvTargetPitch - player.getPitch();
+        boolean aimComplete = Math.abs(aimYawErr) <= 2.0f && Math.abs(aimPitchErr) <= 2.0f;
+
+        if (!aimComplete && elapsed < PEST_AOTV_AIM_MS) {
             targetYaw   = pestAotvTargetYaw;
             targetPitch = pestAotvTargetPitch;
             releaseMovementKeys();
             return true;
         }
 
-        // Keep aim locked for all phases after the initial rotation.
-        player.setYaw(pestAotvTargetYaw);
-        player.setPitch(pestAotvTargetPitch);
+        // Aim phase complete: snap once to exact position for precision, then keep
+        // the camera locked using targetYaw/targetPitch (smooth rotation handles it).
+        targetYaw   = pestAotvTargetYaw;
+        targetPitch = pestAotvTargetPitch;
         player.getInventory().setSelectedSlot(pestAotvSlot);
         // Release movement keys so AOTV teleports are the only source of horizontal
         // movement during the sequence.  Keeping the forward key pressed caused the
@@ -1937,6 +1955,9 @@ public class PestKillerManager {
             } else {
                 // Fire the next press when the scheduled time arrives.
                 if (now >= pestAotvNextEventTime) {
+                    // Snap to exact angle immediately before each click for precision.
+                    player.setYaw(pestAotvTargetYaw);
+                    player.setPitch(pestAotvTargetPitch);
                     if (client.options != null) client.options.useKey.setPressed(true);
                     pestAotvClickHeld    = true;
                     pestAotvNextEventTime = now + PEST_AOTV_HOLD_MS;
@@ -2721,16 +2742,19 @@ public class PestKillerManager {
 
     /**
      * Applies one incremental camera rotation step toward
-     * {@link #targetYaw}/{@link #targetPitch} at a time-based rate.
+     * {@link #targetYaw}/{@link #targetPitch} at a time-based rate,
+     * with exponential ease-in acceleration.
      */
     private void smoothRotateCamera(ClientPlayerEntity player) {
         long now = System.currentTimeMillis();
-        float deltaMs = (lastSmoothLookTime == 0)
-                ? SMOOTH_LOOK_INITIAL_DELTA_MS
-                : Math.min(SMOOTH_LOOK_MAX_DELTA_MS, (float)(now - lastSmoothLookTime));
+        float deltaMs;
+        if (lastSmoothLookTime == 0) {
+            deltaMs = SMOOTH_LOOK_INITIAL_DELTA_MS;
+            initialAngularDist = 0f; // reset for a fresh rotation start
+        } else {
+            deltaMs = Math.min(SMOOTH_LOOK_MAX_DELTA_MS, (float)(now - lastSmoothLookTime));
+        }
         lastSmoothLookTime = now;
-
-        float step = SMOOTH_LOOK_DEGREES_PER_SECOND * deltaMs / 1000.0f;
 
         float currentYaw   = player.getYaw();
         float currentPitch = player.getPitch();
@@ -2741,6 +2765,15 @@ public class PestKillerManager {
         float pitchDiff = targetPitch - currentPitch;
 
         if (Math.abs(yawDiff) < 1.0f && Math.abs(pitchDiff) < 1.0f) return;
+
+        // Exponential ease-in: starts at base speed, accelerates as progress increases.
+        float remaining = (float) Math.sqrt(yawDiff * yawDiff + pitchDiff * pitchDiff);
+        if (initialAngularDist <= 0f || remaining > initialAngularDist) {
+            initialAngularDist = remaining;
+        }
+        float progress = (initialAngularDist > 0f) ? 1.0f - remaining / initialAngularDist : 0f;
+        float speedMult = 1.0f + SMOOTH_LOOK_ACCEL_FACTOR * progress;
+        float step = SMOOTH_LOOK_DEGREES_PER_SECOND * speedMult * deltaMs / 1000.0f;
 
         float newYaw   = currentYaw   + Math.max(-step, Math.min(step, yawDiff));
         float newPitch = currentPitch + Math.max(-step, Math.min(step, pitchDiff));

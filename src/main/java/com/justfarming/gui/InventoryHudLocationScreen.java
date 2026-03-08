@@ -44,7 +44,7 @@ public class InventoryHudLocationScreen extends Screen {
     private static final float SCALE_MAX  = 3.0f;
     private static final float SCALE_STEP = 0.1f;
 
-    // ── Which HUD is being dragged (0 = none, 1 = Inventory, 2 = Profit) ─────
+    // ── Which HUD is being dragged (0 = none, 1 = any HUD – all move together) ─
     private static final int DRAG_NONE    = 0;
     private static final int DRAG_INV     = 1;
     private static final int DRAG_PROFIT  = 2;
@@ -62,9 +62,18 @@ public class InventoryHudLocationScreen extends Screen {
     private int profitHudY;
 
     // ── Drag state ────────────────────────────────────────────────────────────
+    /** Which HUD was originally clicked to start the drag; used for the visual highlight only. */
     private int draggingHud  = DRAG_NONE;
+    /** Mouse X at the drag start, relative to the HUD that was clicked. */
     private int dragOffsetX;
     private int dragOffsetY;
+    /**
+     * Positions of all HUDs at drag start.  When dragging, every HUD moves
+     * by the same delta so they all stay in their relative positions.
+     */
+    private int dragStartInvX, dragStartInvY;
+    private int dragStartProfitX, dragStartProfitY;
+    private int dragStartMouseX, dragStartMouseY;
 
     // ── Close-button geometry ─────────────────────────────────────────────────
     private int closeBtnX, closeBtnY, closeBtnW, closeBtnH;
@@ -108,7 +117,7 @@ public class InventoryHudLocationScreen extends Screen {
         highlightHud(context, invHudX, invHudY, invW, invH, mouseX, mouseY, DRAG_INV);
 
         // ── Profit HUD (placeholder if no data yet) ────────────────────────────
-        int profW = ProfitHudRenderer.getPanelWidth(config.inventoryOverlayScale);
+        int profW = ProfitHudRenderer.getPanelWidth(invHudScale);
         int profH = ProfitHudRenderer.getApproxHeight(config.pestProfitEnabled);
         var tracker = JustFarming.getProfitTracker();
         if (tracker != null && tracker.hasData()) {
@@ -120,14 +129,14 @@ public class InventoryHudLocationScreen extends Screen {
 
         // ── HUD labels on hover/drag ───────────────────────────────────────────
         drawHudLabel(context, mc, invHudX, invHudY, invW, invH,
-                "Inventory HUD  \u2022  Scroll to resize",
+                "Inventory HUD  \u2022  Drag to move all",
                 mouseX, mouseY, DRAG_INV);
         drawHudLabel(context, mc, profitHudX, profitHudY, profW, profH,
-                "Profit HUD  \u2022  Scroll to resize",
+                "Profit HUD  \u2022  Drag to move all",
                 mouseX, mouseY, DRAG_PROFIT);
 
         // ── Hint text at the top ───────────────────────────────────────────────
-        String hint = "\u2022  Drag any HUD to reposition    \u2022  Scroll over any HUD to resize  \u2022  Scale: "
+        String hint = "\u2022  Drag any HUD to move all    \u2022  Scroll anywhere to resize all  \u2022  Scale: "
                 + String.format("%.1f", invHudScale);
         int hintW = mc.textRenderer.getWidth(hint);
         context.drawTextWithShadow(mc.textRenderer,
@@ -229,16 +238,24 @@ public class InventoryHudLocationScreen extends Screen {
                 draggingHud = DRAG_INV;
                 dragOffsetX = (int) mx - invHudX;
                 dragOffsetY = (int) my - invHudY;
+                // Record all HUD positions at drag start for group movement.
+                dragStartInvX    = invHudX;    dragStartInvY    = invHudY;
+                dragStartProfitX = profitHudX; dragStartProfitY = profitHudY;
+                dragStartMouseX  = (int) mx;   dragStartMouseY  = (int) my;
                 return true;
             }
             // Profit HUD drag
-            int profW = ProfitHudRenderer.getPanelWidth(config.inventoryOverlayScale);
+            int profW = ProfitHudRenderer.getPanelWidth(invHudScale);
             int profH = ProfitHudRenderer.getApproxHeight(config.pestProfitEnabled);
             if (mx >= profitHudX && mx < profitHudX + profW
                     && my >= profitHudY && my < profitHudY + profH) {
                 draggingHud = DRAG_PROFIT;
                 dragOffsetX = (int) mx - profitHudX;
                 dragOffsetY = (int) my - profitHudY;
+                // Record all HUD positions at drag start for group movement.
+                dragStartInvX    = invHudX;    dragStartInvY    = invHudY;
+                dragStartProfitX = profitHudX; dragStartProfitY = profitHudY;
+                dragStartMouseX  = (int) mx;   dragStartMouseY  = (int) my;
                 return true;
             }
         }
@@ -256,21 +273,22 @@ public class InventoryHudLocationScreen extends Screen {
 
     @Override
     public boolean mouseDragged(Click click, double deltaX, double deltaY) {
-        if (click.button() == 0) {
-            if (draggingHud == DRAG_INV) {
-                invHudX = Math.max(0, Math.min(this.width  - InventoryHudRenderer.getOverlayWidth(invHudScale),
-                        (int) click.x() - dragOffsetX));
-                invHudY = Math.max(0, Math.min(this.height - InventoryHudRenderer.getOverlayHeight(invHudScale),
-                        (int) click.y() - dragOffsetY));
-                return true;
-            }
-            if (draggingHud == DRAG_PROFIT) {
-                int profW = ProfitHudRenderer.getPanelWidth(config.inventoryOverlayScale);
-                int profH = ProfitHudRenderer.getApproxHeight(config.pestProfitEnabled);
-                profitHudX = Math.max(0, Math.min(this.width  - profW, (int) click.x() - dragOffsetX));
-                profitHudY = Math.max(0, Math.min(this.height - profH, (int) click.y() - dragOffsetY));
-                return true;
-            }
+        if (click.button() == 0 && draggingHud != DRAG_NONE) {
+            // Compute the delta from the drag-start mouse position.
+            int dx = (int) click.x() - dragStartMouseX;
+            int dy = (int) click.y() - dragStartMouseY;
+
+            // Move ALL HUDs by the same delta so they stay together as a group.
+            int invW  = InventoryHudRenderer.getOverlayWidth(invHudScale);
+            int invH  = InventoryHudRenderer.getOverlayHeight(invHudScale);
+            int profW = ProfitHudRenderer.getPanelWidth(invHudScale);
+            int profH = ProfitHudRenderer.getApproxHeight(config.pestProfitEnabled);
+
+            invHudX    = Math.max(0, Math.min(this.width  - invW,  dragStartInvX    + dx));
+            invHudY    = Math.max(0, Math.min(this.height - invH,  dragStartInvY    + dy));
+            profitHudX = Math.max(0, Math.min(this.width  - profW, dragStartProfitX + dx));
+            profitHudY = Math.max(0, Math.min(this.height - profH, dragStartProfitY + dy));
+            return true;
         }
         return super.mouseDragged(click, deltaX, deltaY);
     }
@@ -279,22 +297,11 @@ public class InventoryHudLocationScreen extends Screen {
     public boolean mouseScrolled(double mouseX, double mouseY,
                                   double horizontalAmount, double verticalAmount) {
         if (verticalAmount == 0) return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
-        // Resize when hovering over the Inventory HUD or Profit HUD
-        int invW = InventoryHudRenderer.getOverlayWidth(invHudScale);
-        int invH = InventoryHudRenderer.getOverlayHeight(invHudScale);
-        int profW = ProfitHudRenderer.getPanelWidth(invHudScale);
-        int profH = ProfitHudRenderer.getApproxHeight(config.pestProfitEnabled);
-        boolean overInv = mouseX >= invHudX && mouseX < invHudX + invW
-                && mouseY >= invHudY && mouseY < invHudY + invH;
-        boolean overProfit = mouseX >= profitHudX && mouseX < profitHudX + profW
-                && mouseY >= profitHudY && mouseY < profitHudY + profH;
-        if (overInv || overProfit) {
-            float d = (float) (verticalAmount > 0 ? SCALE_STEP : -SCALE_STEP);
-            float newScale = Math.round((invHudScale + d) * 10f) / 10f;
-            invHudScale = Math.max(SCALE_MIN, Math.min(SCALE_MAX, newScale));
-            return true;
-        }
-        return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
+        // Scrolling anywhere in the Edit HUD screen rescales all HUDs together.
+        float d = (float) (verticalAmount > 0 ? SCALE_STEP : -SCALE_STEP);
+        float newScale = Math.round((invHudScale + d) * 10f) / 10f;
+        invHudScale = Math.max(SCALE_MIN, Math.min(SCALE_MAX, newScale));
+        return true;
     }
 
     // ── Persistence ───────────────────────────────────────────────────────────
