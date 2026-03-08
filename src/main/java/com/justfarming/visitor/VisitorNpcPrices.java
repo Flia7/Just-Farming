@@ -108,6 +108,9 @@ public final class VisitorNpcPrices {
         NPC_PRICES.put("locust lullaby",          50000.0);
         NPC_PRICES.put("mite march",              50000.0);
 
+        // ── Coins (price = 1 coin per coin, used for direct coin drops) ──────────
+        NPC_PRICES.put("coins",                    1.0);
+
         // ── Pets (sold via George) ────────────────────────────────────────────
         NPC_PRICES.put("rat pet",                  5000.0);
         // Slug pet NPC value varies by rarity; store both variants.

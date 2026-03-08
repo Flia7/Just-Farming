@@ -7,6 +7,7 @@
     "ClientWorldParticleMixin",
     "EntityMixin",
     "GameRendererMixin",
+    "InGameHudMixin",
     "MinecraftClientMixin",
     "MouseMixin"
   ],

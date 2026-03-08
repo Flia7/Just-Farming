@@ -11,14 +11,17 @@ import com.justfarming.render.InventoryHudRenderer;
 import com.justfarming.render.OverlayRenderer;
 import com.justfarming.render.PaperDollRenderer;
 import com.justfarming.render.ProfitHudRenderer;
+import com.justfarming.render.ScoreboardHudRenderer;
 import com.justfarming.visitor.VisitorManager;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.util.Identifier;
@@ -59,6 +62,7 @@ public class JustFarming implements ClientModInitializer {
     private static PaperDollRenderer paperDollRenderer;
     private static FarmingProfitTracker profitTracker;
     private static ProfitHudRenderer profitHudRenderer;
+    private static ScoreboardHudRenderer scoreboardHudRenderer;
     /** {@code true} when the farming macro was running before the pest killer started. */
     private static boolean pestKillerShouldResumeMacro = false;
 
@@ -91,8 +95,9 @@ public class JustFarming implements ClientModInitializer {
         paperDollRenderer    = new PaperDollRenderer(config);
 
         // Create profit tracker and renderer
-        profitTracker    = new FarmingProfitTracker();
-        profitHudRenderer = new ProfitHudRenderer(config);
+        profitTracker         = new FarmingProfitTracker();
+        profitHudRenderer     = new ProfitHudRenderer(config);
+        scoreboardHudRenderer = new ScoreboardHudRenderer(config);
 
         // Register keybindings
         toggleMacroKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
@@ -314,11 +319,14 @@ public class JustFarming implements ClientModInitializer {
 
         // Register HUD render callback for the inventory overlay and paper-doll panel.
         HudRenderCallback.EVENT.register((drawContext, renderTickCounter) -> {
+            // Optionally hide all Just Farming HUDs when Tab or F3 is held.
+            if (config.hideHudsOnTabF3 && isTabOrF3Active()) return;
             inventoryHudRenderer.render(drawContext);
             paperDollRenderer.render(drawContext,
                     config.inventoryOverlayX, config.inventoryOverlayY,
                     config.inventoryOverlayScale);
             profitHudRenderer.render(drawContext, profitTracker);
+            scoreboardHudRenderer.render(drawContext);
         });
 
         // Register world render event for pest plot overlay.
@@ -344,6 +352,15 @@ public class JustFarming implements ClientModInitializer {
             if (config.autoPestKillerEnabled) {
                 pestKillerManager.onRenderTick();
             }
+        });
+
+        // Listen for Hypixel SkyBlock "You received" chat messages to track pest drops.
+        // When the pest killer is active, item drops go directly to the player's
+        // collection storage and never pass through the inventory, so they must be
+        // tracked from the chat message rather than from inventory diffs.
+        ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
+            if (overlay) return; // ignore action bar messages
+            profitTracker.onChatMessage(message.getString(), pestKillerManager);
         });
 
         // Stop all active systems when the player disconnects from a server so
@@ -396,5 +413,21 @@ public class JustFarming implements ClientModInitializer {
     /** Returns the shared farming profit tracker instance. */
     public static FarmingProfitTracker getProfitTracker() {
         return profitTracker;
+    }
+
+    /**
+     * Returns {@code true} when the player is holding Tab (player list) or
+     * the F3 debug screen is currently visible.  Used to hide all Just Farming
+     * HUD overlays when {@link FarmingConfig#hideHudsOnTabF3} is enabled.
+     */
+    private static boolean isTabOrF3Active() {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null) return false;
+        // F3 debug screen
+        if (mc.getDebugHud() != null && mc.getDebugHud().shouldShowDebugHud()) return true;
+        // Tab key (player list)
+        if (mc.options != null && mc.options.playerListKey != null
+                && mc.options.playerListKey.isPressed()) return true;
+        return false;
     }
 }

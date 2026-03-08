@@ -78,6 +78,21 @@ public class FarmingConfig {
      */
     public boolean macroEnabledInGui = false;
 
+    /**
+     * When {@code true}, all Just Farming HUD overlays (inventory, profit, scoreboard)
+     * are automatically hidden whenever the player opens the debug screen (F3) or
+     * the player list (Tab).  Useful for taking screenshots or checking vanilla info
+     * without manually disabling each overlay.
+     */
+    public boolean hideHudsOnTabF3 = false;
+
+    /**
+     * When {@code true}, replaces Minecraft's default scoreboard sidebar with a
+     * custom "Just Farming" styled scoreboard that shows a branded header and a
+     * cleaner layout.
+     */
+    public boolean customScoreboardEnabled = true;
+
     // --- Inventory HUD Overlay ---
 
     /**

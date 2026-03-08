@@ -106,7 +106,7 @@ public class InventoryHudLocationScreen extends Screen {
         highlightHud(context, invHudX, invHudY, invW, invH, mouseX, mouseY, DRAG_INV);
 
         // ── Profit HUD (placeholder if no data yet) ────────────────────────────
-        int profW = ProfitHudRenderer.getPanelWidth();
+        int profW = ProfitHudRenderer.getPanelWidth(config.inventoryOverlayScale);
         int profH = ProfitHudRenderer.getApproxHeight(config.pestProfitEnabled);
         var tracker = JustFarming.getProfitTracker();
         if (tracker != null && tracker.hasData()) {
@@ -230,7 +230,7 @@ public class InventoryHudLocationScreen extends Screen {
                 return true;
             }
             // Profit HUD drag
-            int profW = ProfitHudRenderer.getPanelWidth();
+            int profW = ProfitHudRenderer.getPanelWidth(config.inventoryOverlayScale);
             int profH = ProfitHudRenderer.getApproxHeight(config.pestProfitEnabled);
             if (mx >= profitHudX && mx < profitHudX + profW
                     && my >= profitHudY && my < profitHudY + profH) {
@@ -263,7 +263,7 @@ public class InventoryHudLocationScreen extends Screen {
                 return true;
             }
             if (draggingHud == DRAG_PROFIT) {
-                int profW = ProfitHudRenderer.getPanelWidth();
+                int profW = ProfitHudRenderer.getPanelWidth(config.inventoryOverlayScale);
                 int profH = ProfitHudRenderer.getApproxHeight(config.pestProfitEnabled);
                 profitHudX = Math.max(0, Math.min(this.width  - profW, (int) click.x() - dragOffsetX));
                 profitHudY = Math.max(0, Math.min(this.height - profH, (int) click.y() - dragOffsetY));

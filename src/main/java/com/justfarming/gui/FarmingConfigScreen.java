@@ -112,6 +112,8 @@ public class FarmingConfigScreen extends Screen {
     private FlatBoolToggleWidget  profitTrackerButton;
     private FlatBoolToggleWidget  pestProfitButton;
     private FlatButtonWidget      profitResetButton;
+    private FlatBoolToggleWidget  customScoreboardButton;
+    private FlatBoolToggleWidget  hideHudsOnTabF3Button;
 
     // ── Tab 3 – Delays widgets ────────────────────────────────────────────────
     private GlobalRandomSlider            globalRandomSlider;
@@ -152,9 +154,9 @@ public class FarmingConfigScreen extends Screen {
     // ── Section-label Y positions (set in init, used in render) ───────────────
     private int sectionCropY, actionSeparatorY;
     private int sectionPestsY, sectionPestKillerY, pestKillerStatusY;
-    // HUD tab (tab 2)
-    private int sectionHudInvY, sectionHudProfitY;
-    // Settings tab (tab 3)
+    // HUD tab (tab 3 in TAB_NAMES array)
+    private int sectionHudInvY, sectionHudProfitY, sectionHudDisplayY;
+    // Settings tab (tab 4 in TAB_NAMES array)
     private int sectionSettingsCameraY, sectionSettingsMacroY, settingsCameraSeparatorY;
     // Delays tab (tab 4)
     private int sectionGlobalRandomY, sectionLaneSwapY, sectionRewarpDelayY, sectionMousematDelayY, sectionVisitorDelaysY, sectionPestKillerDelaysY;
@@ -407,6 +409,25 @@ public class FarmingConfigScreen extends Screen {
         this.addDrawableChild(profitResetButton);
         profitResetButton.setTooltip(Tooltip.of(Text.literal(
                 "Clear all accumulated profit data and restart the session.")));
+        y += bh + pad + gap;
+
+        sectionHudDisplayY = y;
+        y += sLH;
+
+        customScoreboardButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
+                        Text.literal("Custom Scoreboard"),
+                        config.customScoreboardEnabled);
+        this.addDrawableChild(customScoreboardButton);
+        customScoreboardButton.setTooltip(Tooltip.of(Text.literal(
+                "Replace the vanilla scoreboard with a custom\n'Just Farming' branded scoreboard overlay.")));
+        y += bh + pad;
+
+        hideHudsOnTabF3Button = new FlatBoolToggleWidget(widgetX, y, bw, bh,
+                        Text.literal("Hide HUDs on Tab/F3"),
+                        config.hideHudsOnTabF3);
+        this.addDrawableChild(hideHudsOnTabF3Button);
+        hideHudsOnTabF3Button.setTooltip(Tooltip.of(Text.literal(
+                "Automatically hide all Just Farming HUD overlays\nwhen Tab (player list) or F3 (debug) is open.")));
         tabContentHeights[3] = y + bh - contentAreaTopY + tabScrollOffsets[3];
 
         // ── Tab 4 – Misc ──────────────────────────────────────────────────
@@ -674,6 +695,8 @@ public class FarmingConfigScreen extends Screen {
         inventoryOverlayScaleSlider.setOnChange(markCustom);
         profitTrackerButton.setOnChange(markCustom);
         pestProfitButton.setOnChange(markCustom);
+        customScoreboardButton.setOnChange(markCustom);
+        hideHudsOnTabF3Button.setOnChange(markCustom);
         // Tab 4 (Misc)
         unlockedMouseButton.setOnChange(markCustom);
         gardenOnlyButton.setOnChange(markCustom);
@@ -749,6 +772,8 @@ public class FarmingConfigScreen extends Screen {
         profitTrackerButton.visible         = t3 && inContentBounds(profitTrackerButton);
         pestProfitButton.visible            = t3 && inContentBounds(pestProfitButton);
         profitResetButton.visible           = t3 && inContentBounds(profitResetButton);
+        customScoreboardButton.visible      = t3 && inContentBounds(customScoreboardButton);
+        hideHudsOnTabF3Button.visible       = t3 && inContentBounds(hideHudsOnTabF3Button);
 
         boolean t4 = activeTab == 4;
         freelookButton.visible          = t4 && inContentBounds(freelookButton);
@@ -859,6 +884,8 @@ public class FarmingConfigScreen extends Screen {
                 drawSectionLabel(context, "Inventory HUD", sectionHudInvY);
             if (yInContentBounds(sectionHudProfitY))
                 drawSectionLabel(context, "Profit HUD", sectionHudProfitY);
+            if (yInContentBounds(sectionHudDisplayY))
+                drawSectionLabel(context, "Display", sectionHudDisplayY);
         } else if (activeTab == 4) {
             if (yInContentBounds(sectionSettingsCameraY))
                 drawSectionLabel(context, "Camera", sectionSettingsCameraY);
@@ -983,6 +1010,8 @@ public class FarmingConfigScreen extends Screen {
         config.pestKillerGoToNextPestDelay = pestKillerGoToNextPestSlider.getDelayValue();
         config.pestKillerVacuumRange    = pestKillerVacuumRangeSlider.getRangeValue();
         config.farmingToolHotbarSlot    = farmingToolSlotSlider.getSlotValue();
+        config.customScoreboardEnabled  = customScoreboardButton.getValue();
+        config.hideHudsOnTabF3          = hideHudsOnTabF3Button.getValue();
         config.configPreset             = presetMode;
         macroManager.setConfig(config);
         if (visitorManager != null) visitorManager.setConfig(config);
