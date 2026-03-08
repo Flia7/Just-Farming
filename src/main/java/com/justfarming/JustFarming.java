@@ -321,11 +321,15 @@ public class JustFarming implements ClientModInitializer {
         HudRenderCallback.EVENT.register((drawContext, renderTickCounter) -> {
             // Optionally hide all Just Farming HUDs when Tab or F3 is held.
             if (config.hideHudsOnTabF3 && isTabOrF3Active()) return;
-            inventoryHudRenderer.render(drawContext);
-            paperDollRenderer.render(drawContext,
-                    config.inventoryOverlayX, config.inventoryOverlayY,
-                    config.inventoryOverlayScale);
-            profitHudRenderer.render(drawContext, profitTracker);
+            boolean inGarden = pestDetector.isInGarden();
+            // Inventory HUD and paper doll are only shown in the Garden.
+            if (inGarden) {
+                inventoryHudRenderer.render(drawContext);
+                paperDollRenderer.render(drawContext,
+                        config.inventoryOverlayX, config.inventoryOverlayY,
+                        config.inventoryOverlayScale);
+            }
+            profitHudRenderer.render(drawContext, profitTracker, inGarden);
             scoreboardHudRenderer.render(drawContext);
         });
 

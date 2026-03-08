@@ -110,7 +110,7 @@ public class InventoryHudLocationScreen extends Screen {
         int profH = ProfitHudRenderer.getApproxHeight(config.pestProfitEnabled);
         var tracker = JustFarming.getProfitTracker();
         if (tracker != null && tracker.hasData()) {
-            new ProfitHudRenderer(config).render(context, tracker);
+            new ProfitHudRenderer(config).render(context, tracker, true);
         } else {
             drawProfitHudPlaceholder(context, mc, profitHudX, profitHudY, profW, profH);
         }
@@ -121,11 +121,11 @@ public class InventoryHudLocationScreen extends Screen {
                 "Inventory HUD  \u2022  Scroll to resize",
                 mouseX, mouseY, DRAG_INV);
         drawHudLabel(context, mc, profitHudX, profitHudY, profW, profH,
-                "Profit HUD",
+                "Profit HUD  \u2022  Scroll to resize",
                 mouseX, mouseY, DRAG_PROFIT);
 
         // ── Hint text at the top ───────────────────────────────────────────────
-        String hint = "\u2022  Drag any HUD to reposition    \u2022  Scroll on Inventory HUD to resize  \u2022  Scale: "
+        String hint = "\u2022  Drag any HUD to reposition    \u2022  Scroll over any HUD to resize  \u2022  Scale: "
                 + String.format("%.1f", invHudScale);
         int hintW = mc.textRenderer.getWidth(hint);
         context.drawTextWithShadow(mc.textRenderer,
@@ -277,11 +277,16 @@ public class InventoryHudLocationScreen extends Screen {
     public boolean mouseScrolled(double mouseX, double mouseY,
                                   double horizontalAmount, double verticalAmount) {
         if (verticalAmount == 0) return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
-        // Only resize inventory HUD when hovering over it
+        // Resize when hovering over the Inventory HUD or Profit HUD
         int invW = InventoryHudRenderer.getOverlayWidth(invHudScale);
         int invH = InventoryHudRenderer.getOverlayHeight(invHudScale);
-        if (mouseX >= invHudX && mouseX < invHudX + invW
-                && mouseY >= invHudY && mouseY < invHudY + invH) {
+        int profW = ProfitHudRenderer.getPanelWidth(invHudScale);
+        int profH = ProfitHudRenderer.getApproxHeight(config.pestProfitEnabled);
+        boolean overInv = mouseX >= invHudX && mouseX < invHudX + invW
+                && mouseY >= invHudY && mouseY < invHudY + invH;
+        boolean overProfit = mouseX >= profitHudX && mouseX < profitHudX + profW
+                && mouseY >= profitHudY && mouseY < profitHudY + profH;
+        if (overInv || overProfit) {
             float d = (float) (verticalAmount > 0 ? SCALE_STEP : -SCALE_STEP);
             float newScale = Math.round((invHudScale + d) * 10f) / 10f;
             invHudScale = Math.max(SCALE_MIN, Math.min(SCALE_MAX, newScale));

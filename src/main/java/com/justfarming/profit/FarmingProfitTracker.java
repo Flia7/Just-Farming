@@ -87,9 +87,14 @@ public class FarmingProfitTracker {
      * {@code "You received 163x Enchanted Nether Wart."}
      * or
      * {@code "You received 12 Nether Wart."}
+     * or
+     * {@code "You received 187x Enchanted Potato for killing a Locust!"}
+     *
+     * <p>The item name is captured until a period, " for " (e.g. "for killing"),
+     * or end-of-string – whichever comes first.
      */
     private static final Pattern CHAT_ITEM_PATTERN =
-            Pattern.compile("You received (\\d+)x?\\s+(.+?)(?:\\.|$)", Pattern.CASE_INSENSITIVE);
+            Pattern.compile("You received (\\d+)x?\\s+(.+?)(?:\\s+for\\s+|\\.|$)", Pattern.CASE_INSENSITIVE);
 
     /**
      * Matches the coin reward line sent when a pest is killed.
