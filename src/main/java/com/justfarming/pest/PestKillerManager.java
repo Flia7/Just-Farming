@@ -1197,8 +1197,9 @@ public class PestKillerManager {
                 }
 
                 // Use AOTV/AOTE when the target is far to reach it much faster.
-                // Pass 0.0 so all the distance to the centre is covered.
-                if (handlePestAotvToward(player, plotCentreTarget, 0.0)) return;
+                // Use PLOT_CENTRE_ARRIVE_RADIUS so we stop teleporting once we are
+                // close enough for normal flight to cover the rest, avoiding overshoot.
+                if (handlePestAotvToward(player, plotCentreTarget, PLOT_CENTRE_ARRIVE_RADIUS)) return;
                 flyToward(player, plotCentreTarget);
             }
 
@@ -1800,16 +1801,19 @@ public class PestKillerManager {
             if (slot < 0) return false;
 
             // Calculate how many teleport hops are needed to reach within approachRadius
-            // of the target.  For plot-centre travel approachRadius is 0 so all the
-            // distance is covered; for pest travel approachRadius is the kill radius so
-            // only the hops required to enter kill range are fired.
-            // Fire one fewer hop than the raw calculation to avoid overshooting the
-            // target (creative flight covers the remaining short distance quickly).
+            // of the target.  For plot-centre travel approachRadius is PLOT_CENTRE_ARRIVE_RADIUS
+            // so only hops needed to get within that radius are fired; for pest travel
+            // approachRadius is the kill radius so only the hops required to enter kill
+            // range are fired.
+            // Use floor(remainingDist / TELEPORT_DIST) – i.e. fire only as many hops as
+            // will fit without exceeding the remaining distance.  Because the forward key is
+            // no longer pressed during the sequence, AOTV teleports are the only source of
+            // movement and the landing position is predictable without extra subtraction.
             double remainingDist = Math.max(0.0, dist - approachRadius);
             // Already within approach radius – no teleport needed.
             if (remainingDist <= 0.0) return false;
-            int clicks = (int) Math.ceil(remainingDist / PEST_AOTV_TELEPORT_DIST) - 1;
-            // If subtracting one leaves zero hops, let normal flight handle it.
+            int clicks = (int) Math.floor(remainingDist / PEST_AOTV_TELEPORT_DIST);
+            // Zero hops means we're close enough; let normal flight handle it.
             if (clicks <= 0) return false;
             clicks = Math.min(clicks, PEST_AOTV_MAX_CLICKS);
 
@@ -1847,11 +1851,13 @@ public class PestKillerManager {
         player.setYaw(pestAotvTargetYaw);
         player.setPitch(pestAotvTargetPitch);
         player.getInventory().setSelectedSlot(pestAotvSlot);
-        // Keep flying forward toward the target while teleporting so the player
-        // continuously closes the gap rather than hovering in place.
+        // Release movement keys so AOTV teleports are the only source of horizontal
+        // movement during the sequence.  Keeping the forward key pressed caused the
+        // player to overshoot the target because normal flight added significant
+        // distance on top of the teleport hops.
         // Sneak key is explicitly released so shift-descent never fires during AOTV use.
         if (client.options != null) {
-            client.options.forwardKey.setPressed(true);
+            client.options.forwardKey.setPressed(false);
             client.options.sneakKey.setPressed(false);
         }
 

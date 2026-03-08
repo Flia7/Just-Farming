@@ -95,6 +95,11 @@ public class KeystrokesTracker {
     /** Timestamps of LMB events within the {@link #CPS_WINDOW_MS} window. */
     private final Deque<Long> lmbTimestamps = new ArrayDeque<>();
 
+    // ── RMB CPS sliding window ─────────────────────────────────────────────────
+
+    /** Timestamps of RMB events within the {@link #CPS_WINDOW_MS} window. */
+    private final Deque<Long> rmbTimestamps = new ArrayDeque<>();
+
     // ── Constructor ────────────────────────────────────────────────────────────
 
     private KeystrokesTracker() {
@@ -139,6 +144,7 @@ public class KeystrokesTracker {
         }
 
         pruneLmbWindow(now);
+        pruneRmbWindow(now);
     }
 
     /**
@@ -160,11 +166,15 @@ public class KeystrokesTracker {
      * Registers a right-click (use) packet sent by the macro.
      *
      * <p>This lights up the RMB button briefly even if the physical use key
-     * is not held.  Useful when AOTV/AOTE clicks or other use-item actions are
+     * is not held, and adds an event to the RMB CPS sliding window.
+     * Useful when AOTV/AOTE clicks or other use-item actions are
      * sent as direct packets rather than through the key-binding system.
      */
     public void registerUse() {
-        rmbLastPacketTime = System.currentTimeMillis();
+        long now = System.currentTimeMillis();
+        rmbLastPacketTime = now;
+        rmbTimestamps.add(now);
+        pruneRmbWindow(now);
     }
 
     /**
@@ -243,12 +253,28 @@ public class KeystrokesTracker {
         return lmbTimestamps.size();
     }
 
+    /**
+     * Returns the current RMB CPS (number of {@link #registerUse()} calls
+     * within the past 1 second).
+     */
+    public int getRmbCps() {
+        pruneRmbWindow(System.currentTimeMillis());
+        return rmbTimestamps.size();
+    }
+
     // ── Private helpers ────────────────────────────────────────────────────────
 
     private void pruneLmbWindow(long now) {
         long cutoff = now - CPS_WINDOW_MS;
         while (!lmbTimestamps.isEmpty() && lmbTimestamps.peek() < cutoff) {
             lmbTimestamps.poll();
+        }
+    }
+
+    private void pruneRmbWindow(long now) {
+        long cutoff = now - CPS_WINDOW_MS;
+        while (!rmbTimestamps.isEmpty() && rmbTimestamps.peek() < cutoff) {
+            rmbTimestamps.poll();
         }
     }
 

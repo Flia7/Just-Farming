@@ -217,9 +217,10 @@ public class ProfitHudRenderer {
         float ksScale = Math.max(KS_MIN_SCALE,
                 (float) headerH / KS_HEIGHT * 0.90f);
         int ksW = Math.round(KS_WIDTH  * ksScale);
-        // Right-align within the panel with PAD_X margin; top-align with content
+        // Right-align within the panel with PAD_X margin; offset down by half a
+        // keystroke block height so the widget clears the separator line below it.
         int ksX = x + pw - PAD_X - ksW;
-        int ksY = y + PAD_Y;
+        int ksY = y + PAD_Y + Math.round(KS_KEY_SIZE * ksScale * 0.5f);
         renderKeystrokes(context, tr, ksX, ksY, ksW, ksScale, isDark());
 
         int curY = y + PAD_Y;
@@ -545,15 +546,21 @@ public class ProfitHudRenderer {
                 KeystrokesTracker.KEY_D, tracker, now, bgPressed, bgReleased, txtPressed, txtReleased);
 
         // Row 3: LMB / RMB, filling inner width
+        // Show the CPS count when spamming (packets registered in the last second);
+        // fall back to "L" / "R" when just holding or not pressing.
         int row3Y  = row2Y + stride;
         int inner  = w - 2 * hPad;
         int lmbW   = (inner - kg) / 2;
         int rmbW   = inner - lmbW - kg;
         int lmbX   = x + hPad;
         int rmbX   = lmbX + lmbW + kg;
-        drawKsKey(context, tr, lmbX, row3Y, lmbW, ks, "L",
+        int lmbCps = tracker.getLmbCps();
+        int rmbCps = tracker.getRmbCps();
+        String lmbLabel = lmbCps > 0 ? String.valueOf(lmbCps) : "L";
+        String rmbLabel = rmbCps > 0 ? String.valueOf(rmbCps) : "R";
+        drawKsKey(context, tr, lmbX, row3Y, lmbW, ks, lmbLabel,
                 KeystrokesTracker.KEY_LMB, tracker, now, bgPressed, bgReleased, txtPressed, txtReleased);
-        drawKsKey(context, tr, rmbX, row3Y, rmbW, ks, "R",
+        drawKsKey(context, tr, rmbX, row3Y, rmbW, ks, rmbLabel,
                 KeystrokesTracker.KEY_RMB, tracker, now, bgPressed, bgReleased, txtPressed, txtReleased);
     }
 
