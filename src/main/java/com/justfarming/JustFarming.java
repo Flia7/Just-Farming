@@ -129,8 +129,8 @@ public class JustFarming implements ClientModInitializer {
         ));
 
         // Register /just <sub-command> client commands
-        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) ->
-                dispatcher.register(
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
+            dispatcher.register(
                         literal("just")
                                 .then(literal("rewarp")
                                         .executes(ctx -> {
@@ -223,7 +223,19 @@ public class JustFarming implements ClientModInitializer {
                                                                 net.minecraft.text.Text.literal("§a[Just Farming] Spawn position cleared."), true);
                                                     }
                                                     return 1;
-                                                })))));
+                                                }))));
+            // Register standalone /setspawn client command as a convenient alias.
+            dispatcher.register(
+                    literal("setspawn")
+                            .executes(ctx -> {
+                                macroManager.setSpawnHere();
+                                if (ctx.getSource().getPlayer() != null) {
+                                    ctx.getSource().getPlayer().sendMessage(
+                                            net.minecraft.text.Text.literal("§a[Just Farming] Spawn position set here."), true);
+                                }
+                                return 1;
+                            }));
+        });
         // Block the F5 perspective toggle while freelook is active.
         // START_CLIENT_TICK fires before handleKeyBindings(), so consuming
         // the key press here prevents Minecraft from acting on it.
@@ -348,7 +360,7 @@ public class JustFarming implements ClientModInitializer {
                         config.inventoryOverlayScale);
             }
             profitHudRenderer.render(drawContext, profitTracker, inGarden);
-            scoreboardHudRenderer.render(drawContext);
+            scoreboardHudRenderer.render(drawContext, getMacroStatusText());
         });
 
         // Register world render event for pest plot overlay.
@@ -435,6 +447,24 @@ public class JustFarming implements ClientModInitializer {
     /** Returns the shared farming profit tracker instance. */
     public static FarmingProfitTracker getProfitTracker() {
         return profitTracker;
+    }
+
+    /**
+     * Returns a short human-readable string describing the current macro state,
+     * used as the scoreboard status line replacing the Hypixel date/server entry.
+     *
+     * <ul>
+     *   <li>"Breaking Crops" – farming macro is active</li>
+     *   <li>"Killing Pests"  – pest killer routine is active</li>
+     *   <li>"Accepting Visitors" – visitor routine is active</li>
+     *   <li>"Idle"           – no macro is running</li>
+     * </ul>
+     */
+    private static String getMacroStatusText() {
+        if (pestKillerManager != null && pestKillerManager.isActive()) return "Killing Pests";
+        if (visitorManager   != null && visitorManager.isActive())    return "Accepting Visitors";
+        if (macroManager     != null && macroManager.isRunning())     return "Breaking Crops";
+        return "Idle";
     }
 
     /**
