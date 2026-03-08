@@ -16,6 +16,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Tracks items collected and profit earned during farming and pest killing.
@@ -74,6 +76,31 @@ public class FarmingProfitTracker {
             "slow and groovy", "earthworm ensemble", "beetle beats", "slug groove",
             "mosquito melody", "locust lullaby", "mite march"
     ));
+
+    // ── Chat-message patterns for pest drop tracking ──────────────────────────
+    /**
+     * Matches Hypixel SkyBlock "You received" item-drop messages produced when
+     * a pest is killed and its loot goes directly to the player's collection
+     * (bypassing the inventory).
+     *
+     * <p>Example (stripped of colour codes):
+     * {@code "You received 163x Enchanted Nether Wart."}
+     * or
+     * {@code "You received 12 Nether Wart."}
+     */
+    private static final Pattern CHAT_ITEM_PATTERN =
+            Pattern.compile("You received (\\d+)x?\\s+(.+?)(?:\\.|$)", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * Matches the coin reward line sent when a pest is killed.
+     *
+     * <p>Example: {@code "You received 450 Coins."} or {@code "You received 1,200 Coins."}
+     */
+    private static final Pattern CHAT_COIN_PATTERN =
+            Pattern.compile("You received ([\\d,]+) Coins?\\.?", Pattern.CASE_INSENSITIVE);
+
+    /** Internal key used for coin entries in the pest items map. */
+    private static final String COINS_KEY = "coins";
 
     // ── Previous inventory snapshot ──────────────────────────────────────────
     private final Map<String, Long> prevSnapshot = new HashMap<>();
@@ -315,6 +342,73 @@ public class FarmingProfitTracker {
         }
         if (totalMs <= 0) return 0.0;
         return getPestProfit() / (totalMs / 3_600_000.0);
+    }
+
+    /**
+     * Parses one game chat message and attributes item/coin gains to the pest
+     * profit section when the pest killer is active (or within its cooldown
+     * window).
+     *
+     * <p>Hypixel SkyBlock sends a "You received Nx Item" message when a pest is
+     * killed and its loot is teleported directly to the player's collection
+     * storage, so it never passes through the inventory.  This method ensures
+     * those gains are still captured by the profit tracker.
+     *
+     * @param rawMessage      the plain-text chat line (colour codes already stripped
+     *                        by {@link net.minecraft.text.Text#getString()})
+     * @param pestKillerManager the pest killer manager used to determine context
+     */
+    public void onChatMessage(String rawMessage, PestKillerManager pestKillerManager) {
+        if (rawMessage == null || rawMessage.isBlank()) return;
+
+        // Strip Minecraft colour codes in case the caller didn't.
+        String plain = stripColor(rawMessage).trim();
+
+        long nowMs = System.currentTimeMillis();
+        boolean isPestActive = pestKillerManager != null && pestKillerManager.isActive();
+        boolean inPestCooldown = lastPestActiveMs >= 0
+                && (nowMs - lastPestActiveMs) < PEST_COOLDOWN_MS;
+        boolean trackAsPest = isPestActive || inPestCooldown;
+
+        if (!trackAsPest) return;
+
+        // Try to match coin reward first (e.g. "You received 450 Coins.")
+        Matcher coinMatcher = CHAT_COIN_PATTERN.matcher(plain);
+        if (coinMatcher.find()) {
+            try {
+                long amount = Long.parseLong(coinMatcher.group(1).replace(",", ""));
+                if (amount > 0) {
+                    trackerHasData = true;
+                    pestItems.merge(COINS_KEY, amount, Long::sum);
+                    displayNames.putIfAbsent(COINS_KEY, "Coins");
+                }
+            } catch (NumberFormatException ignored) {}
+            return;
+        }
+
+        // Try to match item reward (e.g. "You received 163x Enchanted Nether Wart.")
+        Matcher itemMatcher = CHAT_ITEM_PATTERN.matcher(plain);
+        if (itemMatcher.find()) {
+            try {
+                long amount = Long.parseLong(itemMatcher.group(1));
+                String itemName = itemMatcher.group(2).trim();
+                if (amount > 0 && !itemName.isEmpty()) {
+                    String key = normalizeItemName(itemName);
+                    trackerHasData = true;
+                    pestItems.merge(key, amount, Long::sum);
+                    displayNames.putIfAbsent(key, itemName);
+                }
+            } catch (NumberFormatException ignored) {}
+        }
+    }
+
+    /**
+     * Normalizes a raw item name from the chat message to the same lower-cased,
+     * vinyl-grouped key format used for inventory-tracked items.
+     */
+    private static String normalizeItemName(String rawName) {
+        String key = rawName.toLowerCase().trim();
+        return VINYL_NAMES.contains(key) ? "pest vinyl" : key;
     }
 
     /**

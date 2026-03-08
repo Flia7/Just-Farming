@@ -1,0 +1,202 @@
+package com.justfarming.render;
+
+import com.justfarming.config.FarmingConfig;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.font.TextRenderer;
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.scoreboard.Scoreboard;
+import net.minecraft.scoreboard.ScoreboardDisplaySlot;
+import net.minecraft.scoreboard.ScoreboardEntry;
+import net.minecraft.scoreboard.ScoreboardObjective;
+import net.minecraft.scoreboard.Team;
+
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+
+/**
+ * Renders a custom "Just Farming" branded scoreboard sidebar, replacing the
+ * vanilla Minecraft scoreboard overlay.
+ *
+ * <p>Layout:
+ * <pre>
+ *  ┌──────────────────────────┐
+ *  │  ★ JUST FARMING ★        │  ← header (gold/green gradient feel)
+ *  ├──────────────────────────┤
+ *  │  &lt;scoreboard lines&gt;      │  ← vanilla sidebar entries, coloured
+ *  └──────────────────────────┘
+ * </pre>
+ *
+ * <p>The panel is anchored to the right side of the screen and positioned
+ * just below the top, matching the vanilla scoreboard position.
+ */
+public class ScoreboardHudRenderer {
+
+    // ── Colours ───────────────────────────────────────────────────────────────
+
+    /** Semi-transparent dark background. */
+    private static final int COL_BG        = 0xA8000000;
+    /** Panel border / separator tint. */
+    private static final int COL_BORDER    = 0x30FFFFFF;
+    /** Header accent line below the title. */
+    private static final int COL_ACCENT    = 0xFF3AFF8A;  // bright green
+    /** The "Just Farming" header text colour. */
+    private static final int COL_HEADER    = 0xFF3AFF8A;  // bright green
+    /** Header star colour (decorative). */
+    private static final int COL_STAR      = 0xFFFFD700;  // gold
+    /** Default text colour for scoreboard lines. */
+    private static final int COL_TEXT      = 0xFFFFFFFF;  // white
+    /** Score value colour. */
+    private static final int COL_SCORE     = 0xFFFF5555;  // red (vanilla-like)
+
+    // ── Layout ────────────────────────────────────────────────────────────────
+
+    private static final int PAD_X        = 5;
+    private static final int PAD_Y        = 4;
+    private static final int LINE_H       = 10;
+    private static final int HEADER_H     = 12;
+    private static final int ACCENT_H     = 1;
+    private static final int MARGIN_RIGHT = 2;
+    private static final int MARGIN_TOP   = 5;
+
+    /** Maximum scoreboard entries to show (matches vanilla's limit of 15). */
+    private static final int MAX_ENTRIES  = 15;
+
+    private final FarmingConfig config;
+
+    public ScoreboardHudRenderer(FarmingConfig config) {
+        this.config = config;
+    }
+
+    /**
+     * Renders the custom scoreboard sidebar.  Does nothing when
+     * {@link FarmingConfig#customScoreboardEnabled} is {@code false} or when
+     * there is no scoreboard objective assigned to the sidebar slot.
+     *
+     * @param context   the draw context
+     */
+    public void render(DrawContext context) {
+        if (!config.customScoreboardEnabled) return;
+
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null || mc.player == null || mc.world == null) return;
+
+        Scoreboard sb = mc.world.getScoreboard();
+        ScoreboardObjective objective = sb.getObjectiveForSlot(ScoreboardDisplaySlot.SIDEBAR);
+        if (objective == null) return;
+
+        TextRenderer tr = mc.textRenderer;
+        int screenW = mc.getWindow().getScaledWidth();
+
+        // ── Collect entries ───────────────────────────────────────────────────
+        List<ScoreboardEntry> entries = new ArrayList<>(sb.getScoreboardEntries(objective));
+        // Sort by score descending (highest score shown at top, like vanilla).
+        entries.sort(Comparator.comparingInt(ScoreboardEntry::value).reversed());
+        if (entries.size() > MAX_ENTRIES) {
+            entries = entries.subList(0, MAX_ENTRIES);
+        }
+
+        // ── Determine panel dimensions ────────────────────────────────────────
+        // Header text
+        String headerText = "★ JUST FARMING ★";
+        int headerW = tr.getWidth(headerText);
+
+        // Find widest content line (entry text + score)
+        int maxLineW = headerW;
+        List<String[]> lineData = new ArrayList<>();  // [displayLine, scoreStr]
+        for (ScoreboardEntry entry : entries) {
+            String scoreStr = String.valueOf(entry.value());
+            String displayLine = getEntryDisplayLine(sb, entry);
+            int lineW = tr.getWidth(displayLine) + tr.getWidth("  " + scoreStr);
+            maxLineW = Math.max(maxLineW, lineW);
+            lineData.add(new String[]{ displayLine, scoreStr });
+        }
+
+        int panelW = maxLineW + PAD_X * 2 + 2;
+        int panelH = PAD_Y                   // top padding
+                + HEADER_H                   // header title
+                + ACCENT_H + 2              // accent line + gap
+                + entries.size() * LINE_H   // entry rows
+                + PAD_Y;                    // bottom padding
+
+        // ── Position: right side of screen ───────────────────────────────────
+        int panelX = screenW - panelW - MARGIN_RIGHT;
+        int panelY = MARGIN_TOP;
+
+        // ── Background ────────────────────────────────────────────────────────
+        context.fill(panelX, panelY, panelX + panelW, panelY + panelH, COL_BG);
+        // Thin border around the panel
+        drawOutline(context, panelX, panelY, panelW, panelH, COL_BORDER);
+
+        int curY = panelY + PAD_Y;
+
+        // ── Header ────────────────────────────────────────────────────────────
+        // Draw the two stars in gold and the "JUST FARMING" text in green
+        int headerX = panelX + PAD_X;
+        drawHeaderLine(context, tr, headerX, curY, panelW - PAD_X * 2);
+        curY += HEADER_H;
+
+        // Accent line (full width minus padding)
+        context.fill(panelX + PAD_X, curY,
+                panelX + panelW - PAD_X, curY + ACCENT_H, COL_ACCENT);
+        curY += ACCENT_H + 2;
+
+        // ── Scoreboard lines ──────────────────────────────────────────────────
+        for (String[] ld : lineData) {
+            String text     = ld[0];
+            String scoreStr = ld[1];
+            // Left-align display text
+            context.drawTextWithShadow(tr, text, panelX + PAD_X, curY, COL_TEXT);
+            // Right-align score value
+            int scoreX = panelX + panelW - PAD_X - tr.getWidth(scoreStr);
+            context.drawTextWithShadow(tr, scoreStr, scoreX, curY, COL_SCORE);
+            curY += LINE_H;
+        }
+    }
+
+    /**
+     * Draws the "★ JUST FARMING ★" header with star decorations in gold and
+     * the centre text in the accent green, all centred in the available width.
+     */
+    private void drawHeaderLine(DrawContext ctx, TextRenderer tr,
+                                int x, int y, int availW) {
+        // Stars in gold, "JUST FARMING" in green – assembled as three parts
+        String leftStar  = "★ ";
+        String title     = "JUST FARMING";
+        String rightStar = " ★";
+        int totalW = tr.getWidth(leftStar) + tr.getWidth(title) + tr.getWidth(rightStar);
+        int startX = x + Math.max(0, (availW - totalW) / 2);
+        ctx.drawTextWithShadow(tr, leftStar,  startX,                                  y, COL_STAR);
+        ctx.drawTextWithShadow(tr, title,     startX + tr.getWidth(leftStar),          y, COL_HEADER);
+        ctx.drawTextWithShadow(tr, rightStar, startX + tr.getWidth(leftStar + title),  y, COL_STAR);
+    }
+
+    /**
+     * Assembles the display text for one scoreboard entry by combining the
+     * score-holder's team prefix and suffix (SkyHanni approach), falling back
+     * to the raw owner string if no team is assigned.
+     */
+    private static String getEntryDisplayLine(Scoreboard sb, ScoreboardEntry entry) {
+        Team team = sb.getScoreHolderTeam(entry.owner());
+        if (team != null) {
+            String prefix = team.getPrefix() != null ? team.getPrefix().getString() : "";
+            String suffix = team.getSuffix() != null ? team.getSuffix().getString() : "";
+            String combined = prefix + suffix;
+            if (!combined.isBlank()) return combined;
+        }
+        // Fallback: use the entry's display name if available
+        if (entry.name() != null) {
+            String n = entry.name().getString();
+            if (!n.isBlank()) return n;
+        }
+        return entry.owner();
+    }
+
+    /** Draws a 1-pixel outline rectangle. */
+    private static void drawOutline(DrawContext ctx, int x, int y, int w, int h, int color) {
+        ctx.fill(x,         y,         x + w,     y + 1,     color); // top
+        ctx.fill(x,         y + h - 1, x + w,     y + h,     color); // bottom
+        ctx.fill(x,         y,         x + 1,     y + h,     color); // left
+        ctx.fill(x + w - 1, y,         x + w,     y + h,     color); // right
+    }
+}

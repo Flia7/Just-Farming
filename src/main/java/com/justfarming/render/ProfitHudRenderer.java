@@ -41,8 +41,6 @@ public class ProfitHudRenderer {
 
     // ── Layout constants ─────────────────────────────────────────────────────
 
-    /** Panel width in pixels. */
-    private static final int PANEL_W     = 170;
     /** Horizontal padding inside the panel. */
     private static final int PAD_X       = 6;
     /** Vertical padding at the top and bottom of the panel. */
@@ -86,6 +84,14 @@ public class ProfitHudRenderer {
         this.config = config;
     }
 
+    /**
+     * Returns the panel width in pixels, matching the current inventory HUD width
+     * so both overlays stay the same width regardless of the user's scale setting.
+     */
+    private int panelW() {
+        return InventoryHudRenderer.getOverlayWidth(config.inventoryOverlayScale);
+    }
+
     // ── Public entry point ────────────────────────────────────────────────────
 
     /**
@@ -110,11 +116,11 @@ public class ProfitHudRenderer {
         int height = computeHeight(tracker);
 
         // Background + thin border
-        context.fill(x, y, x + PANEL_W, y + height, COL_BG);
-        context.fill(x, y, x + PANEL_W, y + 1, COL_SEP);
-        context.fill(x, y + height - 1, x + PANEL_W, y + height, COL_SEP);
+        context.fill(x, y, x + panelW(), y + height, COL_BG);
+        context.fill(x, y, x + panelW(), y + 1, COL_SEP);
+        context.fill(x, y + height - 1, x + panelW(), y + height, COL_SEP);
         context.fill(x, y, x + 1, y + height, COL_SEP);
-        context.fill(x + PANEL_W - 1, y, x + PANEL_W, y + height, COL_SEP);
+        context.fill(x + panelW() - 1, y, x + panelW(), y + height, COL_SEP);
 
         int curY = y + PAD_Y;
 
@@ -167,7 +173,7 @@ public class ProfitHudRenderer {
         matrices.pushMatrix();
         matrices.translate(x + PAD_X, curY);
         matrices.scale(ITEM_SCALE, ITEM_SCALE);
-        int unscaledW = Math.round((PANEL_W - PAD_X * 2) / ITEM_SCALE);
+        int unscaledW = Math.round((panelW() - PAD_X * 2) / ITEM_SCALE);
         int phRightX  = unscaledW - tr.getWidth(phValue);
         context.drawTextWithShadow(tr, phLabel, 0, 0, COL_TITLE);
         context.drawTextWithShadow(tr, phValue, phRightX, 0, COL_PROFIT);
@@ -213,7 +219,7 @@ public class ProfitHudRenderer {
         matrices.pushMatrix();
         matrices.translate(x + PAD_X, curY);
         matrices.scale(ITEM_SCALE, ITEM_SCALE);
-        int unscaledW = Math.round((PANEL_W - PAD_X * 2) / ITEM_SCALE);
+        int unscaledW = Math.round((panelW() - PAD_X * 2) / ITEM_SCALE);
         int rightX    = unscaledW - tr.getWidth(totalStr);
         ctx.drawTextWithShadow(tr, totalLabel, 0, 0, COL_TITLE);
         ctx.drawTextWithShadow(tr, totalStr, rightX, 0, COL_PROFIT);
@@ -237,7 +243,7 @@ public class ProfitHudRenderer {
         matrices.translate(panelX + PAD_X, y);
         matrices.scale(ITEM_SCALE, ITEM_SCALE);
 
-        int unscaledW    = Math.round((PANEL_W - PAD_X * 2) / ITEM_SCALE);
+        int unscaledW    = Math.round((panelW() - PAD_X * 2) / ITEM_SCALE);
         String countStr  = (count >= 0) ? formatCount(count) + " " : "";
         String profitStr = "+" + formatCoins(profit);
         int rightX       = unscaledW - tr.getWidth(profitStr);
@@ -262,7 +268,7 @@ public class ProfitHudRenderer {
     /** Draws a separator line and returns the Y position after the resulting gap. */
     private int drawSeparator(DrawContext ctx, int x, int curY) {
         curY += SEPARATOR_PRE_GAP;
-        ctx.fill(x + PAD_X, curY, x + PANEL_W - PAD_X, curY + SEP_H, COL_SEP);
+        ctx.fill(x + PAD_X, curY, x + panelW() - PAD_X, curY + SEP_H, COL_SEP);
         curY += SEP_H + SECTION_GAP;
         return curY;
     }
@@ -314,9 +320,14 @@ public class ProfitHudRenderer {
 
     // ── Static dimension helpers (used by Edit HUD screen) ────────────────────
 
-    /** Returns the panel width in pixels (constant, independent of content). */
-    public static int getPanelWidth() {
-        return PANEL_W;
+    /**
+     * Returns the panel width in pixels for the given inventory-overlay scale,
+     * matching the inventory HUD width so both overlays share the same horizontal size.
+     *
+     * @param inventoryScale the current {@link FarmingConfig#inventoryOverlayScale}
+     */
+    public static int getPanelWidth(float inventoryScale) {
+        return InventoryHudRenderer.getOverlayWidth(inventoryScale);
     }
 
     /**

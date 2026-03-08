@@ -1060,8 +1060,13 @@ public class MacroManager {
             return;
         }
 
-        // Hold attack (breaks crops in view)
+        // Hold attack – lets vanilla's handleBlockBreaking() run naturally,
+        // which uses client.crosshairTarget so only the block in the actual
+        // crosshair is broken (fixes breaking of off-crosshair / immature crops).
         client.options.attackKey.setPressed(true);
+        // Register each tick for keystroke CPS display and BPS tracking.
+        KeystrokesTracker.getInstance().registerAttack();
+        com.justfarming.JustFarming.getProfitTracker().registerBlockBreak();
 
         // Directional keys
         client.options.forwardKey.setPressed(forward);
@@ -1194,12 +1199,8 @@ public class MacroManager {
         // keys that the state machine just set so the player presses exactly the
         // user-configured keys (swapped when customFlipped is true).
         applyCustomKeyOverrides();
-
-        // Always drive block breaking directly so the macro works identically
-        // regardless of whether a GUI screen is open or closed.  Vanilla's
-        // handleBlockBreaking() is suppressed by MinecraftClientMixin when the
-        // macro is active, so this is the sole break driver for all states.
-        directBreakBlock();
+        // Block breaking is handled by vanilla's handleBlockBreaking() via the
+        // attack key being held above.  No manual directBreakBlock() call needed.
     }
 
     /**
