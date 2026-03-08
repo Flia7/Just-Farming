@@ -30,7 +30,7 @@ import java.util.Set;
  * Renders highlighted plot borders for Hypixel Skyblock Garden plots that
  * contain pests.
  * <ul>
- *   <li>4 vertical corner lines at each plot corner in white</li>
+ *   <li>4 vertical corner lines at each plot corner</li>
  *   <li>Horizontal rectangle at the bottom (MIN_Y) connecting all corners</li>
  *   <li>Horizontal rectangle at the top (MAX_Y) connecting all corners</li>
  * </ul>
@@ -43,13 +43,19 @@ import java.util.Set;
  */
 public class OverlayRenderer {
 
-    // Colours as packed ARGB ints
-    private static final int COLOR_WHITE    = 0xFFFFFFFF; // white for ESP, tracer, rewarp, plot corners
-    private static final int COLOR_ESP      = COLOR_WHITE;
-    private static final int COLOR_REWARP   = COLOR_WHITE; // white rewarp block outline
-
-    // Label colour (ARGB) – white for "Plot N" text
-    private static final int LABEL_COLOR = COLOR_WHITE;
+    // ── Colour palette (matching the config GUI theme) ────────────────────────
+    /** Bright cyan – plot border outlines and rewarp block highlight. */
+    private static final int COLOR_CYAN         = 0xFF00C8FF;
+    /** Light cyan/mint – pest ESP bounding boxes. */
+    private static final int COLOR_ESP          = 0xFF00D8FF;
+    /** Electric purple (accent) – pest tracer lines. */
+    private static final int COLOR_TRACER       = 0xFF8B5CF6;
+    /** Light lavender white – plot name labels. */
+    private static final int COLOR_LABEL        = 0xFFEAF2FF;
+    /** Cyan – rewarp block outline. */
+    private static final int COLOR_REWARP       = COLOR_CYAN;
+    /** Purple accent – spawn block outline (visually distinct from rewarp). */
+    private static final int COLOR_SPAWN        = 0xFF8B5CF6;
 
     // See-through wireframe ESP: lines rendered with no depth test (through blocks)
     private static final RenderLayer PEST_ESP_SEE_THROUGH_LINES = RenderLayer.of(
@@ -96,6 +102,21 @@ public class OverlayRenderer {
                     .lineWidth(new RenderPhase.LineWidth(OptionalDouble.empty()))
                     .build(false));
 
+    // See-through outline for the spawn block (always visible through walls)
+    private static final RenderLayer SPAWN_SEE_THROUGH_LINES = RenderLayer.of(
+            "spawn_see_through_lines",
+            1536,
+            RenderPipeline.builder(RenderPipelines.RENDERTYPE_LINES_SNIPPET)
+                    .withLocation("just-farming/spawn_see_through_lines")
+                    .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+                    .withDepthWrite(false)
+                    .build(),
+            RenderLayer.MultiPhaseParameters.builder()
+                    .layering(RenderPhase.VIEW_OFFSET_Z_LAYERING)
+                    .target(RenderPhase.ITEM_ENTITY_TARGET)
+                    .lineWidth(new RenderPhase.LineWidth(OptionalDouble.empty()))
+                    .build(false));
+
 
     private final FarmingConfig       config;
     private final PestDetector        pestDetector;
@@ -130,6 +151,18 @@ public class OverlayRenderer {
             renderEspBox(rewarpEntry, rewarpLines,
                     new Box(blockX, blockY, blockZ, blockX + 1, blockY + 1, blockZ + 1),
                     cx, cy, cz, COLOR_REWARP);
+        }
+
+        // ── Spawn block see-through outline (always on when spawn is set) ──────
+        if (config.spawnSet) {
+            double blockX = Math.floor(config.spawnX);
+            double blockY = Math.floor(config.spawnY);
+            double blockZ = Math.floor(config.spawnZ);
+            VertexConsumer spawnLines = consumers.getBuffer(SPAWN_SEE_THROUGH_LINES);
+            MatrixStack.Entry spawnEntry = matrices.peek();
+            renderEspBox(spawnEntry, spawnLines,
+                    new Box(blockX, blockY, blockZ, blockX + 1, blockY + 1, blockZ + 1),
+                    cx, cy, cz, COLOR_SPAWN);
         }
 
         // ── Pest entity ESP & Tracer ──────────────────────────────────────────
@@ -172,7 +205,7 @@ public class OverlayRenderer {
                     double targetZ = (espBox.minZ + espBox.maxZ) / 2.0 - cz;
                     drawLine(entry, tracerLines,
                             tracerStartX, tracerStartY, tracerStartZ,
-                            targetX, targetY, targetZ, COLOR_WHITE);
+                            targetX, targetY, targetZ, COLOR_TRACER);
                 }
             }
         }
@@ -196,7 +229,7 @@ public class OverlayRenderer {
 
         for (Map.Entry<String, double[]> e : validPlots) {
             double[] b = e.getValue();
-            renderPlotBorders(matrices, lineBuffer, b, cx, cy, cz, COLOR_WHITE);
+            renderPlotBorders(matrices, lineBuffer, b, cx, cy, cz, COLOR_CYAN);
         }
 
         // Draw large floating title for each infested plot
@@ -218,7 +251,7 @@ public class OverlayRenderer {
                 matrices.scale(titleScale, -titleScale, titleScale);
                 org.joml.Matrix4f titleMatrix = matrices.peek().getPositionMatrix();
                 float titleHalf = mc.textRenderer.getWidth(title) / 2.0f;
-                mc.textRenderer.draw(title, -titleHalf, 0, LABEL_COLOR, false,
+                mc.textRenderer.draw(title, -titleHalf, 0, COLOR_LABEL, false,
                         titleMatrix, consumers, TextRenderer.TextLayerType.SEE_THROUGH,
                         0, 0xF000F0);
                 matrices.pop();
@@ -228,7 +261,7 @@ public class OverlayRenderer {
 
     /**
      * Renders a cube-style plot outline: four vertical corner lines plus
-     * horizontal rectangles at the top and bottom, all in white.
+     * horizontal rectangles at the top and bottom.
      */
     private void renderPlotBorders(MatrixStack matrices, VertexConsumer lines,
                                    double[] b, double cx, double cy, double cz,

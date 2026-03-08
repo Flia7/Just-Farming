@@ -76,7 +76,7 @@ public class FarmingConfig {
      * the behaviour of FarmHelper's "macro enabled in GUI" option and removes
      * the brief pause that can occur when opening or closing a screen.
      */
-    public boolean macroEnabledInGui = false;
+    public boolean macroEnabledInGui = true;
 
     /**
      * When {@code true}, all Just Farming HUD overlays (inventory, profit, scoreboard)
@@ -202,6 +202,20 @@ public class FarmingConfig {
      * resuming farming (entering the DETECTING state).
      */
     public int mousematResumeDelay = 0;
+
+    // --- Spawn position (/setspawn / /warp garden highlight) ---
+
+    /** Whether a spawn position has been set via {@code /setspawn}. */
+    public boolean spawnSet = false;
+
+    /** Saved spawn X coordinate. */
+    public double spawnX = 0.0;
+
+    /** Saved spawn Y coordinate. */
+    public double spawnY = 0.0;
+
+    /** Saved spawn Z coordinate. */
+    public double spawnZ = 0.0;
 
     // --- Rewarp trigger position ---
 

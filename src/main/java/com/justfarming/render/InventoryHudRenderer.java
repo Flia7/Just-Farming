@@ -45,10 +45,20 @@ public class InventoryHudRenderer {
     /** Background padding around the item grid at scale 1.0. */
     private static final int BG_PAD = 3;
 
-    /** Background colour for dark mode (dark blue matching the GUI theme). */
-    public static final int BG_COLOR_DARK   = 0xA0080C1A;
+    /** Background colour for dark mode – matches the config GUI window background. */
+    public static final int BG_COLOR_DARK   = 0xD2080C1A;
     /** Background colour for light mode. */
-    public static final int BG_COLOR_LIGHT  = 0xA8EEF4F8;
+    public static final int BG_COLOR_LIGHT  = 0xF0EEF4F8;
+
+    /** Border/accent colour for dark mode – cyan matching the config GUI border. */
+    public static final int BORDER_COLOR_DARK  = 0x6000C8FF;
+    /** Border/accent colour for light mode. */
+    public static final int BORDER_COLOR_LIGHT = 0x60203060;
+
+    /** Top accent line colour for dark mode – brighter cyan stripe. */
+    public static final int ACCENT_COLOR_DARK  = 0xA000C8FF;
+    /** Top accent line colour for light mode. */
+    public static final int ACCENT_COLOR_LIGHT = 0xA0203060;
 
     /**
      * Background colour drawn behind each inventory slot (dark mode).
@@ -108,14 +118,24 @@ public class InventoryHudRenderer {
         int scaledGridH  = Math.round(GRID_H  * scale);
         int scaledBgPad  = Math.max(1, Math.round(BG_PAD * scale));
 
-        int bgColor   = dark ? BG_COLOR_DARK  : BG_COLOR_LIGHT;
-        int slotColor = dark ? SLOT_BG_DARK   : SLOT_BG_LIGHT;
+        int bgColor     = dark ? BG_COLOR_DARK    : BG_COLOR_LIGHT;
+        int slotColor   = dark ? SLOT_BG_DARK     : SLOT_BG_LIGHT;
+        int borderColor = dark ? BORDER_COLOR_DARK : BORDER_COLOR_LIGHT;
+        int accentColor = dark ? ACCENT_COLOR_DARK : ACCENT_COLOR_LIGHT;
+
+        int totalW = scaledGridW + 2 * scaledBgPad;
+        int totalH = scaledGridH + 2 * scaledBgPad;
 
         // Draw a semi-transparent background behind the grid.
-        context.fill(bgX, bgY,
-                bgX + scaledGridW + 2 * scaledBgPad,
-                bgY + scaledGridH + 2 * scaledBgPad,
-                bgColor);
+        context.fill(bgX, bgY, bgX + totalW, bgY + totalH, bgColor);
+
+        // Top accent stripe (1px) – bright cyan line matching the config GUI header.
+        context.fill(bgX, bgY, bgX + totalW, bgY + 1, accentColor);
+
+        // Thin border outline around the remaining three sides (accent covers top).
+        context.fill(bgX,              bgY + totalH - 1, bgX + totalW, bgY + totalH,     borderColor); // bottom
+        context.fill(bgX,              bgY,          bgX + 1,          bgY + totalH,     borderColor); // left
+        context.fill(bgX + totalW - 1, bgY,          bgX + totalW,     bgY + totalH,     borderColor); // right
 
         // Items are rendered inside the background, offset by scaledBgPad.
         int startX = bgX + scaledBgPad;

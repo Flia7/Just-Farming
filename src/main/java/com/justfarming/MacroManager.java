@@ -368,6 +368,28 @@ public class MacroManager {
         return state == MacroState.VISITING;
     }
 
+    /**
+     * Returns {@code true} when the visitor routine should be started at the current rewarp.
+     *
+     * <p>If the Hypixel Garden tab list reports a "Visitors: N" entry, the count is compared
+     * to {@link com.justfarming.config.FarmingConfig#visitorsMinCount}: the routine only
+     * runs when {@code N >= minCount}.  If the tab list does not contain a visitor count
+     * (e.g. the widget is not present), the routine always runs so no visits are missed.
+     */
+    private boolean shouldRunVisitorRoutine() {
+        if (!config.visitorsEnabled || visitorManager == null) return false;
+        if (pestDetector != null && pestDetector.isVisitorCountDetected()) {
+            int minCount = Math.max(1, config.visitorsMinCount);
+            int tabCount = pestDetector.getVisitorCount();
+            if (tabCount < minCount) {
+                LOGGER.info("[Just Farming] Tab list shows {} visitor(s), fewer than minimum {}; skipping visitor routine.",
+                        tabCount, minCount);
+                return false;
+            }
+        }
+        return true;
+    }
+
     /** Returns {@code true} if freelook is active (enabled regardless of macro state). */
     public boolean isFreelookActive() {
         return freelookEnabled;
@@ -500,6 +522,33 @@ public class MacroManager {
     }
 
     /**
+     * Save the player's current block position as the garden spawn waypoint.
+     * The block is highlighted in the world like the rewarp block.
+     * Called by the {@code /just setspawn} command.
+     */
+    public void setSpawnHere() {
+        if (client.player != null) {
+            config.spawnX   = client.player.getX();
+            config.spawnY   = client.player.getY();
+            config.spawnZ   = client.player.getZ();
+            config.spawnSet = true;
+            config.save();
+            LOGGER.info("[Just Farming] Spawn position set to {}, {}, {}.",
+                    config.spawnX, config.spawnY, config.spawnZ);
+        }
+    }
+
+    /**
+     * Clear the saved spawn position.
+     * Called by the {@code /just setspawn clear} command.
+     */
+    public void clearSpawn() {
+        config.spawnSet = false;
+        config.save();
+        LOGGER.info("[Just Farming] Spawn position cleared.");
+    }
+
+    /**
      * Save the player's current position as the rewarp waypoint.
      * Every time the macro reaches this position it will automatically
      * send {@code /warp garden}.  This is called by the {@code /just rewarp}
@@ -598,7 +647,7 @@ public class MacroManager {
             if (pestKillerManager != null && pestKillerManager.isDone()) {
                 waitingForPestKiller = false;
                 pestKillerManager.reset();
-                if (config.visitorsEnabled && visitorManager != null) {
+                if (shouldRunVisitorRoutine()) {
                     // Pest killer already sent /warp garden; visitors will /tptoplot barn.
                     waitingForVisitors = true;
                     // Keep cursor in its current state (unlocked if unlockedMouseEnabled).
@@ -673,7 +722,7 @@ public class MacroManager {
                                     false);
                         }
                         // Fall through to visitor or farm as if pest killer were not enabled.
-                        if (config.visitorsEnabled && visitorManager != null) {
+                        if (shouldRunVisitorRoutine()) {
                             running = false;
                             state = MacroState.IDLE;
                             lastRotationTime = 0;
@@ -701,7 +750,7 @@ public class MacroManager {
                     // routine (the MouseMixin suppresses lockCursor while waiting).
                     pestKillerManager.start(new ArrayList<>(pestPlots));
                     LOGGER.info("[Just Farming] Pest killer enabled – stopping farming macro, starting pest killer routine.");
-                } else if (config.visitorsEnabled && visitorManager != null) {
+                } else if (shouldRunVisitorRoutine()) {
                     // Stop the farming macro and hand off to the visitor routine.
                     // The macro will automatically restart once visitors are done.
                     running = false;

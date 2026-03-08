@@ -57,6 +57,10 @@ public class PestDetector {
 
     // ── Pest data ─────────────────────────────────────────────────────────────
 
+    /** Tab list "Visitors" widget: {@code "  Visitors: 3"} */
+    private static final Pattern VISITOR_COUNT_PATTERN =
+            Pattern.compile("\\s*Visitors:\\s*(\\d+)");
+
     /** Tab list "Pests" widget: {@code "  Plots: 4, 12, 13, 18, 20"} */
     private static final Pattern INFESTED_PLOTS_PATTERN =
             Pattern.compile("\\s*Plots:\\s*(.+)");
@@ -83,6 +87,12 @@ public class PestDetector {
     /** Total pest count as reported by the scoreboard. */
     private int totalPests = 0;
 
+    /** Number of visitors currently at the barn, as reported by the tab list. */
+    private int visitorCount = 0;
+
+    /** Whether a "Visitors: N" line was found in the tab list during the most recent update. */
+    private boolean visitorCountDetected = false;
+
     /** Whether the player is currently in the Hypixel Skyblock Garden. */
     private boolean inGarden = false;
 
@@ -96,6 +106,8 @@ public class PestDetector {
         pestPlots.clear();
         pestCounts.clear();
         totalPests = 0;
+        visitorCount = 0;
+        visitorCountDetected = false;
         inGarden = false;
         if (client.player == null || client.player.networkHandler == null) return;
 
@@ -141,6 +153,8 @@ public class PestDetector {
         pestCounts.clear();
         newlyInfestedPlots.clear();
         totalPests = 0;
+        visitorCount = 0;
+        visitorCountDetected = false;
         inGarden = false;
     }
 
@@ -162,6 +176,16 @@ public class PestDetector {
     /** Returns the total pest count from the scoreboard. */
     public int getTotalPests() {
         return totalPests;
+    }
+
+    /** Returns the visitor count from the tab list (0 if not detected). */
+    public int getVisitorCount() {
+        return visitorCount;
+    }
+
+    /** Returns {@code true} if a "Visitors: N" entry was found in the tab list this tick. */
+    public boolean isVisitorCountDetected() {
+        return visitorCountDetected;
     }
 
     /** Returns {@code true} when the scoreboard/tab list confirms the player is in the Garden. */
@@ -198,6 +222,17 @@ public class PestDetector {
         // Garden detection on stripped text (handles modern component text).
         if (GARDEN_STRIPPED.matcher(clean).find()) {
             inGarden = true;
+        }
+
+        // Tab-list "Visitors: N" widget.
+        Matcher visitorMatcher = VISITOR_COUNT_PATTERN.matcher(clean);
+        if (visitorMatcher.matches()) {
+            visitorCountDetected = true;
+            try {
+                visitorCount = Integer.parseInt(visitorMatcher.group(1));
+            } catch (NumberFormatException ignored) {
+            }
+            return;
         }
 
         // Tab-list "Plots: X, Y, Z" widget.

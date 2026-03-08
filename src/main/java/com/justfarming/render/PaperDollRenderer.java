@@ -167,8 +167,18 @@ public class PaperDollRenderer {
         int panelY = invHudY;
 
         // ── Background ────────────────────────────────────────────────────────
-        int bgColor = config.darkMode ? InventoryHudRenderer.BG_COLOR_DARK : InventoryHudRenderer.BG_COLOR_LIGHT;
+        int bgColor     = config.darkMode ? InventoryHudRenderer.BG_COLOR_DARK   : InventoryHudRenderer.BG_COLOR_LIGHT;
+        int borderColor = config.darkMode ? InventoryHudRenderer.BORDER_COLOR_DARK : InventoryHudRenderer.BORDER_COLOR_LIGHT;
+        int accentColor = config.darkMode ? InventoryHudRenderer.ACCENT_COLOR_DARK  : InventoryHudRenderer.ACCENT_COLOR_LIGHT;
         context.fill(panelX, panelY, panelX + panelW, panelY + panelH, bgColor);
+
+        // Top accent stripe (1px) – matching the inventory HUD accent.
+        context.fill(panelX, panelY, panelX + panelW, panelY + 1, accentColor);
+
+        // Thin border outline on the remaining three sides (accent covers top).
+        context.fill(panelX,              panelY + panelH - 1, panelX + panelW,     panelY + panelH,     borderColor);
+        context.fill(panelX,              panelY,              panelX + 1,          panelY + panelH,     borderColor);
+        context.fill(panelX + panelW - 1, panelY,              panelX + panelW,     panelY + panelH,     borderColor);
 
         // ── Player model ──────────────────────────────────────────────────────
         // Entity display size: 45.5% (70% × 65%) of the model area height; minimum 4 px.
