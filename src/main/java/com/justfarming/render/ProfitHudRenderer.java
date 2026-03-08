@@ -154,7 +154,9 @@ public class ProfitHudRenderer {
 
         TextRenderer tr = mc.textRenderer;
         // Anchor the profit panel directly below the inventory HUD (and paper-doll
-        // panel) so all three widgets appear as one connected block.
+        // panel) so all three widgets appear as one connected block.  The
+        // inventoryOverlayX/Y values are used even when inventoryOverlayEnabled is
+        // false so the user's configured position is still respected.
         int x = config.inventoryOverlayX;
         int y = config.inventoryOverlayY
                 + InventoryHudRenderer.getOverlayHeight(config.inventoryOverlayScale);

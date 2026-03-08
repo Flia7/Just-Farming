@@ -110,14 +110,13 @@ public class ScoreboardHudRenderer {
         for (ScoreboardEntry entry : entries) {
             lineTexts.add(getEntryDisplayLine(sb, entry));
         }
-        // Always show the macro status line: replace last entry if present,
-        // otherwise append it so it is always visible.
-        String statusLine = macroStatus != null && !macroStatus.isBlank()
-                ? macroStatus : "Idle";
+        // Replace the last scoreboard entry (date/server lobby on Hypixel) with
+        // the current macro status.  getMacroStatusText() always returns a
+        // non-null, non-blank string so no fallback is needed here.
         if (!lineTexts.isEmpty()) {
-            lineTexts.set(lineTexts.size() - 1, statusLine);
+            lineTexts.set(lineTexts.size() - 1, macroStatus);
         } else {
-            lineTexts.add(statusLine);
+            lineTexts.add(macroStatus);
         }
 
         // Find widest content line

@@ -64,9 +64,11 @@ public class PestDetector {
      *   <li>New: {@code "  Visitors: (5) 5"} – parenthesised total followed by
      *       the displayed count; we capture the trailing number.</li>
      * </ul>
+     * The pattern is anchored with {@code ^} so {@code find()} only matches at
+     * the very start of the stripped-and-trimmed line.
      */
     private static final Pattern VISITOR_COUNT_PATTERN =
-            Pattern.compile("\\s*Visitors:\\s*(?:\\([^)]*\\)\\s*)?(\\d+)");
+            Pattern.compile("^\\s*Visitors:\\s*(?:\\([^)]*\\)\\s*)?(\\d+)");
 
     /** Tab list "Pests" widget: {@code "  Plots: 4, 12, 13, 18, 20"} */
     private static final Pattern INFESTED_PLOTS_PATTERN =
