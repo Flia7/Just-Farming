@@ -1,85 +1,82 @@
 package com.justfarming.render;
 
+import com.justfarming.CropType;
 import com.justfarming.config.FarmingConfig;
 import com.justfarming.profit.FarmingProfitTracker;
 import com.justfarming.profit.FarmingProfitTracker.ProfitEntry;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.text.Text;
 
 import java.text.NumberFormat;
 import java.util.List;
 import java.util.Locale;
 
 /**
- * Renders the Farming Profit and (optionally) Pest Profit HUD overlay.
+ * Renders the Farming Profit HUD overlay.
  *
  * <p>Layout:
  * <pre>
- *  ┌──────────────────────────────────────┐
- *  │  Farming Profit                      │  ← title (normal scale, white)
- *  │  1,234 Sugar Cane           +4,936   │  ← items (smaller, gray)
- *  │    567 Wheat                +3,402   │
- *  │     23 Enchanted Wheat     +22,080   │
- *  │     45 Carrot                 +135   │
- *  │  Other                        +890   │
- *  │  Total Farming Profit       +31,443  │  ← total (white)
- *  ├──────────────────────────────────────┤
- *  │  Pest Profit                         │  ← second title (optional)
- *  │  ...                                 │
- *  │  Total Pest Profit          +1,234   │
- *  ├──────────────────────────────────────┤
- *  │  Profit/Hour                         │  ← section header (medium)
- *  │  Farming: 123,456/h                  │
- *  │  Pests:    23,456/h                  │  ← optional
- *  └──────────────────────────────────────┘
+ *  ┌─────────────────────────────────────────┐
+ *  │  Cocoa Beans (20m)                      │  ← crop title (crop colour)
+ *  │  BPS: 368.0                             │  ← average blocks/sec (item scale)
+ *  ├─────────────────────────────────────────┤
+ *  │  Farming                                │  ← sub-title (white)
+ *  │  1,234 Cocoa Beans          +3,702      │  ← items (item scale, grey)
+ *  │    567 Enchanted Cocoa B.  +272,160     │
+ *  │  Other                          +12     │
+ *  │  Total Farming Profit       +275,874    │  ← total (item scale, white)
+ *  ├─────────────────────────────────────────┤
+ *  │  Pests                                  │  ← sub-title (white, optional)
+ *  │  120 Compost                   +480     │
+ *  │  Total Pest Profit             +480     │
+ *  ├─────────────────────────────────────────┤
+ *  │  Stats                                  │  ← sub-title (white)
+ *  │  Profit/Hour:          +276,354/h       │  ← combined farming+pest (item scale)
+ *  └─────────────────────────────────────────┘
  * </pre>
- *
- * <p>Colours and background match the mod's existing aesthetic
- * ({@link InventoryHudRenderer#BG_COLOR}, purple accent {@code 0xFF7C4DFF}).
  */
 public class ProfitHudRenderer {
 
     // ── Layout constants ─────────────────────────────────────────────────────
 
     /** Panel width in pixels. */
-    private static final int PANEL_W   = 200;
+    private static final int PANEL_W     = 200;
     /** Horizontal padding inside the panel. */
-    private static final int PAD_X     = 6;
+    private static final int PAD_X       = 6;
     /** Vertical padding at the top and bottom of the panel. */
-    private static final int PAD_Y     = 5;
-    /** Vertical spacing between rows (pixels). */
-    private static final int LINE_H    = 10;
-    /** Extra pixels added above section titles. */
-    private static final int SECTION_GAP = 5;
-    /** Separator line height in pixels. */
-    private static final int SEP_H     = 1;
+    private static final int PAD_Y       = 5;
+    /** Vertical spacing between full-scale rows. */
+    private static final int LINE_H      = 10;
+    /** Extra vertical gap inserted after separator lines. */
+    private static final int SECTION_GAP = 4;
+    /** Separator line height. */
+    private static final int SEP_H       = 1;
+    /** Small gap inserted before a separator line (visual breathing room). */
+    private static final int SEPARATOR_PRE_GAP = 2;
 
-    // ── Colour palette (same theme as the rest of the mod) ───────────────────
+    // ── Colour palette ─────────────────────────────────────────────────────────
 
     /** Semi-transparent black panel background. */
-    private static final int COL_BG        = 0xA8000000;
+    private static final int COL_BG     = 0xA8000000;
     /** Separator / border tint. */
-    private static final int COL_SEP       = 0x28FFFFFF;
-    /** White – used for titles and totals. */
-    private static final int COL_TITLE     = 0xFFFFFFFF;
-    /** Light grey – used for individual item rows. */
-    private static final int COL_ITEM      = 0xFFBBBBBB;
+    private static final int COL_SEP    = 0x28FFFFFF;
+    /** White – sub-titles. */
+    private static final int COL_TITLE  = 0xFFFFFFFF;
+    /** Light grey – individual item rows. */
+    private static final int COL_ITEM   = 0xFFBBBBBB;
     /** Green – positive profit values. */
-    private static final int COL_PROFIT    = 0xFF55FF55;
-    /** Yellow – profit/hour header and values. */
-    private static final int COL_PH_HEADER = 0xFFFFDD55;
-    /** "Other" row text colour (slightly dimmer than items). */
-    private static final int COL_OTHER     = 0xFF999999;
+    private static final int COL_PROFIT = 0xFF55FF55;
+    /** "Other" row colour (dimmer). */
+    private static final int COL_OTHER  = 0xFF999999;
 
-    /** Number of top items to show individually before collapsing to "Other". */
+    /** Maximum individual item rows before collapsing the rest into "Other". */
     private static final int MAX_ITEMS = 4;
 
-    // ── Scale for the item rows (smaller than titles) ────────────────────────
-
     /**
-     * Scale applied to item-row and value text so they appear smaller than
-     * the full-size title and total lines.
+     * Scale applied to item rows (names, counts, profits, totals) so they
+     * appear smaller than the full-size sub-title lines.
      */
     private static final float ITEM_SCALE = 0.85f;
 
@@ -110,204 +107,205 @@ public class ProfitHudRenderer {
         int x = config.profitHudX;
         int y = config.profitHudY;
 
-        // ── Measure panel height ──────────────────────────────────────────────
-        int height = computeHeight(tracker, tr);
+        int height = computeHeight(tracker);
 
-        // ── Background ────────────────────────────────────────────────────────
+        // Background + thin border
         context.fill(x, y, x + PANEL_W, y + height, COL_BG);
-        // thin border
-        context.fill(x, y, x + PANEL_W, y + 1,          COL_SEP);
+        context.fill(x, y, x + PANEL_W, y + 1, COL_SEP);
         context.fill(x, y + height - 1, x + PANEL_W, y + height, COL_SEP);
-        context.fill(x, y, x + 1,      y + height,  COL_SEP);
+        context.fill(x, y, x + 1, y + height, COL_SEP);
         context.fill(x + PANEL_W - 1, y, x + PANEL_W, y + height, COL_SEP);
 
         int curY = y + PAD_Y;
 
-        // ── Section 1: Farming Profit ─────────────────────────────────────────
-        curY = drawSection(context, tr, x, curY,
-                "Farming Profit",
-                tracker.getFarmingEntries(),
-                tracker.getFarmingProfit(),
+        // ── Crop title: "Cocoa Beans (20m)" in the crop's colour ─────────────
+        CropType crop = config.selectedCrop != null ? config.selectedCrop : CropType.COCOA_BEANS;
+        int cropColor = crop.getDisplayColor();
+        String cropName = Text.translatable(crop.getTranslationKey()).getString();
+        String timeStr  = formatElapsedTime(tracker.getSessionElapsedMs());
+        String titleStr = cropName + " (" + timeStr + ")";
+        context.drawTextWithShadow(tr, titleStr, x + PAD_X, curY, cropColor);
+        curY += LINE_H;
+
+        // ── BPS row (item scale) ──────────────────────────────────────────────
+        drawScaledText(context, tr, x + PAD_X, curY,
+                "BPS: " + formatBps(tracker.getAverageBps()), COL_ITEM);
+        curY += scaledLineH();
+
+        // ── Farming sub-section ───────────────────────────────────────────────
+        curY = drawSeparator(context, x, curY);
+        context.drawTextWithShadow(tr, "Farming", x + PAD_X, curY, COL_TITLE);
+        curY += LINE_H;
+        curY = drawItemsAndTotal(context, tr, x, curY,
+                tracker.getFarmingEntries(), tracker.getFarmingProfit(),
                 "Total Farming Profit");
 
-        // ── Section 2: Pest Profit (optional) ────────────────────────────────
+        // ── Pests sub-section (optional) ──────────────────────────────────────
         if (config.pestProfitEnabled) {
-            // Separator
-            curY += SEP_H + 1;
-            context.fill(x + PAD_X, curY, x + PANEL_W - PAD_X, curY + SEP_H, COL_SEP);
-            curY += SEP_H + SECTION_GAP;
-
-            curY = drawSection(context, tr, x, curY,
-                    "Pest Profit",
-                    tracker.getPestEntries(),
-                    tracker.getPestProfit(),
+            curY = drawSeparator(context, x, curY);
+            context.drawTextWithShadow(tr, "Pests", x + PAD_X, curY, COL_TITLE);
+            curY += LINE_H;
+            curY = drawItemsAndTotal(context, tr, x, curY,
+                    tracker.getPestEntries(), tracker.getPestProfit(),
                     "Total Pest Profit");
         }
 
-        // ── Section 3: Profit/Hour ────────────────────────────────────────────
-        curY += SEP_H + 1;
-        context.fill(x + PAD_X, curY, x + PANEL_W - PAD_X, curY + SEP_H, COL_SEP);
-        curY += SEP_H + SECTION_GAP;
-
-        drawProfitPerHour(context, tr, x, curY, tracker);
-    }
-
-    // ── Section renderer ──────────────────────────────────────────────────────
-
-    /**
-     * Draws a single profit section (title + items + total) and returns the Y
-     * coordinate after the last line drawn.
-     */
-    private int drawSection(DrawContext ctx, TextRenderer tr,
-                            int x, int curY,
-                            String title,
-                            List<ProfitEntry> entries,
-                            double totalProfit,
-                            String totalLabel) {
-
-        // Title (full scale, white)
-        ctx.drawTextWithShadow(tr, title, x + PAD_X, curY, COL_TITLE);
+        // ── Stats sub-section ─────────────────────────────────────────────────
+        curY = drawSeparator(context, x, curY);
+        context.drawTextWithShadow(tr, "Stats", x + PAD_X, curY, COL_TITLE);
         curY += LINE_H;
 
-        // Item rows (small scale, grey)
+        // Combined Profit/Hour (farming + pests) at item scale
+        double combinedPh = tracker.getFarmingProfitPerHour()
+                + (config.pestProfitEnabled ? tracker.getPestProfitPerHour() : 0.0);
+        String phLabel = "Profit/Hour:";
+        String phValue = "+" + formatCoins(combinedPh) + "/h";
+        var matrices = context.getMatrices();
+        matrices.pushMatrix();
+        matrices.translate(x + PAD_X, curY);
+        matrices.scale(ITEM_SCALE, ITEM_SCALE);
+        int unscaledW = Math.round((PANEL_W - PAD_X * 2) / ITEM_SCALE);
+        int phRightX  = unscaledW - tr.getWidth(phValue);
+        context.drawTextWithShadow(tr, phLabel, 0, 0, COL_TITLE);
+        context.drawTextWithShadow(tr, phValue, phRightX, 0, COL_PROFIT);
+        matrices.popMatrix();
+    }
+
+    // ── Section helpers ───────────────────────────────────────────────────────
+
+    /**
+     * Draws item rows then the total line for one section.
+     * Both item rows and the total are drawn at {@link #ITEM_SCALE}.
+     *
+     * @return the Y coordinate immediately after the last drawn row
+     */
+    private int drawItemsAndTotal(DrawContext ctx, TextRenderer tr,
+                                  int x, int curY,
+                                  List<ProfitEntry> entries, double totalProfit,
+                                  String totalLabel) {
         double otherProfit = 0;
         int shown = 0;
         for (ProfitEntry entry : entries) {
             if (shown >= MAX_ITEMS) {
                 otherProfit += entry.profit();
             } else {
-                drawItemRow(ctx, tr, x, curY, entry.displayName(),
-                        entry.count(), entry.profit(), COL_ITEM);
+                drawItemRow(ctx, tr, x, curY,
+                        entry.displayName(), entry.count(), entry.profit(), COL_ITEM);
                 curY += scaledLineH();
                 shown++;
             }
         }
-
-        // "Other" row (if any items were collapsed)
         if (otherProfit > 0) {
             drawItemRow(ctx, tr, x, curY, "Other", -1, otherProfit, COL_OTHER);
             curY += scaledLineH();
         }
-
-        // Total line (full scale, white)
         if (entries.isEmpty()) {
-            // Show a placeholder when no items have been tracked yet
-            ctx.drawTextWithShadow(tr, "  No items yet", x + PAD_X, curY, COL_OTHER);
-            curY += LINE_H;
+            drawScaledText(ctx, tr, x + PAD_X, curY, "  No items yet", COL_OTHER);
+            curY += scaledLineH();
         }
 
-        String totalStr = formatCoins(totalProfit);
-        String label    = totalLabel;
-        int labelW      = tr.getWidth(label);
-        int valueW      = tr.getWidth("+" + totalStr);
-        int rightEdge   = x + PANEL_W - PAD_X;
-
-        ctx.drawTextWithShadow(tr, label, x + PAD_X, curY, COL_TITLE);
-        ctx.drawTextWithShadow(tr, "+" + totalStr,
-                rightEdge - valueW, curY, COL_PROFIT);
-        curY += LINE_H;
+        // Total line (item scale) – white label, green value right-aligned
+        String totalStr = "+" + formatCoins(totalProfit);
+        var matrices = ctx.getMatrices();
+        matrices.pushMatrix();
+        matrices.translate(x + PAD_X, curY);
+        matrices.scale(ITEM_SCALE, ITEM_SCALE);
+        int unscaledW = Math.round((PANEL_W - PAD_X * 2) / ITEM_SCALE);
+        int rightX    = unscaledW - tr.getWidth(totalStr);
+        ctx.drawTextWithShadow(tr, totalLabel, 0, 0, COL_TITLE);
+        ctx.drawTextWithShadow(tr, totalStr, rightX, 0, COL_PROFIT);
+        matrices.popMatrix();
+        curY += scaledLineH();
 
         return curY;
     }
 
-    // ── Item row renderer ─────────────────────────────────────────────────────
-
     /**
-     * Draws one item row at a reduced scale:
-     * {@code "  1,234 Sugar Cane                +4,936"}.
+     * Draws one item row at reduced scale:
+     * {@code "  1,234 Sugar Cane   +4,936"}.
      *
-     * @param count  item count, or {@code -1} to omit the count (for "Other")
+     * @param count item count, or {@code -1} to omit the count (for "Other")
      */
     private void drawItemRow(DrawContext ctx, TextRenderer tr,
                              int panelX, int y,
                              String name, long count, double profit, int textColor) {
         var matrices = ctx.getMatrices();
         matrices.pushMatrix();
+        matrices.translate(panelX + PAD_X, y);
+        matrices.scale(ITEM_SCALE, ITEM_SCALE);
 
-        // Scale around the left edge of this row
-        float s = ITEM_SCALE;
-        int absX = panelX + PAD_X;
-        int absY = y;
-        matrices.translate(absX, absY);
-        matrices.scale(s, s);
-
-        int unscaledW    = Math.round((PANEL_W - PAD_X * 2) / s);
+        int unscaledW    = Math.round((PANEL_W - PAD_X * 2) / ITEM_SCALE);
         String countStr  = (count >= 0) ? formatCount(count) + " " : "";
-        String rowLeft   = countStr + name;
         String profitStr = "+" + formatCoins(profit);
-        int profitW      = tr.getWidth(profitStr);
-        int rightX       = unscaledW - profitW;
+        int rightX       = unscaledW - tr.getWidth(profitStr);
 
-        // Draw item name (with count)
-        ctx.drawTextWithShadow(tr, rowLeft, 0, 0, textColor);
-        // Draw profit value right-aligned
+        ctx.drawTextWithShadow(tr, countStr + name, 0, 0, textColor);
         ctx.drawTextWithShadow(tr, profitStr, rightX, 0, COL_PROFIT);
 
         matrices.popMatrix();
     }
 
-    // ── Profit / Hour section ─────────────────────────────────────────────────
-
-    private void drawProfitPerHour(DrawContext ctx, TextRenderer tr,
-                                   int x, int curY,
-                                   FarmingProfitTracker tracker) {
-        // "Profit/Hour" header – one step smaller than section titles but
-        // larger than item rows; we use full scale with a distinct colour.
-        ctx.drawTextWithShadow(tr, "Profit/Hour", x + PAD_X, curY, COL_PH_HEADER);
-        curY += LINE_H;
-
-        // Farming value row (item-scale)
-        double farmPH = tracker.getFarmingProfitPerHour();
-        drawItemRow(ctx, tr, x, curY,
-                "Farming:", -1, farmPH, COL_ITEM);
-        curY += scaledLineH();
-
-        // Pest value row (item-scale) – only shown when pest profit enabled
-        if (config.pestProfitEnabled) {
-            double pestPH = tracker.getPestProfitPerHour();
-            drawItemRow(ctx, tr, x, curY, "Pests:", -1, pestPH, COL_ITEM);
-        }
+    /** Draws a single text string at item scale (no right-align). */
+    private void drawScaledText(DrawContext ctx, TextRenderer tr,
+                                int x, int y, String text, int color) {
+        var matrices = ctx.getMatrices();
+        matrices.pushMatrix();
+        matrices.translate(x, y);
+        matrices.scale(ITEM_SCALE, ITEM_SCALE);
+        ctx.drawTextWithShadow(tr, text, 0, 0, color);
+        matrices.popMatrix();
     }
 
-    // ── Height calculation (for background rectangle) ────────────────────────
+    /** Draws a separator line and returns the Y position after the resulting gap. */
+    private int drawSeparator(DrawContext ctx, int x, int curY) {
+        curY += SEPARATOR_PRE_GAP;
+        ctx.fill(x + PAD_X, curY, x + PANEL_W - PAD_X, curY + SEP_H, COL_SEP);
+        curY += SEP_H + SECTION_GAP;
+        return curY;
+    }
 
-    private int computeHeight(FarmingProfitTracker tracker, TextRenderer tr) {
+    // ── Height calculation ────────────────────────────────────────────────────
+
+    private int computeHeight(FarmingProfitTracker tracker) {
         int h = PAD_Y * 2;
 
-        // Section 1: Farming
-        h += sectionHeight(tracker.getFarmingEntries());
+        // Crop title + BPS
+        h += LINE_H;            // crop name + time
+        h += scaledLineH();     // BPS row
 
-        // Section 2: Pest (optional)
+        // Separator + Farming subtitle + items + total
+        h += separatorH();
+        h += LINE_H;            // "Farming" label
+        h += sectionItemsH(tracker.getFarmingEntries());
+
+        // Pests (optional)
         if (config.pestProfitEnabled) {
-            h += SEP_H + 1 + SECTION_GAP;         // separator
-            h += sectionHeight(tracker.getPestEntries());
+            h += separatorH();
+            h += LINE_H;        // "Pests" label
+            h += sectionItemsH(tracker.getPestEntries());
         }
 
-        // Profit/hour separator + header + farming row [+ pest row]
-        h += SEP_H + 1 + SECTION_GAP;
-        h += LINE_H;                                // "Profit/Hour" header
-        h += scaledLineH();                         // Farming: row
-        if (config.pestProfitEnabled) {
-            h += scaledLineH();                     // Pests: row
-        }
+        // Separator + Stats + profit/hour row
+        h += separatorH();
+        h += LINE_H;            // "Stats" label
+        h += scaledLineH();     // Profit/Hour row
 
         return h;
     }
 
-    private int sectionHeight(List<ProfitEntry> entries) {
-        int h = LINE_H;   // title
+    /** Pixel height for all item rows + total line of one section. */
+    private static int sectionItemsH(List<ProfitEntry> entries) {
         int shown = Math.min(entries.size(), MAX_ITEMS);
-        h += shown * scaledLineH();
-        boolean hasOther = entries.size() > MAX_ITEMS;
-        if (hasOther) h += scaledLineH();
-        if (entries.isEmpty()) h += LINE_H; // "No items yet" placeholder
-        h += LINE_H;      // total line
+        int h = shown * scaledLineH();
+        if (entries.size() > MAX_ITEMS) h += scaledLineH(); // Other row
+        if (entries.isEmpty())          h += scaledLineH(); // "No items yet"
+        h += scaledLineH();                                  // total line
         return h;
     }
 
-    /** Pixel height of one item row at {@link #ITEM_SCALE}. */
-    private static int scaledLineH() {
-        return Math.round(LINE_H * ITEM_SCALE) + 1;
+    /** Pixel height consumed by one separator (gap before + line + gap after). */
+    private static int separatorH() {
+        return SEPARATOR_PRE_GAP + SEP_H + SECTION_GAP;
     }
 
     // ── Formatting helpers ────────────────────────────────────────────────────
@@ -316,12 +314,32 @@ public class ProfitHudRenderer {
             NumberFormat.getIntegerInstance(Locale.US);
 
     static String formatCoins(double coins) {
-        // Profit values are always non-negative in this context (NPC price × count).
         if (coins <= 0) return "0";
         return NUM_FMT.format(Math.round(coins));
     }
 
     static String formatCount(long count) {
         return NUM_FMT.format(count);
+    }
+
+    static String formatBps(double bps) {
+        if (bps <= 0) return "0.0";
+        return String.format(Locale.US, "%.1f", bps);
+    }
+
+    /** Formats elapsed milliseconds as "Xm" or "Xh Ym". */
+    static String formatElapsedTime(long ms) {
+        long totalSeconds = ms / 1000L;
+        long minutes = totalSeconds / 60L;
+        long hours   = minutes / 60L;
+        if (hours > 0) {
+            return hours + "h " + (minutes % 60) + "m";
+        }
+        return minutes + "m";
+    }
+
+    /** Pixel height of one item row at {@link #ITEM_SCALE}. */
+    private static int scaledLineH() {
+        return Math.round(LINE_H * ITEM_SCALE) + 1;
     }
 }

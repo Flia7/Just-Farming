@@ -83,6 +83,10 @@ public final class VisitorNpcPrices {
         NPC_PRICES.put("pumpkin seeds",             3.0);
         NPC_PRICES.put("melon seeds",               3.0);
         NPC_PRICES.put("beetroot seeds",            3.0);
+        // String (dropped by spider pests).
+        NPC_PRICES.put("string",                    2.0);
+        // Stardust (rare pest drop, tradeable item).
+        NPC_PRICES.put("stardust",                  1.0);
     }
 
     /**

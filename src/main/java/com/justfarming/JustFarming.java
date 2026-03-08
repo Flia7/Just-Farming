@@ -360,6 +360,7 @@ public class JustFarming implements ClientModInitializer {
             if (pestKillerManager.isActive()) {
                 pestKillerManager.reset();
             }
+            profitTracker.reset();
             pestKillerShouldResumeMacro = false;
             LOGGER.info("[Just Farming] Disconnected – all macros stopped.");
         });
