@@ -8,6 +8,7 @@ import net.minecraft.client.Mouse;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(Mouse.class)
@@ -56,6 +57,26 @@ public class MouseMixin {
         FarmingConfig cfg = JustFarming.getConfig();
         if (mm != null && cfg != null && cfg.unlockedMouseEnabled && mm.isAnyMacroStateActive()) {
             ci.cancel();
+        }
+    }
+
+    /**
+     * When the macro is running with "unlock mouse" enabled, the GLFW cursor is
+     * free (not captured), which causes {@code MinecraftClient.tick()} to pass
+     * {@code false} to {@code handleBlockBreaking} (because
+     * {@code attackKey.isPressed() && mouse.isCursorLocked()} evaluates to
+     * {@code false}).  Returning {@code true} here makes the block-breaking path
+     * treat the cursor as locked so that holding the attack key keeps breaking
+     * crops normally.  Actual physical mouse movement is still suppressed by
+     * {@code EntityMixin.changeLookDirection}, so the camera never spins.
+     */
+    @Inject(method = "isCursorLocked", at = @At("RETURN"), cancellable = true)
+    private void onIsCursorLocked(CallbackInfoReturnable<Boolean> cir) {
+        if (cir.getReturnValue()) return; // already locked — nothing to do
+        MacroManager mm = JustFarming.getMacroManager();
+        FarmingConfig cfg = JustFarming.getConfig();
+        if (mm != null && cfg != null && cfg.unlockedMouseEnabled && mm.isAnyMacroStateActive()) {
+            cir.setReturnValue(true);
         }
     }
 }

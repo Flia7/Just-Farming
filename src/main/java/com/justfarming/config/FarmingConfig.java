@@ -71,14 +71,6 @@ public class FarmingConfig {
     public boolean unlockedMouseEnabled = false;
 
     /**
-     * When {@code true}, the macro continues to move and break blocks even while
-     * any GUI (including the FLIA config screen) is open.  This mirrors
-     * the behaviour of FarmHelper's "macro enabled in GUI" option and removes
-     * the brief pause that can occur when opening or closing a screen.
-     */
-    public boolean macroEnabledInGui = true;
-
-    /**
      * When {@code true}, all Just Farming HUD overlays (inventory, profit, scoreboard)
      * are automatically hidden whenever the player opens the debug screen (F3) or
      * the player list (Tab).  Useful for taking screenshots or checking vanilla info

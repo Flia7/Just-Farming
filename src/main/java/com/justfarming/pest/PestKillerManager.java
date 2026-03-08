@@ -1380,7 +1380,27 @@ public class PestKillerManager {
                     client.options.attackKey.setPressed(false);
                 }
 
-                // Wait for the particle trail to accumulate, then follow it.
+                // As soon as the particle trail forms a direction, immediately
+                // start rotating toward it and following it — do not wait for
+                // the full VACUUM_SHOT_WAIT_MS timeout.
+                if (vacuumShotFired && elapsed >= VACUUM_SHOT_FIRE_MS
+                        && vacuumParticleTracker.hasDirection()) {
+                    Vec3d waypoint = vacuumParticleTracker.getWaypoint();
+                    if (waypoint != null) {
+                        LOGGER.info("[Just Farming-PestKiller] Particle trail detected early; "
+                                + "rotating and following to ({}, {}, {}).",
+                                String.format("%.1f", waypoint.x),
+                                String.format("%.1f", waypoint.y),
+                                String.format("%.1f", waypoint.z));
+                        particleWaypoint = waypoint;
+                        // Keep the tracker running so FOLLOWING_PARTICLES can
+                        // continuously update the waypoint as more particles arrive.
+                        enterState(State.FOLLOWING_PARTICLES);
+                        return;
+                    }
+                }
+
+                // Fallback: wait for the particle trail to accumulate.
                 if (elapsed >= VACUUM_SHOT_WAIT_MS) {
                     client.options.attackKey.setPressed(false);
                     vacuumParticleTracker.stopTracking();
@@ -1412,13 +1432,22 @@ public class PestKillerManager {
                     if (currentPest != null) {
                         LOGGER.info("[Just Farming-PestKiller] Pest detected while following particles; "
                                 + "targeting directly.");
+                        vacuumParticleTracker.stopTracking();
                         releaseMovementKeys();
                         enterState(State.FLYING_TO_PEST);
                         return;
                     }
                 }
 
+                // Continuously refresh the waypoint from the live particle trail
+                // so the mod always aims at the latest extent of the particle line.
+                Vec3d freshWaypoint = vacuumParticleTracker.getWaypoint();
+                if (freshWaypoint != null) {
+                    particleWaypoint = freshWaypoint;
+                }
+
                 if (particleWaypoint == null) {
+                    vacuumParticleTracker.stopTracking();
                     releaseMovementKeys();
                     enterState(State.SCANNING);
                     return;
@@ -1428,6 +1457,7 @@ public class PestKillerManager {
                 if (distWP <= getEffectiveKillRadius()) {
                     // Arrived near the waypoint; switch to scanning to find the pest.
                     LOGGER.info("[Just Farming-PestKiller] Reached particle-trail waypoint; re-scanning.");
+                    vacuumParticleTracker.stopTracking();
                     releaseMovementKeys();
                     enterState(State.SCANNING);
                     return;
@@ -1435,6 +1465,7 @@ public class PestKillerManager {
 
                 if (now - stateEnteredAt >= FOLLOWING_PARTICLES_TIMEOUT_MS) {
                     LOGGER.info("[Just Farming-PestKiller] Particle-trail follow timed out.");
+                    vacuumParticleTracker.stopTracking();
                     releaseMovementKeys();
                     if (!remainingPlots.isEmpty()) {
                         teleportToNextPlot(pollClosestPlot());

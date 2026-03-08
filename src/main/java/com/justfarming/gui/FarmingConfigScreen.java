@@ -106,7 +106,6 @@ public class FarmingConfigScreen extends Screen {
     private FlatBoolToggleWidget  unlockedMouseButton;
     private FlatBoolToggleWidget  gardenOnlyButton;
     private FlatBoolToggleWidget  squeakyMousematButton;
-    private FlatBoolToggleWidget  macroEnabledInGuiButton;
     private FlatBoolToggleWidget  inventoryOverlayButton;
     private FlatBoolToggleWidget  paperDollButton;
     private FlatButtonWidget                  editHudButton;
@@ -488,15 +487,6 @@ public class FarmingConfigScreen extends Screen {
                         config.squeakyMousematEnabled);
         this.addDrawableChild(squeakyMousematButton);
         squeakyMousematButton.setTooltip(Tooltip.of(Text.literal("Activate Squeaky Mousemat at startup to set camera angle")));
-        y += bh + pad;
-
-        macroEnabledInGuiButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
-                        Text.translatable("gui.just-farming.macro_enabled_in_gui_label"),
-                        config.macroEnabledInGui);
-        this.addDrawableChild(macroEnabledInGuiButton);
-        macroEnabledInGuiButton.setTooltip(Tooltip.of(Text.literal(
-                "Continue moving and breaking blocks even while this GUI is open.\n" +
-                "Removes the brief pause when opening or closing a screen.")));
         tabContentHeights[4] = y + bh - contentAreaTopY + tabScrollOffsets[4];
 
         // ── Tab 5 – Delays ────────────────────────────────────────────────────
@@ -736,7 +726,6 @@ public class FarmingConfigScreen extends Screen {
         unlockedMouseButton.visible     = t4 && inContentBounds(unlockedMouseButton);
         gardenOnlyButton.visible        = t4 && inContentBounds(gardenOnlyButton);
         squeakyMousematButton.visible   = t4 && inContentBounds(squeakyMousematButton);
-        macroEnabledInGuiButton.visible = t4 && inContentBounds(macroEnabledInGuiButton);
 
         boolean t5 = activeTab == 5;
         globalRandomSlider.visible            = t5 && inContentBounds(globalRandomSlider);
@@ -947,7 +936,6 @@ public class FarmingConfigScreen extends Screen {
         config.unlockedMouseEnabled = unlockedMouseButton.getValue();
         config.gardenOnlyEnabled    = gardenOnlyButton.getValue();
         config.squeakyMousematEnabled = squeakyMousematButton.getValue();
-        config.macroEnabledInGui    = macroEnabledInGuiButton.getValue();
         config.inventoryOverlayEnabled = inventoryOverlayButton.getValue();
         config.paperDollEnabled     = paperDollButton.getValue();
         config.profitTrackerEnabled = profitTrackerButton.getValue();
