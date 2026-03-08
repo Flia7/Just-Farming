@@ -206,25 +206,8 @@ public class JustFarming implements ClientModInitializer {
                                             }
                                             return 1;
                                         }))
-                                .then(literal("setspawn")
-                                        .executes(ctx -> {
-                                            macroManager.setSpawnHere();
-                                            if (ctx.getSource().getPlayer() != null) {
-                                                ctx.getSource().getPlayer().sendMessage(
-                                                        net.minecraft.text.Text.literal("§a[Just Farming] Spawn position set here."), true);
-                                            }
-                                            return 1;
-                                        })
-                                        .then(literal("clear")
-                                                .executes(ctx -> {
-                                                    macroManager.clearSpawn();
-                                                    if (ctx.getSource().getPlayer() != null) {
-                                                        ctx.getSource().getPlayer().sendMessage(
-                                                                net.minecraft.text.Text.literal("§a[Just Farming] Spawn position cleared."), true);
-                                                    }
-                                                    return 1;
-                                                }))));
-            // Register standalone /setspawn client command as a convenient alias.
+                                );
+            // Register standalone /setspawn command.
             dispatcher.register(
                     literal("setspawn")
                             .executes(ctx -> {
@@ -234,7 +217,16 @@ public class JustFarming implements ClientModInitializer {
                                             net.minecraft.text.Text.literal("§a[Just Farming] Spawn position set here."), true);
                                 }
                                 return 1;
-                            }));
+                            })
+                            .then(literal("clear")
+                                    .executes(ctx -> {
+                                        macroManager.clearSpawn();
+                                        if (ctx.getSource().getPlayer() != null) {
+                                            ctx.getSource().getPlayer().sendMessage(
+                                                    net.minecraft.text.Text.literal("§a[Just Farming] Spawn position cleared."), true);
+                                        }
+                                        return 1;
+                                    })));
         });
         // Block the F5 perspective toggle while freelook is active.
         // START_CLIENT_TICK fires before handleKeyBindings(), so consuming
@@ -416,7 +408,7 @@ public class JustFarming implements ClientModInitializer {
             LOGGER.info("[Just Farming] Disconnected – all macros stopped.");
         });
 
-        LOGGER.info("[Just Farming] Ready. Toggle macro: R | Open GUI: I | Freelook: L | Alternate direction: N | Commands: /just rewarp, /just rewarp clear, /just setspawn, /just setspawn clear, /just visitor, /just pest, /just farm");
+        LOGGER.info("[Just Farming] Ready. Toggle macro: R | Open GUI: I | Freelook: L | Alternate direction: N | Commands: /just rewarp, /just rewarp clear, /just visitor, /just pest, /just farm, /setspawn, /setspawn clear");
     }
 
     /** Returns the shared config instance. */

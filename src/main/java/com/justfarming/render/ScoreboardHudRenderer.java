@@ -13,6 +13,7 @@ import net.minecraft.scoreboard.Team;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * Renders a custom "Just Farming" branded scoreboard sidebar, replacing the
@@ -56,6 +57,9 @@ public class ScoreboardHudRenderer {
     private static final int HEADER_H     = 12;
     private static final int ACCENT_H     = 1;
     private static final int MARGIN_RIGHT = 2;
+
+    /** Matches a Hypixel-style date such as {@code 03/08/26} or {@code 3/8/26}. */
+    private static final Pattern DATE_PATTERN = Pattern.compile("\\d{1,2}/\\d{1,2}/\\d{2,4}");
 
     /** Maximum scoreboard entries to show (matches vanilla's limit of 15). */
     private static final int MAX_ENTRIES  = 15;
@@ -104,16 +108,32 @@ public class ScoreboardHudRenderer {
         String headerText = "★ JUST FARMING ★";
         int headerW = tr.getWidth(headerText);
 
-        // Build display lines; replace the last entry (date/server lobby) with
-        // the current macro status.
+        // Build display lines; replace the date+server-ID entries (and any lines
+        // that follow them) with the current macro status.
+        // On Hypixel the scoreboard bottom typically shows a date ("03/08/26")
+        // on one line with the server ID next to it, then "www.hypixel.net"
+        // on the last line.  We detect the date line and remove from that point,
+        // replacing everything with the single macro-status line.
         List<String> lineTexts = new ArrayList<>();
         for (ScoreboardEntry entry : entries) {
             lineTexts.add(getEntryDisplayLine(sb, entry));
         }
-        // Replace the last scoreboard entry (date/server lobby on Hypixel) with
-        // the current macro status.  getMacroStatusText() always returns a
-        // non-null, non-blank string so no fallback is needed here.
-        if (!lineTexts.isEmpty()) {
+        // Find the last entry in the bottom 4 lines that contains a date pattern
+        // (e.g. "03/08/26") and replace from there to the end with the status.
+        int replacementStart = -1;
+        int searchFrom = Math.max(0, lineTexts.size() - 4);
+        for (int i = lineTexts.size() - 1; i >= searchFrom; i--) {
+            if (DATE_PATTERN.matcher(lineTexts.get(i)).find()) {
+                replacementStart = i;
+                break;
+            }
+        }
+        if (replacementStart >= 0) {
+            // Remove date line and everything after it, then add the status.
+            lineTexts.subList(replacementStart, lineTexts.size()).clear();
+            lineTexts.add(macroStatus);
+        } else if (!lineTexts.isEmpty()) {
+            // No date found – fall back to replacing the last entry.
             lineTexts.set(lineTexts.size() - 1, macroStatus);
         } else {
             lineTexts.add(macroStatus);

@@ -664,9 +664,9 @@ public class FarmingConfigScreen extends Screen {
                         btn -> close());
         this.addDrawableChild(saveCloseButton);
 
-        // Edit HUD button (nav panel, bottom-left, just above the save/close button)
+        // Edit HUD button (nav panel, bottom-left, same row as the save/close button)
         int editHudBtnW = navW - pad * 2;
-        editHudButton = new FlatButtonWidget(winX + pad, closeBtnY - bh - 3, editHudBtnW, bh,
+        editHudButton = new FlatButtonWidget(winX + pad, closeBtnY, editHudBtnW, bh,
                         Text.literal("Edit HUD"),
                         btn -> {
                             applyConfig();
@@ -1458,7 +1458,7 @@ public class FarmingConfigScreen extends Screen {
     private static class VisitorMinCountSlider extends SliderWidget {
 
         private static final int MIN = 1;
-        private static final int MAX = 6;
+        private static final int MAX = 5;
         private static final int GLFW_KEY_LEFT  = 263;
         private static final int GLFW_KEY_RIGHT = 262;
 
