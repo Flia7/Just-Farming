@@ -104,7 +104,7 @@ public class ProfitHudRenderer {
      */
     public void render(DrawContext context, FarmingProfitTracker tracker) {
         if (!config.profitTrackerEnabled) return;
-        if (tracker == null || !tracker.hasData()) return;
+        if (tracker == null) return;
 
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc == null || mc.player == null) return;
