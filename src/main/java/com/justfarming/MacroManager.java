@@ -271,6 +271,14 @@ public class MacroManager {
      */
     private int mousematPhaseRandomExtra = 0;
 
+    /**
+     * The block position targeted by the most recent {@link #directBreakBlock()}
+     * call that actually sent an attack packet.  Used to avoid counting the same
+     * block multiple times in the CPS tracker when the client hasn't yet received
+     * the block-break confirmation from the server.
+     */
+    private BlockPos lastDirectAttackPos = null;
+
 
     // -----------------------------------------------------------------------
     // Constructor / config
@@ -1313,8 +1321,18 @@ public class MacroManager {
             // that caused only the first crop to break.
             client.interactionManager.attackBlock(pos, blockHit.getSide());
             client.player.swingHand(Hand.MAIN_HAND);
-            KeystrokesTracker.getInstance().registerAttack();
+            // Only register a CPS "click" when the target block position changes.
+            // Instant-mine blocks take 1–2 extra ticks to be confirmed air by the
+            // client, so without this guard the same block would be counted multiple
+            // times, inflating the CPS counter far above the real BPS rate.
+            if (!pos.equals(lastDirectAttackPos)) {
+                lastDirectAttackPos = pos;
+                KeystrokesTracker.getInstance().registerAttack();
+            }
             com.justfarming.JustFarming.getProfitTracker().registerBlockBreak();
+        } else {
+            // Crosshair is over air – reset so the next non-air block is treated as new.
+            lastDirectAttackPos = null;
         }
     }
 

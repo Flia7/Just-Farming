@@ -1300,30 +1300,41 @@ public class PestKillerManager {
                         LOGGER.info("[Just Farming-PestKiller] Found {} pest(s). Targeting: {} at {}.",
                                 pests.size(), currentPest.displayName(), currentPest.position());
                         enterState(State.FLYING_TO_PEST);
+                        return;
                     }
-                } else if (now - stateEnteredAt >= (atLeastOnePestKilledThisPlot
-                        ? SCAN_TIMEOUT_AFTER_KILL_MS : SCAN_TIMEOUT_MS)) {
-                    // No pests found at centre; try a vacuum shot to locate them via
-                    // the particle trail (only one attempt per plot, regardless of
-                    // whether the plot name is known – fire even without /tptoplot).
-                    if (!vacuumShotAttempted) {
-                        LOGGER.info("[Just Farming-PestKiller] No pests at plot centre; "
-                                + "firing vacuum shot to locate them.");
-                        vacuumShotAttempted = true;
-                        vacuumShotFired = false;
-                        vacuumParticleTracker.stopTracking();
-                        vacuumParticleTracker.reset();
-                        vacuumParticleTracker.startTracking(player.getEyePos());
-                        enterState(State.VACUUM_SHOT);
-                    } else if (!remainingPlots.isEmpty()) {
-                        // Pests on this plot have been cleared; move on to the next
-                        // infested plot rather than returning to the farm immediately.
-                        teleportToNextPlot(pollClosestPlot());
-                    } else {
-                        LOGGER.info("[Just Farming-PestKiller] No pests found after scanning all plots; "
-                                + "returning to farm.");
-                        returnToFarm();
-                    }
+                    // currentPest is null despite non-empty list (e.g. NaN-position ghost entity);
+                    // only proceed to the next action if the scan timeout has elapsed so we don't
+                    // get permanently stuck on a false-positive detection.
+                    boolean timedOut = now - stateEnteredAt >= (atLeastOnePestKilledThisPlot
+                            ? SCAN_TIMEOUT_AFTER_KILL_MS : SCAN_TIMEOUT_MS);
+                    if (!timedOut) return;
+                    // Fall through to the move-on logic below.
+                } else {
+                    // No pests at all – check timeout before firing vacuum shot / advancing.
+                    boolean timedOut = now - stateEnteredAt >= (atLeastOnePestKilledThisPlot
+                            ? SCAN_TIMEOUT_AFTER_KILL_MS : SCAN_TIMEOUT_MS);
+                    if (!timedOut) return;
+                }
+                // No pests found (or only un-targetable ghost entities) and timeout elapsed.
+                // Try a vacuum shot to locate any hidden pests via the particle trail (only one
+                // attempt per plot, regardless of whether the plot name is known).
+                if (!vacuumShotAttempted) {
+                    LOGGER.info("[Just Farming-PestKiller] No pests at plot centre; "
+                            + "firing vacuum shot to locate them.");
+                    vacuumShotAttempted = true;
+                    vacuumShotFired = false;
+                    vacuumParticleTracker.stopTracking();
+                    vacuumParticleTracker.reset();
+                    vacuumParticleTracker.startTracking(player.getEyePos());
+                    enterState(State.VACUUM_SHOT);
+                } else if (!remainingPlots.isEmpty()) {
+                    // Pests on this plot have been cleared; move on to the next
+                    // infested plot rather than returning to the farm immediately.
+                    teleportToNextPlot(pollClosestPlot());
+                } else {
+                    LOGGER.info("[Just Farming-PestKiller] No pests found after scanning all plots; "
+                            + "returning to farm.");
+                    returnToFarm();
                 }
             }
 
