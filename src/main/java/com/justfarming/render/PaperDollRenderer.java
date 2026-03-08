@@ -190,7 +190,7 @@ public class PaperDollRenderer {
 
         // ── Separator line between model area and keystrokes area ─────────────
         int sepY = panelY + modelH;
-        int sepColor = config.darkMode ? 0x20FFFFFF : 0x30203060;
+        int sepColor = config.darkMode ? 0x2800C8FF : 0x30203060;
         context.fill(panelX, sepY, panelX + panelW, sepY + 1, sepColor);
 
         // ── Keystrokes section ────────────────────────────────────────────────

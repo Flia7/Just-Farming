@@ -330,6 +330,14 @@ public class PestKillerManager {
         FLYING_TO_PEST,
         /** Close enough to pest; right-clicking with the vacuum to kill it. */
         KILLING_PEST,
+        /** All pests killed; sent {@code /wardrobe} to restore farming armor. */
+        WARDROBE_RESTORE_OPENING,
+        /** Wardrobe GUI open for restore; navigating to page 2 if needed. */
+        WARDROBE_RESTORE_NEXT_PAGE,
+        /** Clicking the restore armor slot. */
+        WARDROBE_RESTORE_SLOT,
+        /** Restore slot clicked; waiting for wardrobe GUI to close. */
+        WARDROBE_RESTORE_CLOSING,
         /** Sent {@code /warp garden}; brief pause before handing back to the macro. */
         RETURNING,
         /** Routine finished; caller can restart the farming macro. */
@@ -366,6 +374,11 @@ public class PestKillerManager {
     private boolean wardrobeNextPageClicked = false;
     /** {@code true} after the target wardrobe slot was clicked. */
     private boolean wardrobeSlotClicked     = false;
+
+    /** {@code true} after "Next Page" is clicked during the restore wardrobe sequence. */
+    private boolean wardrobeRestoreNextPageClicked = false;
+    /** {@code true} after the restore slot was clicked. */
+    private boolean wardrobeRestoreSlotClicked     = false;
 
     /**
      * Remaining infested plot names to visit this run.  Stored as a
@@ -1526,6 +1539,82 @@ public class PestKillerManager {
                 }
             }
 
+            // ── Wardrobe restore states (swap back to farming armor) ─────────
+
+            case WARDROBE_RESTORE_OPENING -> {
+                if (client.currentScreen instanceof HandledScreen<?> screen) {
+                    String title = screen.getTitle().getString().toLowerCase();
+                    if (title.contains("wardrobe")) {
+                        int restoreSlot = config != null
+                                ? Math.max(MIN_WARDROBE_SLOT, Math.min(MAX_WARDROBE_SLOT, config.pestWardrobeRestoreSlot))
+                                : MIN_WARDROBE_SLOT;
+                        if (restoreSlot >= WARDROBE_PAGE2_START) {
+                            enterState(State.WARDROBE_RESTORE_NEXT_PAGE);
+                        } else {
+                            enterState(State.WARDROBE_RESTORE_SLOT);
+                        }
+                    }
+                } else if (now - stateEnteredAt >= WARDROBE_OPEN_TIMEOUT_MS) {
+                    LOGGER.warn("[Just Farming-PestKiller] Restore wardrobe GUI did not open; skipping restore.");
+                    enterState(State.RETURNING);
+                }
+            }
+
+            case WARDROBE_RESTORE_NEXT_PAGE -> {
+                if (!wardrobeRestoreNextPageClicked) {
+                    if (client.currentScreen instanceof HandledScreen<?> screen) {
+                        if (tryClickWardrobeSlotWithName(screen, "next page")) {
+                            wardrobeRestoreNextPageClicked = true;
+                            LOGGER.info("[Just Farming-PestKiller] Restore: clicked 'Next Page' in wardrobe.");
+                            stateEnteredAt = now;
+                        } else if (now - stateEnteredAt >= WARDROBE_CLICK_DELAY_MS) {
+                            LOGGER.warn("[Just Farming-PestKiller] Restore: could not find 'Next Page'; trying slot directly.");
+                            enterState(State.WARDROBE_RESTORE_SLOT);
+                        }
+                    } else {
+                        LOGGER.warn("[Just Farming-PestKiller] Restore wardrobe screen closed unexpectedly.");
+                        enterState(State.RETURNING);
+                    }
+                } else if (now - stateEnteredAt >= WARDROBE_CLICK_DELAY_MS) {
+                    enterState(State.WARDROBE_RESTORE_SLOT);
+                }
+            }
+
+            case WARDROBE_RESTORE_SLOT -> {
+                if (!wardrobeRestoreSlotClicked) {
+                    if (client.currentScreen instanceof HandledScreen<?> screen) {
+                        int restoreSlot = config != null
+                                ? Math.max(MIN_WARDROBE_SLOT, Math.min(MAX_WARDROBE_SLOT, config.pestWardrobeRestoreSlot))
+                                : MIN_WARDROBE_SLOT;
+                        String slotLabel = "slot " + restoreSlot;
+                        if (tryClickWardrobeSlotWithName(screen, slotLabel)) {
+                            wardrobeRestoreSlotClicked = true;
+                            LOGGER.info("[Just Farming-PestKiller] Restore: clicked '{}' in wardrobe.", slotLabel);
+                            stateEnteredAt = now;
+                        } else if (now - stateEnteredAt >= WARDROBE_CLICK_DELAY_MS) {
+                            LOGGER.warn("[Just Farming-PestKiller] Restore: could not find '{}'; proceeding.", slotLabel);
+                            if (player != null) player.closeHandledScreen();
+                            enterState(State.WARDROBE_RESTORE_CLOSING);
+                        }
+                    } else {
+                        enterState(State.WARDROBE_RESTORE_CLOSING);
+                    }
+                } else if (now - stateEnteredAt >= WARDROBE_CLICK_DELAY_MS) {
+                    if (client.currentScreen != null && player != null) {
+                        player.closeHandledScreen();
+                    }
+                    enterState(State.WARDROBE_RESTORE_CLOSING);
+                }
+            }
+
+            case WARDROBE_RESTORE_CLOSING -> {
+                if (client.currentScreen == null
+                        || now - stateEnteredAt >= WARDROBE_CLOSE_DELAY_MS) {
+                    LOGGER.info("[Just Farming-PestKiller] Wardrobe restore complete; returning to farm.");
+                    enterState(State.RETURNING);
+                }
+            }
+
             default -> {}
         }
     }
@@ -2568,7 +2657,17 @@ public class PestKillerManager {
 
     private void returnToFarm() {
         returnWarpSentAt = 0;
-        enterState(State.RETURNING);
+        // If wardrobe swap was used and a restore slot is configured, restore armor first.
+        if (config != null && config.pestWardrobeEnabled && config.pestWardrobeRestoreSlot >= 1) {
+            wardrobeRestoreNextPageClicked = false;
+            wardrobeRestoreSlotClicked     = false;
+            enterState(State.WARDROBE_RESTORE_OPENING);
+            sendCommand("wardrobe");
+            LOGGER.info("[Just Farming-PestKiller] Sent /wardrobe to restore farming armor slot {}.",
+                    config.pestWardrobeRestoreSlot);
+        } else {
+            enterState(State.RETURNING);
+        }
     }
 
     /**

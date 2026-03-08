@@ -340,7 +340,12 @@ public class MacroManager {
      */
     public static boolean isNonBlockingScreen(net.minecraft.client.gui.screen.Screen screen) {
         return screen instanceof net.minecraft.client.gui.screen.ingame.InventoryScreen
-                || screen instanceof net.minecraft.client.gui.screen.ChatScreen;
+                || screen instanceof net.minecraft.client.gui.screen.ChatScreen
+                || screen instanceof com.justfarming.gui.FarmingConfigScreen
+                || screen instanceof com.justfarming.gui.CropSelectScreen
+                || screen instanceof com.justfarming.gui.CropSettingsScreen
+                || screen instanceof com.justfarming.gui.InventoryHudLocationScreen
+                || screen instanceof com.justfarming.gui.VisitorBlacklistScreen;
     }
 
     /**
