@@ -100,6 +100,21 @@ public class KeystrokesTracker {
     /** Timestamps of RMB events within the {@link #CPS_WINDOW_MS} window. */
     private final Deque<Long> rmbTimestamps = new ArrayDeque<>();
 
+    // ── Physical-click CPS tracking ───────────────────────────────────────────
+
+    /**
+     * Whether the physical LMB was pressed on the previous {@link #update} call.
+     * Used to detect the key-down transition so each distinct click is counted
+     * exactly once regardless of how long it is held.
+     */
+    private boolean prevLmbPhys = false;
+
+    /**
+     * Whether the physical RMB was pressed on the previous {@link #update} call.
+     * Same logic as {@link #prevLmbPhys}.
+     */
+    private boolean prevRmbPhys = false;
+
     // ── Constructor ────────────────────────────────────────────────────────────
 
     private KeystrokesTracker() {
@@ -127,13 +142,17 @@ public class KeystrokesTracker {
         if (client.options == null) return;
         long now = System.currentTimeMillis();
 
+        // Physical key states (without virtual-press override, for CPS tracking).
+        boolean lmbPhys = client.options.attackKey.isPressed();
+        boolean rmbPhys = client.options.useKey.isPressed();
+
         boolean[] physical = {
             client.options.forwardKey.isPressed(),
             client.options.leftKey.isPressed(),
             client.options.backKey.isPressed(),
             client.options.rightKey.isPressed(),
-            client.options.attackKey.isPressed() || (now - lmbLastPacketTime < VIRTUAL_PRESS_DURATION_MS),
-            client.options.useKey.isPressed()    || (now - rmbLastPacketTime < VIRTUAL_PRESS_DURATION_MS)
+            lmbPhys || (now - lmbLastPacketTime < VIRTUAL_PRESS_DURATION_MS),
+            rmbPhys || (now - rmbLastPacketTime < VIRTUAL_PRESS_DURATION_MS)
         };
 
         for (int i = 0; i < NUM_KEYS; i++) {
@@ -142,6 +161,18 @@ public class KeystrokesTracker {
                 keyLastChange[i] = now;
             }
         }
+
+        // Track physical click transitions for CPS counters.
+        // Only count a new "click" when the physical key transitions from up to
+        // down – holding the key should not inflate the CPS count.
+        if (lmbPhys && !prevLmbPhys) {
+            lmbTimestamps.add(now);
+        }
+        if (rmbPhys && !prevRmbPhys) {
+            rmbTimestamps.add(now);
+        }
+        prevLmbPhys = lmbPhys;
+        prevRmbPhys = rmbPhys;
 
         pruneLmbWindow(now);
         pruneRmbWindow(now);

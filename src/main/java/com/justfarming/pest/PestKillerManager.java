@@ -532,12 +532,13 @@ public class PestKillerManager {
 
     /**
      * Minimum Y coordinate the player must be at before the AOTV/AOTE sequence
-     * will start.  Set to the base navigation altitude so the player always
-     * climbs above the farm structures (crops, barn, greenhouses) before AOTV
-     * fires.  This ensures the player is "outside the farm" and has a clear
-     * line of sight for horizontal teleports without clipping into structures.
+     * will start.  Set to 80 so the player begins teleporting toward plots as
+     * soon as they clear the typical crop canopy height, without waiting to
+     * reach the full navigation altitude first.  This ensures the player is
+     * above the farm floor and has a reasonable line of sight for horizontal
+     * teleports without clipping into crops or structures at ground level.
      */
-    private static final double PEST_AOTV_MIN_FLY_Y     = NAV_ALTITUDE_BASE;
+    private static final double PEST_AOTV_MIN_FLY_Y     = 80.0;
 
     /**
      * If any detected pest is within this distance (blocks) of the player,
@@ -547,20 +548,6 @@ public class PestKillerManager {
      */
     private static final double PEST_AOTV_NEAR_PEST_SKIP_DIST = 10.0;
 
-    /**
-     * When climbing to {@link #PEST_AOTV_MIN_FLY_Y}, the intermediate waypoint
-     * is offset this fraction of the horizontal distance toward the final target.
-     * A small value (5 %) keeps the yaw pointed in the right general direction
-     * while ensuring the camera pitches steeply upward for fast altitude gain.
-     */
-    private static final double CLIMB_WAYPOINT_HORIZ_FRACTION = 0.05;
-
-    /**
-     * Extra altitude (blocks) added on top of {@link #PEST_AOTV_MIN_FLY_Y} for
-     * the climb waypoint so the player clears the minimum threshold before AOTV
-     * can fire, preventing repeated single-block overshoot checks.
-     */
-    private static final double CLIMB_WAYPOINT_ALTITUDE_MARGIN = 2.0;
 
     /**
      * Minimum start delay (ms) applied to {@link #preTeleportWaitMs} on every
@@ -2292,28 +2279,29 @@ public class PestKillerManager {
 
         // ── Altitude-climb priority (tptoplot disabled) ───────────────────────
         // When the player is below the minimum AOTV altitude and the horizontal
-        // distance to the target is large enough to warrant AOTV, the direct
-        // aim at the distant target produces a very shallow pitch angle that makes
-        // the player move mostly horizontally and ascend very slowly.  In that
-        // case, aim instead at an intermediate waypoint at PEST_AOTV_MIN_FLY_Y
-        // directly above (offset 10 % toward the target) so the camera tilts
-        // steeply upward and the player climbs quickly to the minimum altitude
-        // before AOTV kicks in.
+        // distance to the target is large enough to warrant AOTV, climb using
+        // the jump key while looking horizontally toward the target.  This keeps
+        // the camera facing the direction of travel rather than pitching steeply
+        // upward, and simultaneously pre-equips the AOTV/AOTE so it is ready to
+        // fire as soon as the minimum altitude is reached.
         double horizDistEarly = Math.sqrt(
                 Math.pow(effectiveTarget.x - eye.x, 2) +
                 Math.pow(effectiveTarget.z - eye.z, 2));
         if (player.getY() < PEST_AOTV_MIN_FLY_Y
                 && effectiveTarget.y >= PEST_AOTV_MIN_FLY_Y
                 && horizDistEarly > PEST_AOTV_TRIGGER_DIST) {
-            // Intermediate waypoint: slightly toward target to keep the yaw correct,
-            // but prioritise the climb by targeting a point directly above us.
-            Vec3d climbTarget = new Vec3d(
-                    eye.x + (effectiveTarget.x - eye.x) * CLIMB_WAYPOINT_HORIZ_FRACTION,
-                    PEST_AOTV_MIN_FLY_Y + CLIMB_WAYPOINT_ALTITUDE_MARGIN,
-                    eye.z + (effectiveTarget.z - eye.z) * CLIMB_WAYPOINT_HORIZ_FRACTION);
-            lookAt(player, climbTarget);
+            // Aim camera horizontally toward the target (pitch = 0, yaw = direction).
+            // The jump key raises the player in creative flight without requiring the
+            // camera to pitch upward; forward movement makes progress toward the target.
+            Vec3d targetAtEyeLevel = new Vec3d(effectiveTarget.x, eye.y, effectiveTarget.z);
+            lookAt(player, targetAtEyeLevel);
+            // Pre-equip AOTV/AOTE so it is in hand and ready to fire on reaching altitude.
+            int aotvSlot = findAotvSlotForPest(player);
+            if (aotvSlot >= 0) {
+                player.getInventory().setSelectedSlot(aotvSlot);
+            }
             client.options.forwardKey.setPressed(true);
-            client.options.jumpKey.setPressed(false); // pitch handles vertical; no extra jump
+            client.options.jumpKey.setPressed(true);  // ascend via jump, not camera pitch
             client.options.sneakKey.setPressed(false);
             client.options.leftKey.setPressed(false);
             client.options.rightKey.setPressed(false);

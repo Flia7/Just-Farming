@@ -222,9 +222,9 @@ public class ProfitHudRenderer {
         float ksScale = Math.max(KS_MIN_SCALE,
                 (float) headerH / KS_HEIGHT * 0.90f);
         int ksW = Math.round(KS_WIDTH  * ksScale);
-        // Right-align within the panel with PAD_X margin; shifted up by one
-        // keystroke-key height compared to the default half-key offset.
-        int ksX = x + pw - PAD_X - ksW;
+        // Right-align within the panel with PAD_X margin, shifted half a key-size
+        // to the left so the widget sits slightly inward from the panel edge.
+        int ksX = x + pw - PAD_X - ksW - Math.round(KS_KEY_SIZE * ksScale * 0.5f);
         int ksY = y + PAD_Y + Math.round(KS_KEY_SIZE * ksScale * 0.5f)
                 - Math.round((KS_KEY_SIZE + KS_KEY_GAP) * ksScale);
         renderKeystrokes(context, tr, ksX, ksY, ksW, ksScale, isDark());
