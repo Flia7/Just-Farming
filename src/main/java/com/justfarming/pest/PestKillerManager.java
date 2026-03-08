@@ -2,8 +2,11 @@ package com.justfarming.pest;
 
 import com.justfarming.config.FarmingConfig;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.item.ItemStack;
+import net.minecraft.screen.GenericContainerScreenHandler;
+import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import org.slf4j.Logger;
@@ -301,6 +304,14 @@ public class PestKillerManager {
     public enum State {
         /** Not doing anything. */
         IDLE,
+        /** Sent {@code /wardrobe}; waiting for the wardrobe GUI to open. */
+        WARDROBE_OPENING,
+        /** Wardrobe GUI is open; navigating to page 2 (for slots 10–18). */
+        WARDROBE_NEXT_PAGE,
+        /** Clicking the target armor slot in the wardrobe GUI. */
+        WARDROBE_SLOT,
+        /** Slot clicked; waiting for the wardrobe GUI to close before proceeding. */
+        WARDROBE_CLOSING,
         /** Waiting before sending the plot teleport command. */
         PRE_TELEPORT_WAIT,
         /** Waiting for the server to teleport the player. */
@@ -335,6 +346,26 @@ public class PestKillerManager {
     private long  returnWarpSentAt = 0;
     /** Per-state random extra (0–150 ms) added to hardcoded timing constants. */
     private int   randomExtra = 0;
+
+    // ── Wardrobe state ───────────────────────────────────────────────────────
+
+    /** Minimum wardrobe slot number (page 1 starts at slot 1). */
+    private static final int MIN_WARDROBE_SLOT = 1;
+    /** Maximum wardrobe slot number (page 2 ends at slot 18). */
+    private static final int MAX_WARDROBE_SLOT = 18;
+    /** First slot that requires navigating to page 2 in the wardrobe. */
+    private static final int WARDROBE_PAGE2_START = 10;
+    /** Maximum time (ms) to wait for the wardrobe GUI to open after /wardrobe. */
+    private static final long WARDROBE_OPEN_TIMEOUT_MS  = 4000L;
+    /** How long (ms) to wait after clicking a button in the wardrobe GUI. */
+    private static final long WARDROBE_CLICK_DELAY_MS   = 600L;
+    /** How long (ms) to wait after closing the wardrobe before starting the pest routine. */
+    private static final long WARDROBE_CLOSE_DELAY_MS   = 500L;
+
+    /** {@code true} after the "Next Page" button was clicked in the wardrobe. */
+    private boolean wardrobeNextPageClicked = false;
+    /** {@code true} after the target wardrobe slot was clicked. */
+    private boolean wardrobeSlotClicked     = false;
 
     /**
      * Remaining infested plot names to visit this run.  Stored as a
@@ -915,7 +946,18 @@ public class PestKillerManager {
         preTeleportWaitMs = Math.max(PEST_START_DELAY_MS,
                 base + random.nextInt(Math.max(1, globalRandom)));
 
-        enterState(State.PRE_TELEPORT_WAIT);
+        // If wardrobe armor swap is enabled, open the wardrobe first.
+        // The wardrobe states will transition to PRE_TELEPORT_WAIT when done.
+        wardrobeNextPageClicked = false;
+        wardrobeSlotClicked     = false;
+        if (config != null && config.pestWardrobeEnabled) {
+            enterState(State.WARDROBE_OPENING);
+            sendCommand("wardrobe");
+            LOGGER.info("[Just Farming-PestKiller] Sent /wardrobe to equip armor slot {}.",
+                    config.pestWardrobeSlot);
+        } else {
+            enterState(State.PRE_TELEPORT_WAIT);
+        }
     }
 
     /**
@@ -943,6 +985,90 @@ public class PestKillerManager {
         long now = System.currentTimeMillis();
 
         switch (state) {
+
+            // ── Wardrobe states ──────────────────────────────────────────────
+
+            case WARDROBE_OPENING -> {
+                // Wait for a HandledScreen with "Wardrobe" in the title to open.
+                if (client.currentScreen instanceof HandledScreen<?> screen) {
+                    String title = screen.getTitle().getString().toLowerCase();
+                    if (title.contains("wardrobe")) {
+                        int targetSlot = config != null
+                                ? Math.max(MIN_WARDROBE_SLOT, Math.min(MAX_WARDROBE_SLOT, config.pestWardrobeSlot))
+                                : MIN_WARDROBE_SLOT;
+                        if (targetSlot >= WARDROBE_PAGE2_START) {
+                            // Need to navigate to page 2 first
+                            enterState(State.WARDROBE_NEXT_PAGE);
+                        } else {
+                            enterState(State.WARDROBE_SLOT);
+                        }
+                    }
+                } else if (now - stateEnteredAt >= WARDROBE_OPEN_TIMEOUT_MS) {
+                    LOGGER.warn("[Just Farming-PestKiller] Wardrobe GUI did not open; skipping wardrobe step.");
+                    enterState(State.PRE_TELEPORT_WAIT);
+                }
+            }
+
+            case WARDROBE_NEXT_PAGE -> {
+                if (!wardrobeNextPageClicked) {
+                    if (client.currentScreen instanceof HandledScreen<?> screen) {
+                        if (tryClickWardrobeSlotWithName(screen, "next page")) {
+                            wardrobeNextPageClicked = true;
+                            LOGGER.info("[Just Farming-PestKiller] Clicked 'Next Page' in wardrobe.");
+                            stateEnteredAt = now; // reset timer for the delay
+                        } else if (now - stateEnteredAt >= WARDROBE_CLICK_DELAY_MS) {
+                            LOGGER.warn("[Just Farming-PestKiller] Could not find 'Next Page' in wardrobe.");
+                            enterState(State.WARDROBE_SLOT);
+                        }
+                    } else {
+                        LOGGER.warn("[Just Farming-PestKiller] Wardrobe screen closed unexpectedly.");
+                        enterState(State.PRE_TELEPORT_WAIT);
+                    }
+                } else if (now - stateEnteredAt >= WARDROBE_CLICK_DELAY_MS) {
+                    enterState(State.WARDROBE_SLOT);
+                }
+            }
+
+            case WARDROBE_SLOT -> {
+                if (!wardrobeSlotClicked) {
+                    if (client.currentScreen instanceof HandledScreen<?> screen) {
+                        int targetSlot = config != null
+                                ? Math.max(MIN_WARDROBE_SLOT, Math.min(MAX_WARDROBE_SLOT, config.pestWardrobeSlot))
+                                : MIN_WARDROBE_SLOT;
+                        // After "Next Page", page 2 shows slots 10-18 labelled as "Slot 10", "Slot 11", etc.
+                        // On page 1, slots 1-9 are labelled "Slot 1", "Slot 2", etc.
+                        String slotLabel = "slot " + targetSlot;
+                        if (tryClickWardrobeSlotWithName(screen, slotLabel)) {
+                            wardrobeSlotClicked = true;
+                            LOGGER.info("[Just Farming-PestKiller] Clicked '{}' in wardrobe.", slotLabel);
+                            stateEnteredAt = now;
+                        } else if (now - stateEnteredAt >= WARDROBE_CLICK_DELAY_MS) {
+                            LOGGER.warn("[Just Farming-PestKiller] Could not find '{}' in wardrobe.", slotLabel);
+                            // Close screen and proceed
+                            if (player != null) player.closeHandledScreen();
+                            enterState(State.WARDROBE_CLOSING);
+                        }
+                    } else {
+                        // Screen closed before we could click – proceed anyway
+                        enterState(State.WARDROBE_CLOSING);
+                    }
+                } else if (now - stateEnteredAt >= WARDROBE_CLICK_DELAY_MS) {
+                    // Slot clicked; close the wardrobe screen
+                    if (client.currentScreen != null && player != null) {
+                        player.closeHandledScreen();
+                    }
+                    enterState(State.WARDROBE_CLOSING);
+                }
+            }
+
+            case WARDROBE_CLOSING -> {
+                // Wait for the screen to close, then start the normal pest routine
+                if (client.currentScreen == null
+                        || now - stateEnteredAt >= WARDROBE_CLOSE_DELAY_MS) {
+                    LOGGER.info("[Just Farming-PestKiller] Wardrobe sequence complete; starting pest routine.");
+                    enterState(State.PRE_TELEPORT_WAIT);
+                }
+            }
 
             case PRE_TELEPORT_WAIT -> {
                 if (now - stateEnteredAt >= preTeleportWaitMs) {
@@ -2478,5 +2604,33 @@ public class PestKillerManager {
         if (client.player != null && client.player.networkHandler != null) {
             client.player.networkHandler.sendChatCommand(command);
         }
+    }
+
+    /**
+     * Scans all slots in a {@link HandledScreen} for an item whose plain-text
+     * name contains {@code keyword} (case-insensitive) and left-clicks it.
+     *
+     * @param screen  the currently open handled screen
+     * @param keyword substring to match against each item's display name
+     * @return {@code true} if a matching slot was found and clicked
+     */
+    private boolean tryClickWardrobeSlotWithName(HandledScreen<?> screen, String keyword) {
+        if (client.player == null) return false;
+        if (!(client.player.currentScreenHandler instanceof GenericContainerScreenHandler handler)) {
+            return false;
+        }
+        String lowerKw = keyword.toLowerCase();
+        for (int i = 0; i < handler.slots.size(); i++) {
+            ItemStack stack = handler.getSlot(i).getStack();
+            if (stack.isEmpty()) continue;
+            String name = COLOR_CODE_PATTERN.matcher(stack.getName().getString())
+                    .replaceAll("").toLowerCase();
+            if (name.contains(lowerKw)) {
+                client.interactionManager.clickSlot(
+                        handler.syncId, i, 0, SlotActionType.PICKUP, client.player);
+                return true;
+            }
+        }
+        return false;
     }
 }

@@ -79,16 +79,25 @@ public class PaperDollRenderer {
     private static final String ARROW_S = "▼";
     private static final String ARROW_D = "▶";
 
-    // ── Colours – matching Canelex default theme ──────────────────────────────
+    // ── Colours – adaptive per theme ─────────────────────────────────────────
 
-    /** Background colour when a key is fully pressed. */
-    private static final int BG_PRESSED   = 0xC0FFFFFF;
-    /** Background colour when a key is fully released. */
-    private static final int BG_RELEASED  = 0x30FFFFFF;
-    /** Text/icon colour when a key is fully pressed (dark, for contrast). */
-    private static final int TXT_PRESSED  = 0xFF000000;
-    /** Text/icon colour when a key is fully released (dim white). */
-    private static final int TXT_RELEASED = 0x80FFFFFF;
+    /** Background colour when a key is fully pressed (dark mode). */
+    private static final int BG_PRESSED_DARK    = 0xC0FFFFFF;
+    /** Background colour when a key is fully released (dark mode). */
+    private static final int BG_RELEASED_DARK   = 0x30FFFFFF;
+    /** Text/icon colour when a key is fully pressed (dark mode). */
+    private static final int TXT_PRESSED_DARK   = 0xFF000000;
+    /** Text/icon colour when a key is fully released (dark mode). */
+    private static final int TXT_RELEASED_DARK  = 0x80FFFFFF;
+
+    /** Background colour when a key is fully pressed (light mode). */
+    private static final int BG_PRESSED_LIGHT   = 0xD0203060;
+    /** Background colour when a key is fully released (light mode). */
+    private static final int BG_RELEASED_LIGHT  = 0x30203060;
+    /** Text/icon colour when a key is fully pressed (light mode). */
+    private static final int TXT_PRESSED_LIGHT  = 0xFFEEF4F8;
+    /** Text/icon colour when a key is fully released (light mode). */
+    private static final int TXT_RELEASED_LIGHT = 0x80203060;
 
     // ── Font scaling ──────────────────────────────────────────────────────────
 
@@ -158,8 +167,8 @@ public class PaperDollRenderer {
         int panelY = invHudY;
 
         // ── Background ────────────────────────────────────────────────────────
-        context.fill(panelX, panelY, panelX + panelW, panelY + panelH,
-                InventoryHudRenderer.BG_COLOR);
+        int bgColor = config.darkMode ? InventoryHudRenderer.BG_COLOR_DARK : InventoryHudRenderer.BG_COLOR_LIGHT;
+        context.fill(panelX, panelY, panelX + panelW, panelY + panelH, bgColor);
 
         // ── Player model ──────────────────────────────────────────────────────
         // Entity display size: 45.5% (70% × 65%) of the model area height; minimum 4 px.
@@ -181,10 +190,12 @@ public class PaperDollRenderer {
 
         // ── Separator line between model area and keystrokes area ─────────────
         int sepY = panelY + modelH;
-        context.fill(panelX, sepY, panelX + panelW, sepY + 1, 0x20FFFFFF);
+        int sepColor = config.darkMode ? 0x20FFFFFF : 0x30203060;
+        context.fill(panelX, sepY, panelX + panelW, sepY + 1, sepColor);
 
         // ── Keystrokes section ────────────────────────────────────────────────
-        renderKeystrokes(context, mc.textRenderer, panelX, sepY + 1, panelW, ksH - 1, ksScale);
+        renderKeystrokes(context, mc.textRenderer, panelX, sepY + 1, panelW, ksH - 1, ksScale,
+                config.darkMode);
     }
 
     // ── Private rendering helpers ─────────────────────────────────────────────
@@ -207,13 +218,18 @@ public class PaperDollRenderer {
      * @param scale   current HUD scale multiplier
      */
     private void renderKeystrokes(DrawContext context, TextRenderer tr,
-                                   int x, int y, int w, int h, float scale) {
+                                   int x, int y, int w, int h, float scale, boolean dark) {
         KeystrokesTracker tracker = KeystrokesTracker.getInstance();
         long now = System.currentTimeMillis();
 
-        int ks     = Math.max(1, Math.round(KEY_SIZE * scale));  // key square side
-        int kg     = Math.max(1, Math.round(KEY_GAP  * scale));  // gap between keys
-        int stride = ks + kg;                                     // distance between key origins
+        int bgPressedColor  = dark ? BG_PRESSED_DARK  : BG_PRESSED_LIGHT;
+        int bgReleasedColor = dark ? BG_RELEASED_DARK : BG_RELEASED_LIGHT;
+        int txtPressedColor  = dark ? TXT_PRESSED_DARK  : TXT_PRESSED_LIGHT;
+        int txtReleasedColor = dark ? TXT_RELEASED_DARK : TXT_RELEASED_LIGHT;
+
+        int ks     = Math.max(1, Math.round(KEY_SIZE * scale));
+        int kg     = Math.max(1, Math.round(KEY_GAP  * scale));
+        int stride = ks + kg;
         int hPad   = Math.max(1, Math.round(H_PAD * scale));
         int vPad   = Math.max(1, Math.round(V_PAD * scale));
 
@@ -221,18 +237,22 @@ public class PaperDollRenderer {
         int row1Y = y + vPad;
         int wX    = x + (w - ks) / 2;
         drawKey(context, tr, wX, row1Y, ks, ARROW_W,
-                KeystrokesTracker.KEY_W, tracker, now);
+                KeystrokesTracker.KEY_W, tracker, now,
+                bgPressedColor, bgReleasedColor, txtPressedColor, txtReleasedColor);
 
         // ── Row 2: A / S / D, centred horizontally ───────────────────────────
         int row2Y     = row1Y + stride;
         int threeW    = 3 * ks + 2 * kg;
         int asdStartX = x + (w - threeW) / 2;
         drawKey(context, tr, asdStartX,          row2Y, ks, ARROW_A,
-                KeystrokesTracker.KEY_A, tracker, now);
+                KeystrokesTracker.KEY_A, tracker, now,
+                bgPressedColor, bgReleasedColor, txtPressedColor, txtReleasedColor);
         drawKey(context, tr, asdStartX + stride, row2Y, ks, ARROW_S,
-                KeystrokesTracker.KEY_S, tracker, now);
+                KeystrokesTracker.KEY_S, tracker, now,
+                bgPressedColor, bgReleasedColor, txtPressedColor, txtReleasedColor);
         drawKey(context, tr, asdStartX + 2 * stride, row2Y, ks, ARROW_D,
-                KeystrokesTracker.KEY_D, tracker, now);
+                KeystrokesTracker.KEY_D, tracker, now,
+                bgPressedColor, bgReleasedColor, txtPressedColor, txtReleasedColor);
 
         // ── Row 3: LMB (with CPS) and RMB, filling the inner width ───────────
         int row3Y  = row2Y + stride;
@@ -242,50 +262,29 @@ public class PaperDollRenderer {
         int lmbX   = x + hPad;
         int rmbX   = lmbX + lmbW + kg;
 
-        drawLmbKey(context, tr, lmbX, row3Y, lmbW, ks, tracker, now);
-        drawRmbKey(context, tr, rmbX, row3Y, rmbW, ks, tracker, now);
+        drawKey(context, tr, lmbX, row3Y, lmbW, ks, "L",
+                KeystrokesTracker.KEY_LMB, tracker, now,
+                bgPressedColor, bgReleasedColor, txtPressedColor, txtReleasedColor);
+        drawKey(context, tr, rmbX, row3Y, rmbW, ks, "R",
+                KeystrokesTracker.KEY_RMB, tracker, now,
+                bgPressedColor, bgReleasedColor, txtPressedColor, txtReleasedColor);
     }
 
-    /**
-     * Draws a single WASD key button with a triangle-arrow label.
-     *
-     * <p>Background and text colours are smoothly interpolated between pressed
-     * and unpressed states using the per-key fade progress from
-     * {@link KeystrokesTracker#getKeyBgColor} / {@link KeystrokesTracker#getKeyTextColor},
-     * matching the Canelex {@code percentFaded} animation.
-     */
     private void drawKey(DrawContext context, TextRenderer tr,
-                         int x, int y, int size, String label,
-                         int keyIdx, KeystrokesTracker tracker, long now) {
-        int bg  = tracker.getKeyBgColor  (keyIdx, BG_PRESSED,  BG_RELEASED,  now);
-        int txt = tracker.getKeyTextColor(keyIdx, TXT_PRESSED, TXT_RELEASED, now);
-        drawKeyBox(context, tr, x, y, size, size, label, bg, txt);
-    }
-
-    /**
-     * Draws the LMB button.  The button shows "L" when not clicking; when
-     * actively clicking it shows the live CPS count so click speed is
-     * immediately readable (packets sent + physical clicks, via
-     * {@link KeystrokesTracker#getLmbCps()}).
-     */
-    private void drawLmbKey(DrawContext context, TextRenderer tr,
-                             int x, int y, int w, int h,
-                             KeystrokesTracker tracker, long now) {
-        int bg  = tracker.getKeyBgColor  (KeystrokesTracker.KEY_LMB, BG_PRESSED,  BG_RELEASED,  now);
-        int txt = tracker.getKeyTextColor(KeystrokesTracker.KEY_LMB, TXT_PRESSED, TXT_RELEASED, now);
-        String label = "L";
+                         int x, int y, int w, int h, String label,
+                         int keyIdx, KeystrokesTracker tracker, long now,
+                         int bgPressed, int bgReleased, int txtPressed, int txtReleased) {
+        int bg  = tracker.getKeyBgColor  (keyIdx, bgPressed,  bgReleased,  now);
+        int txt = tracker.getKeyTextColor(keyIdx, txtPressed, txtReleased, now);
         drawKeyBox(context, tr, x, y, w, h, label, bg, txt);
     }
 
-    /**
-     * Draws the RMB button with an "R" label.
-     */
-    private void drawRmbKey(DrawContext context, TextRenderer tr,
-                             int x, int y, int w, int h,
-                             KeystrokesTracker tracker, long now) {
-        int bg  = tracker.getKeyBgColor  (KeystrokesTracker.KEY_RMB, BG_PRESSED,  BG_RELEASED,  now);
-        int txt = tracker.getKeyTextColor(KeystrokesTracker.KEY_RMB, TXT_PRESSED, TXT_RELEASED, now);
-        drawKeyBox(context, tr, x, y, w, h, "R", bg, txt);
+    private void drawKey(DrawContext context, TextRenderer tr,
+                         int x, int y, int size, String label,
+                         int keyIdx, KeystrokesTracker tracker, long now,
+                         int bgPressed, int bgReleased, int txtPressed, int txtReleased) {
+        drawKey(context, tr, x, y, size, size, label, keyIdx, tracker, now,
+                bgPressed, bgReleased, txtPressed, txtReleased);
     }
 
     /**

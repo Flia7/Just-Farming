@@ -299,7 +299,7 @@ public class JustFarming implements ClientModInitializer {
             // Update keystrokes tracker (key-transition detection + CPS window pruning)
             KeystrokesTracker.getInstance().update(client);
             // Update profit tracker
-            profitTracker.onTick(client, macroManager, pestKillerManager);
+            profitTracker.onTick(client, macroManager, pestKillerManager, visitorManager.isActive());
 
             // Stop macro if Garden-only mode is enabled and the player left the Garden.
             // Do not stop while the visitor routine is active, while the macro is in

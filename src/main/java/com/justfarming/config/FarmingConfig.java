@@ -367,6 +367,22 @@ public class FarmingConfig {
     public int pestKillerVacuumRange = 5;
 
     /**
+     * When {@code true}, the pest killer will open the wardrobe ({@code /wardrobe})
+     * at the start of the routine and equip the armor set selected by
+     * {@link #pestWardrobeSlot} before flying to infested plots.
+     */
+    public boolean pestWardrobeEnabled = false;
+
+    /**
+     * Wardrobe slot to equip when {@link #pestWardrobeEnabled} is {@code true}.
+     * Slots 1–9 are on page 1; slots 10–18 are on page 2 (requires clicking
+     * "Next Page" in the wardrobe GUI).
+     *
+     * <p>Range: 1–18.  Default {@code 1}.
+     */
+    public int pestWardrobeSlot = 1;
+
+    /**
      * How long (in milliseconds) to wait after the plot teleport command lands
      * before scanning for pest entities.  Increase this if the server is slow
      * to load entity data after a teleport.

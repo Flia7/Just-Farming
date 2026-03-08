@@ -47,8 +47,8 @@ public final class GuiTheme {
     public final int TEXT;
     /** Muted / secondary text colour. */
     public final int TEXT_MUTED;
-    /** Purple accent colour (same in both themes). */
-    public final int ACCENT      = 0xFF7C4DFF;
+    /** Electric-purple accent colour (same in both themes). */
+    public final int ACCENT      = 0xFF8B5CF6;
     /** Active tab background tint. */
     public final int TAB_ACTIVE;
     /** Drop-shadow tint. */
@@ -72,37 +72,39 @@ public final class GuiTheme {
 
     private GuiTheme(boolean dark) {
         if (dark) {
-            SCREEN_DIM   = 0x60000000;
-            WIN_BG       = 0xBF000000;
-            NAV_BG       = 0x99000000;
-            BORDER       = 0x28FFFFFF;
-            SEP          = 0x14FFFFFF;
-            SECTION_BG   = 0x14FFFFFF;
-            TEXT         = 0xF2FFFFFF;
-            TEXT_MUTED   = 0x66FFFFFF;
-            TAB_ACTIVE   = 0x26FFFFFF;
-            SHADOW       = 0x60000000;
-            BTN_BG_NORMAL = 0x1AFFFFFF;
-            BTN_BG_HOVER  = 0x33FFFFFF;
-            SLIDER_TRACK  = 0x14FFFFFF;
-            SLIDER_FILL   = 0x28FFFFFF;
-            SLIDER_THUMB  = 0xF2FFFFFF;
+            // ── Cyberpunk / Deep-Space dark theme ────────────────────────────
+            SCREEN_DIM    = 0x70000510;
+            WIN_BG        = 0xD2080C1A;
+            NAV_BG        = 0xCC050A16;
+            BORDER        = 0x6000C8FF;
+            SEP           = 0x2800C8FF;
+            SECTION_BG    = 0x1600C8FF;
+            TEXT          = 0xFFEAF2FF;
+            TEXT_MUTED    = 0x8090B8FF;
+            TAB_ACTIVE    = 0x3000C8FF;
+            SHADOW        = 0x90000010;
+            BTN_BG_NORMAL = 0x2000C8FF;
+            BTN_BG_HOVER  = 0x4400C8FF;
+            SLIDER_TRACK  = 0x1800C8FF;
+            SLIDER_FILL   = 0x4400C8FF;
+            SLIDER_THUMB  = 0xFF00D8FF;
         } else {
-            SCREEN_DIM   = 0x40000000;
-            WIN_BG       = 0xEFF5F5F5;
-            NAV_BG       = 0xCCDCDCDC;
-            BORDER       = 0x40000000;
-            SEP          = 0x18000000;
-            SECTION_BG   = 0x10000000;
-            TEXT         = 0xFF1A1A1A;
-            TEXT_MUTED   = 0x80333333;
-            TAB_ACTIVE   = 0x20000000;
-            SHADOW       = 0x30000000;
-            BTN_BG_NORMAL = 0x14000000;
-            BTN_BG_HOVER  = 0x28000000;
-            SLIDER_TRACK  = 0x14000000;
-            SLIDER_FILL   = 0x28000000;
-            SLIDER_THUMB  = 0xFF1A1A1A;
+            // ── Clean-Tech / Pearl light theme ───────────────────────────────
+            SCREEN_DIM    = 0x50081030;
+            WIN_BG        = 0xF0EEF4F8;
+            NAV_BG        = 0xE8DDE6F0;
+            BORDER        = 0x60203060;
+            SEP           = 0x28203060;
+            SECTION_BG    = 0x14203060;
+            TEXT          = 0xFF0F1E3C;
+            TEXT_MUTED    = 0x80425880;
+            TAB_ACTIVE    = 0x30203060;
+            SHADOW        = 0x40000010;
+            BTN_BG_NORMAL = 0x1E203060;
+            BTN_BG_HOVER  = 0x3C203060;
+            SLIDER_TRACK  = 0x1A203060;
+            SLIDER_FILL   = 0x4A203060;
+            SLIDER_THUMB  = 0xFF0F1E3C;
         }
     }
 
