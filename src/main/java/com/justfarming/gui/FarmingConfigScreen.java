@@ -102,6 +102,9 @@ public class FarmingConfigScreen extends Screen {
     private InventoryOverlayXSlider           inventoryOverlayXSlider;
     private InventoryOverlayYSlider           inventoryOverlayYSlider;
     private InventoryOverlayScaleSlider       inventoryOverlayScaleSlider;
+    private FlatBoolToggleWidget  profitTrackerButton;
+    private FlatBoolToggleWidget  pestProfitButton;
+    private FlatButtonWidget      profitResetButton;
 
     // ── Tab 3 – Delays widgets ────────────────────────────────────────────────
     private GlobalRandomSlider            globalRandomSlider;
@@ -141,7 +144,7 @@ public class FarmingConfigScreen extends Screen {
 
     // ── Section-label Y positions (set in init, used in render) ───────────────
     private int sectionCropY, actionSeparatorY;
-    private int sectionPestsY, sectionMiscY, miscSeparatorY, sectionInvOverlayY;
+    private int sectionPestsY, sectionMiscY, miscSeparatorY, sectionInvOverlayY, sectionProfitY;
     private int sectionGlobalRandomY, sectionLaneSwapY, sectionRewarpDelayY, sectionMousematDelayY, sectionVisitorDelaysY, sectionPestKillerDelaysY;
     private int sectionVisitorsY;
     private int sectionVisitorFiltersY;
@@ -446,6 +449,37 @@ public class FarmingConfigScreen extends Screen {
         inventoryOverlayScaleSlider.setTooltip(Tooltip.of(Text.literal(
                 "Scale multiplier for the inventory HUD overlay.\n" +
                 "1.0 = default size. Range: 0.5–3.0.")));
+        y += bh + pad + gap;
+
+        sectionProfitY = y;
+        y += sLH;
+
+        profitTrackerButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
+                        Text.literal("Farming Profit HUD"),
+                        config.profitTrackerEnabled);
+        this.addDrawableChild(profitTrackerButton);
+        profitTrackerButton.setTooltip(Tooltip.of(Text.literal(
+                "Show a HUD overlay tracking items collected and NPC profit\n" +
+                "earned during the current farming session.\n" +
+                "All prices are stored in the mod – no API required.")));
+        y += bh + pad;
+
+        pestProfitButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
+                        Text.literal("Pest Profit Section"),
+                        config.pestProfitEnabled);
+        this.addDrawableChild(pestProfitButton);
+        pestProfitButton.setTooltip(Tooltip.of(Text.literal(
+                "Show the Pest Profit section inside the Farming Profit HUD.\n" +
+                "Tracks items and coins gained while the pest killer is active.\n" +
+                "Also adds pest profit/hour to the Profit/Hour line.")));
+        y += bh + pad;
+
+        profitResetButton = new FlatButtonWidget(widgetX, y, bw, bh,
+                        Text.literal("Reset Profit Session"),
+                        btn -> com.justfarming.JustFarming.getProfitTracker().reset());
+        this.addDrawableChild(profitResetButton);
+        profitResetButton.setTooltip(Tooltip.of(Text.literal(
+                "Clear all accumulated profit data and restart the session.")));
         tabContentHeights[2] = y + bh - contentAreaTopY + tabScrollOffsets[2];
 
         // ── Tab 3 – Delays ────────────────────────────────────────────────────
@@ -650,6 +684,8 @@ public class FarmingConfigScreen extends Screen {
         inventoryOverlayXSlider.setOnChange(markCustom);
         inventoryOverlayYSlider.setOnChange(markCustom);
         inventoryOverlayScaleSlider.setOnChange(markCustom);
+        profitTrackerButton.setOnChange(markCustom);
+        pestProfitButton.setOnChange(markCustom);
         // Tab 3
         globalRandomSlider.setOnChange(markCustom);
         laneSwapDelaySlider.setOnChange(markCustom);
@@ -718,6 +754,9 @@ public class FarmingConfigScreen extends Screen {
         inventoryOverlayXSlider.visible       = t2 && inContentBounds(inventoryOverlayXSlider);
         inventoryOverlayYSlider.visible       = t2 && inContentBounds(inventoryOverlayYSlider);
         inventoryOverlayScaleSlider.visible   = t2 && inContentBounds(inventoryOverlayScaleSlider);
+        profitTrackerButton.visible  = t2 && inContentBounds(profitTrackerButton);
+        pestProfitButton.visible     = t2 && inContentBounds(pestProfitButton);
+        profitResetButton.visible    = t2 && inContentBounds(profitResetButton);
 
         boolean t3 = activeTab == 3;
         globalRandomSlider.visible            = t3 && inContentBounds(globalRandomSlider);
@@ -817,6 +856,8 @@ public class FarmingConfigScreen extends Screen {
                 context.fill(contentX + 16, miscSeparatorY, winR - 16, miscSeparatorY + 1, COL_SEP);
             if (yInContentBounds(sectionInvOverlayY))
                 drawSectionLabel(context, "Inventory Overlay", sectionInvOverlayY);
+            if (yInContentBounds(sectionProfitY))
+                drawSectionLabel(context, "Farming Profit HUD", sectionProfitY);
         } else if (activeTab == 3) {
             if (yInContentBounds(sectionGlobalRandomY))
                 drawSectionLabel(context, "Global Randomization", sectionGlobalRandomY);
@@ -930,6 +971,8 @@ public class FarmingConfigScreen extends Screen {
         config.inventoryOverlayX    = inventoryOverlayXSlider.getPositionValue();
         config.inventoryOverlayY    = inventoryOverlayYSlider.getPositionValue();
         config.inventoryOverlayScale = inventoryOverlayScaleSlider.getScaleValue();
+        config.profitTrackerEnabled = profitTrackerButton.getValue();
+        config.pestProfitEnabled    = pestProfitButton.getValue();
         config.visitorsEnabled          = visitorsEnabledButton.getValue();
         config.visitorsBuyFromBazaar    = visitorsBuyFromBazaarButton.getValue();
         config.visitorsActionDelay      = visitorsDelaySlider.getDelayValue();

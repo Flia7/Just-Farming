@@ -114,6 +114,35 @@ public class FarmingConfig {
      */
     public boolean paperDollEnabled = false;
 
+    // --- Profit Tracker HUD ---
+
+    /**
+     * When {@code true}, the Farming Profit HUD overlay is shown, displaying
+     * items collected, NPC profit, and profit per hour for the current session.
+     * All prices are stored in the mod and require no external API calls.
+     */
+    public boolean profitTrackerEnabled = true;
+
+    /**
+     * When {@code true}, the Pest Profit section is shown inside the Farming
+     * Profit HUD, tracking items and coins gained while the pest killer is
+     * active.  When {@code false}, only farming profit (and its profit/hour)
+     * is shown.
+     */
+    public boolean pestProfitEnabled = true;
+
+    /**
+     * Horizontal pixel position of the top-left corner of the Profit HUD
+     * panel, measured from the left edge of the screen.
+     */
+    public int profitHudX = 10;
+
+    /**
+     * Vertical pixel position of the top-left corner of the Profit HUD
+     * panel, measured from the top edge of the screen.
+     */
+    public int profitHudY = 10;
+
     /**
      * When {@code true}, the macro will only start (and will auto-stop) when
      * the player is detected to be in the Hypixel Skyblock Garden.

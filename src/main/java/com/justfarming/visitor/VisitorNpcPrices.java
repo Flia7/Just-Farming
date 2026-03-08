@@ -73,6 +73,16 @@ public final class VisitorNpcPrices {
 
         // ── Compacted / bulk variants ────────────────────────────────────────
         NPC_PRICES.put("compacted wild rose",     102400.0);
+
+        // ── Pest-kill drops ──────────────────────────────────────────────────
+        // Compost is a common pest-kill reward in the Garden.
+        NPC_PRICES.put("compost",                   4.0);
+        // Ink sac is occasionally dropped by slugs / flies.
+        NPC_PRICES.put("ink sac",                   5.6);
+        // Pumpkin seeds and melon seeds (dropped by various pests).
+        NPC_PRICES.put("pumpkin seeds",             3.0);
+        NPC_PRICES.put("melon seeds",               3.0);
+        NPC_PRICES.put("beetroot seeds",            3.0);
     }
 
     /**
