@@ -51,7 +51,7 @@ public class MinecraftClientMixin {
     @Inject(method = "setScreen", at = @At("HEAD"))
     private void onSetScreen(Screen screen, CallbackInfo ci) {
         if (screen == null) {
-            MouseMixin.notifyGuiClosed();
+            MouseGraceHelper.notifyGuiClosed();
         }
     }
 

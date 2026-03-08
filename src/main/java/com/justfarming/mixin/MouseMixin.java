@@ -15,29 +15,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public class MouseMixin {
 
     /**
-     * Wall-clock time (ms) until which cursor re-locking is suppressed after
-     * any GUI screen is closed.  Set by
-     * {@link #notifyGuiClosed()} from the {@link MinecraftClientMixin}.
-     *
-     * <p>This 1-second grace period prevents the jarring "micro-stutter" that
-     * occurs when Minecraft immediately re-grabs the cursor the moment a GUI
-     * closes, which can interfere with subsequent mouse input.
-     */
-    private static volatile long guiCloseGraceUntilMs = 0L;
-
-    /** Duration (ms) of the cursor-ungrab grace period after a GUI is closed. */
-    private static final long GUI_CLOSE_GRACE_PERIOD_MS = 1000L;
-
-    /**
-     * Called by {@link MinecraftClientMixin} whenever a screen is closed
-     * (i.e. {@code setScreen(null)} is called).  Starts the 1-second ungrab
-     * grace period.
-     */
-    public static void notifyGuiClosed() {
-        guiCloseGraceUntilMs = System.currentTimeMillis() + GUI_CLOSE_GRACE_PERIOD_MS;
-    }
-
-    /**
      * When freelook is active, intercept the scroll wheel:
      * <ul>
      *   <li>Scroll up  → zoom in  (camera closer to player)</li>
@@ -81,7 +58,7 @@ public class MouseMixin {
     @Inject(method = "lockCursor", at = @At("HEAD"), cancellable = true)
     private void onLockCursor(CallbackInfo ci) {
         // 1-second grace period after any GUI close.
-        if (System.currentTimeMillis() < guiCloseGraceUntilMs) {
+        if (System.currentTimeMillis() < MouseGraceHelper.guiCloseGraceUntilMs) {
             ci.cancel();
             return;
         }
