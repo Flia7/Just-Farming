@@ -20,10 +20,10 @@ import net.minecraft.text.Text;
  * <ul>
  *   <li><b>Farming</b>  – crop selection, rewarp, start/stop macro, farming tool slot</li>
  *   <li><b>Pests</b>    – pest highlight, labels, ESP, tracer; auto pest killer settings</li>
- *   <li><b>HUD</b>      – inventory overlay, paper doll, profit tracker</li>
- *   <li><b>Settings</b> – freelook, unlocked mouse, garden-only, macro-in-GUI</li>
- *   <li><b>Delays</b>   – all timing/delay sliders</li>
  *   <li><b>Visitors</b> – visitor macro settings and filters</li>
+ *   <li><b>Hud's</b>    – inventory overlay, paper doll, profit tracker</li>
+ *   <li><b>Misc</b>     – freelook, unlocked mouse, garden-only, macro-in-GUI</li>
+ *   <li><b>Delays</b>   – all timing/delay sliders</li>
  * </ul>
  */
 public class FarmingConfigScreen extends Screen {
@@ -51,14 +51,14 @@ public class FarmingConfigScreen extends Screen {
     private static final int COL_SHADOW      = 0x60000000; // drop shadow
 
     // ── Tabs ──────────────────────────────────────────────────────────────────
-    private static final String[] TAB_NAMES = { "Farming", "Pests", "HUD", "Settings", "Delays", "Visitors" };
+    private static final String[] TAB_NAMES = { "Farming", "Pests", "Visitors", "Hud's", "Misc", "Delays" };
     private static final int[] TAB_COLORS = {
         0xFF50D090,  // Farming: mint green
         0xFFE06848,  // Pests: warm red-orange
-        0xFF50A8E0,  // HUD: sky blue
-        0xFF9090C8,  // Settings: lavender
-        0xFFD0A830,  // Delays: amber
         0xFFD060C0,  // Visitors: pink-purple
+        0xFF50A8E0,  // Hud's: sky blue
+        0xFF9090C8,  // Misc: lavender
+        0xFFD0A830,  // Delays: amber
     };
     private int activeTab = 0;
 
@@ -354,8 +354,8 @@ public class FarmingConfigScreen extends Screen {
         pestKillerStatusY = y;
         tabContentHeights[1] = y - contentAreaTopY + tabScrollOffsets[1];
 
-        // ── Tab 2 – HUD ───────────────────────────────────────────────────────
-        y = contentAreaTopY - tabScrollOffsets[2];
+        // ── Tab 3 – Hud's ───────────────────────────────────────────────────────
+        y = contentAreaTopY - tabScrollOffsets[3];
         sectionHudInvY = y;
         y += sLH;
 
@@ -407,10 +407,10 @@ public class FarmingConfigScreen extends Screen {
         this.addDrawableChild(profitResetButton);
         profitResetButton.setTooltip(Tooltip.of(Text.literal(
                 "Clear all accumulated profit data and restart the session.")));
-        tabContentHeights[2] = y + bh - contentAreaTopY + tabScrollOffsets[2];
+        tabContentHeights[3] = y + bh - contentAreaTopY + tabScrollOffsets[3];
 
-        // ── Tab 3 – Settings ──────────────────────────────────────────────────
-        y = contentAreaTopY - tabScrollOffsets[3];
+        // ── Tab 4 – Misc ──────────────────────────────────────────────────
+        y = contentAreaTopY - tabScrollOffsets[4];
         sectionSettingsCameraY = y;
         y += sLH;
 
@@ -458,10 +458,10 @@ public class FarmingConfigScreen extends Screen {
         macroEnabledInGuiButton.setTooltip(Tooltip.of(Text.literal(
                 "Continue moving and breaking blocks even while this GUI is open.\n" +
                 "Removes the brief pause when opening or closing a screen.")));
-        tabContentHeights[3] = y + bh - contentAreaTopY + tabScrollOffsets[3];
+        tabContentHeights[4] = y + bh - contentAreaTopY + tabScrollOffsets[4];
 
-        // ── Tab 4 – Delays ────────────────────────────────────────────────────
-        y = contentAreaTopY - tabScrollOffsets[4];
+        // ── Tab 5 – Delays ────────────────────────────────────────────────────
+        y = contentAreaTopY - tabScrollOffsets[5];
         sectionGlobalRandomY = y;
         y += sLH;
         globalRandomSlider = new GlobalRandomSlider(widgetX, y, bw, bh, config.globalRandomizationMs);
@@ -562,10 +562,10 @@ public class FarmingConfigScreen extends Screen {
         this.addDrawableChild(pestKillerGoToNextPestSlider);
         pestKillerGoToNextPestSlider.setTooltip(Tooltip.of(Text.literal(
                 "Minimum delay after killing a pest before flying toward the next one. (ms)")));
-        tabContentHeights[4] = y + bh - contentAreaTopY + tabScrollOffsets[4];
+        tabContentHeights[5] = y + bh - contentAreaTopY + tabScrollOffsets[5];
 
-        // ── Tab 5 – Visitors ──────────────────────────────────────────────────
-        y = contentAreaTopY - tabScrollOffsets[5];
+        // ── Tab 2 – Visitors ──────────────────────────────────────────────────
+        y = contentAreaTopY - tabScrollOffsets[2];
         sectionVisitorsY = y;
         y += sLH;
 
@@ -616,7 +616,7 @@ public class FarmingConfigScreen extends Screen {
                 "Set to 0 (Disabled) to accept all visitors regardless of cost.")));
         y += bh + pad + gap;
         visitorStatusY = y;
-        tabContentHeights[5] = y - contentAreaTopY + tabScrollOffsets[5];
+        tabContentHeights[2] = y - contentAreaTopY + tabScrollOffsets[2];
 
         // ── Always-visible: Save/Close button anchored to the bottom of the content area
         int closeBtnY = winY + winH - bh - pad;
@@ -668,18 +668,18 @@ public class FarmingConfigScreen extends Screen {
         pestKillerEnabledButton.setOnChange(markCustom);
         pestKillerWarpToPlotButton.setOnChange(markCustom);
         pestKillerVacuumRangeSlider.setOnChange(markCustom);
-        // Tab 2 (HUD)
+        // Tab 3 (HUD)
         inventoryOverlayButton.setOnChange(markCustom);
         paperDollButton.setOnChange(markCustom);
         inventoryOverlayScaleSlider.setOnChange(markCustom);
         profitTrackerButton.setOnChange(markCustom);
         pestProfitButton.setOnChange(markCustom);
-        // Tab 3 (Settings)
+        // Tab 4 (Misc)
         unlockedMouseButton.setOnChange(markCustom);
         gardenOnlyButton.setOnChange(markCustom);
         squeakyMousematButton.setOnChange(markCustom);
         macroEnabledInGuiButton.setOnChange(markCustom);
-        // Tab 4 (Delays)
+        // Tab 5 (Delays)
         globalRandomSlider.setOnChange(markCustom);
         laneSwapDelaySlider.setOnChange(markCustom);
         laneSwapRandomSlider.setOnChange(markCustom);
@@ -696,7 +696,7 @@ public class FarmingConfigScreen extends Screen {
         pestKillerTeleportDelaySliderInDelays.setOnChange(markCustom);
         pestKillerAfterTeleportSlider.setOnChange(markCustom);
         pestKillerGoToNextPestSlider.setOnChange(markCustom);
-        // Tab 5 (Visitors)
+        // Tab 2 (Visitors)
         visitorsEnabledButton.setOnChange(markCustom);
         visitorsBuyFromBazaarButton.setOnChange(markCustom);
         visitorsMinCountSlider.setOnChange(markCustom);
@@ -736,44 +736,44 @@ public class FarmingConfigScreen extends Screen {
         pestKillerVacuumRangeSlider.visible = t1 && inContentBounds(pestKillerVacuumRangeSlider);
 
         boolean t2 = activeTab == 2;
-        inventoryOverlayButton.visible      = t2 && inContentBounds(inventoryOverlayButton);
-        paperDollButton.visible             = t2 && inContentBounds(paperDollButton);
-        inventoryOverlayScaleSlider.visible = t2 && inContentBounds(inventoryOverlayScaleSlider);
-        profitTrackerButton.visible         = t2 && inContentBounds(profitTrackerButton);
-        pestProfitButton.visible            = t2 && inContentBounds(pestProfitButton);
-        profitResetButton.visible           = t2 && inContentBounds(profitResetButton);
+        visitorsEnabledButton.visible       = t2 && inContentBounds(visitorsEnabledButton);
+        visitorsBuyFromBazaarButton.visible = t2 && inContentBounds(visitorsBuyFromBazaarButton);
+        visitorsBlacklistButton.visible     = t2 && inContentBounds(visitorsBlacklistButton);
+        visitorsMinCountSlider.visible      = t2 && inContentBounds(visitorsMinCountSlider);
+        visitorsMaxPriceSlider.visible      = t2 && inContentBounds(visitorsMaxPriceSlider);
 
         boolean t3 = activeTab == 3;
-        freelookButton.visible          = t3 && inContentBounds(freelookButton);
-        unlockedMouseButton.visible     = t3 && inContentBounds(unlockedMouseButton);
-        gardenOnlyButton.visible        = t3 && inContentBounds(gardenOnlyButton);
-        squeakyMousematButton.visible   = t3 && inContentBounds(squeakyMousematButton);
-        macroEnabledInGuiButton.visible = t3 && inContentBounds(macroEnabledInGuiButton);
+        inventoryOverlayButton.visible      = t3 && inContentBounds(inventoryOverlayButton);
+        paperDollButton.visible             = t3 && inContentBounds(paperDollButton);
+        inventoryOverlayScaleSlider.visible = t3 && inContentBounds(inventoryOverlayScaleSlider);
+        profitTrackerButton.visible         = t3 && inContentBounds(profitTrackerButton);
+        pestProfitButton.visible            = t3 && inContentBounds(pestProfitButton);
+        profitResetButton.visible           = t3 && inContentBounds(profitResetButton);
 
         boolean t4 = activeTab == 4;
-        globalRandomSlider.visible            = t4 && inContentBounds(globalRandomSlider);
-        laneSwapDelaySlider.visible           = t4 && inContentBounds(laneSwapDelaySlider);
-        laneSwapRandomSlider.visible          = t4 && inContentBounds(laneSwapRandomSlider);
-        rewarpDelaySlider.visible             = t4 && inContentBounds(rewarpDelaySlider);
-        rewarpRandomSlider.visible            = t4 && inContentBounds(rewarpRandomSlider);
-        mousematSwapToSlider.visible          = t4 && inContentBounds(mousematSwapToSlider);
-        mousematPreDelaySlider.visible        = t4 && inContentBounds(mousematPreDelaySlider);
-        mousematPostDelaySlider.visible       = t4 && inContentBounds(mousematPostDelaySlider);
-        mousematResumeDelaySlider.visible     = t4 && inContentBounds(mousematResumeDelaySlider);
-        visitorsDelaySlider.visible           = t4 && inContentBounds(visitorsDelaySlider);
-        visitorsRandomSlider.visible          = t4 && inContentBounds(visitorsRandomSlider);
-        visitorsTeleportDelaySlider.visible   = t4 && inContentBounds(visitorsTeleportDelaySlider);
-        bazaarSearchDelaySlider.visible       = t4 && inContentBounds(bazaarSearchDelaySlider);
-        pestKillerTeleportDelaySliderInDelays.visible = t4 && inContentBounds(pestKillerTeleportDelaySliderInDelays);
-        pestKillerAfterTeleportSlider.visible = t4 && inContentBounds(pestKillerAfterTeleportSlider);
-        pestKillerGoToNextPestSlider.visible  = t4 && inContentBounds(pestKillerGoToNextPestSlider);
+        freelookButton.visible          = t4 && inContentBounds(freelookButton);
+        unlockedMouseButton.visible     = t4 && inContentBounds(unlockedMouseButton);
+        gardenOnlyButton.visible        = t4 && inContentBounds(gardenOnlyButton);
+        squeakyMousematButton.visible   = t4 && inContentBounds(squeakyMousematButton);
+        macroEnabledInGuiButton.visible = t4 && inContentBounds(macroEnabledInGuiButton);
 
         boolean t5 = activeTab == 5;
-        visitorsEnabledButton.visible       = t5 && inContentBounds(visitorsEnabledButton);
-        visitorsBuyFromBazaarButton.visible = t5 && inContentBounds(visitorsBuyFromBazaarButton);
-        visitorsBlacklistButton.visible     = t5 && inContentBounds(visitorsBlacklistButton);
-        visitorsMinCountSlider.visible      = t5 && inContentBounds(visitorsMinCountSlider);
-        visitorsMaxPriceSlider.visible      = t5 && inContentBounds(visitorsMaxPriceSlider);
+        globalRandomSlider.visible            = t5 && inContentBounds(globalRandomSlider);
+        laneSwapDelaySlider.visible           = t5 && inContentBounds(laneSwapDelaySlider);
+        laneSwapRandomSlider.visible          = t5 && inContentBounds(laneSwapRandomSlider);
+        rewarpDelaySlider.visible             = t5 && inContentBounds(rewarpDelaySlider);
+        rewarpRandomSlider.visible            = t5 && inContentBounds(rewarpRandomSlider);
+        mousematSwapToSlider.visible          = t5 && inContentBounds(mousematSwapToSlider);
+        mousematPreDelaySlider.visible        = t5 && inContentBounds(mousematPreDelaySlider);
+        mousematPostDelaySlider.visible       = t5 && inContentBounds(mousematPostDelaySlider);
+        mousematResumeDelaySlider.visible     = t5 && inContentBounds(mousematResumeDelaySlider);
+        visitorsDelaySlider.visible           = t5 && inContentBounds(visitorsDelaySlider);
+        visitorsRandomSlider.visible          = t5 && inContentBounds(visitorsRandomSlider);
+        visitorsTeleportDelaySlider.visible   = t5 && inContentBounds(visitorsTeleportDelaySlider);
+        bazaarSearchDelaySlider.visible       = t5 && inContentBounds(bazaarSearchDelaySlider);
+        pestKillerTeleportDelaySliderInDelays.visible = t5 && inContentBounds(pestKillerTeleportDelaySliderInDelays);
+        pestKillerAfterTeleportSlider.visible = t5 && inContentBounds(pestKillerAfterTeleportSlider);
+        pestKillerGoToNextPestSlider.visible  = t5 && inContentBounds(pestKillerGoToNextPestSlider);
     }
 
     @Override
@@ -842,31 +842,6 @@ public class FarmingConfigScreen extends Screen {
                         statusX, pestKillerStatusY, COL_TEXT_MUTED);
             }
         } else if (activeTab == 2) {
-            if (yInContentBounds(sectionHudInvY))
-                drawSectionLabel(context, "Inventory HUD", sectionHudInvY);
-            if (yInContentBounds(sectionHudProfitY))
-                drawSectionLabel(context, "Profit HUD", sectionHudProfitY);
-        } else if (activeTab == 3) {
-            if (yInContentBounds(sectionSettingsCameraY))
-                drawSectionLabel(context, "Camera", sectionSettingsCameraY);
-            if (yInContentBounds(settingsCameraSeparatorY))
-                context.fill(contentX + 16, settingsCameraSeparatorY, winR - 16, settingsCameraSeparatorY + 1, COL_SEP);
-            if (yInContentBounds(sectionSettingsMacroY))
-                drawSectionLabel(context, "Macro", sectionSettingsMacroY);
-        } else if (activeTab == 4) {
-            if (yInContentBounds(sectionGlobalRandomY))
-                drawSectionLabel(context, "Global", sectionGlobalRandomY);
-            if (yInContentBounds(sectionLaneSwapY))
-                drawSectionLabel(context, "Lane Swap", sectionLaneSwapY);
-            if (yInContentBounds(sectionRewarpDelayY))
-                drawSectionLabel(context, "Rewarp", sectionRewarpDelayY);
-            if (yInContentBounds(sectionMousematDelayY))
-                drawSectionLabel(context, "Mousemat", sectionMousematDelayY);
-            if (yInContentBounds(sectionVisitorDelaysY))
-                drawSectionLabel(context, "Visitor Delays", sectionVisitorDelaysY);
-            if (yInContentBounds(sectionPestKillerDelaysY))
-                drawSectionLabel(context, "Pest Killer Delays", sectionPestKillerDelaysY);
-        } else if (activeTab == 5) {
             if (yInContentBounds(sectionVisitorsY))
                 drawSectionLabel(context, "Visitors", sectionVisitorsY);
             if (yInContentBounds(sectionVisitorFiltersY))
@@ -879,6 +854,31 @@ public class FarmingConfigScreen extends Screen {
                         net.minecraft.text.Text.literal(stateText).withColor(COL_TEXT_MUTED),
                         visitorStatusX, visitorStatusY, COL_TEXT_MUTED);
             }
+        } else if (activeTab == 3) {
+            if (yInContentBounds(sectionHudInvY))
+                drawSectionLabel(context, "Inventory HUD", sectionHudInvY);
+            if (yInContentBounds(sectionHudProfitY))
+                drawSectionLabel(context, "Profit HUD", sectionHudProfitY);
+        } else if (activeTab == 4) {
+            if (yInContentBounds(sectionSettingsCameraY))
+                drawSectionLabel(context, "Camera", sectionSettingsCameraY);
+            if (yInContentBounds(settingsCameraSeparatorY))
+                context.fill(contentX + 16, settingsCameraSeparatorY, winR - 16, settingsCameraSeparatorY + 1, COL_SEP);
+            if (yInContentBounds(sectionSettingsMacroY))
+                drawSectionLabel(context, "Macro", sectionSettingsMacroY);
+        } else if (activeTab == 5) {
+            if (yInContentBounds(sectionGlobalRandomY))
+                drawSectionLabel(context, "Global", sectionGlobalRandomY);
+            if (yInContentBounds(sectionLaneSwapY))
+                drawSectionLabel(context, "Lane Swap", sectionLaneSwapY);
+            if (yInContentBounds(sectionRewarpDelayY))
+                drawSectionLabel(context, "Rewarp", sectionRewarpDelayY);
+            if (yInContentBounds(sectionMousematDelayY))
+                drawSectionLabel(context, "Mousemat", sectionMousematDelayY);
+            if (yInContentBounds(sectionVisitorDelaysY))
+                drawSectionLabel(context, "Visitor Delays", sectionVisitorDelaysY);
+            if (yInContentBounds(sectionPestKillerDelaysY))
+                drawSectionLabel(context, "Pest Killer Delays", sectionPestKillerDelaysY);
         }
 
         // ── Scroll indicators ─────────────────────────────────────────────────

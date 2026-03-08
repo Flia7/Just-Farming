@@ -42,25 +42,22 @@ public class MouseMixin {
     }
 
     /**
-     * When the macro is running with the "unlock mouse" option <em>disabled</em>,
-     * suppress Minecraft's {@code unlockCursor()} call so the hardware cursor
-     * never appears when a GUI is opened.  Normally, opening any GUI calls
-     * {@code unlockCursor()} which makes the OS cursor visible, introducing a
-     * brief micro-delay (cursor state change + render update) that causes a
-     * perceptible stutter during continuous farming movement.
+     * When the macro is running, allow Minecraft's {@code unlockCursor()} call
+     * to proceed so the OS cursor becomes visible when a GUI is opened.
+     *
+     * <p>The {@link #onIsCursorLocked} override still returns {@code true} while
+     * the macro is running, ensuring all game inputs (attack key, movement) are
+     * processed normally even with the cursor visible.  This gives the user a
+     * visible cursor inside any open screen without causing the macro to pause.
      *
      * <p>When {@code unlockedMouseEnabled} is {@code true} the cursor is already
-     * permanently unlocked, so there is no state change to suppress.  We only
-     * cancel when the option is <em>off</em>, giving users who do not want the
-     * unlocked-mouse feature the same zero-delay GUI behaviour.
+     * permanently unlocked via the {@link #onLockCursor} suppression, so no
+     * extra handling is needed here.
      */
     @Inject(method = "unlockCursor", at = @At("HEAD"), cancellable = true)
     private void onUnlockCursor(CallbackInfo ci) {
-        MacroManager mm = JustFarming.getMacroManager();
-        FarmingConfig cfg = JustFarming.getConfig();
-        if (mm != null && cfg != null && !cfg.unlockedMouseEnabled && mm.isRunning()) {
-            ci.cancel();
-        }
+        // Allow unlockCursor to run: cursor appears on screen when a GUI opens.
+        // onIsCursorLocked() keeps returning true so game inputs are not blocked.
     }
 
     /**
