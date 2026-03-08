@@ -233,26 +233,25 @@ public class PestKillerManager {
 
     /**
      * Base navigation altitude (blocks Y) used when flying horizontally toward
-     * a plot centre.  Flying above {@link GardenPlot#MAX_Y} (102) keeps the
-     * player clear of all crop blocks, making AOTV teleports unobstructed.
+     * a plot centre.  Flying above typical crop height (≈ 80) while staying
+     * well below the plot border ceiling (102) keeps the player clear of all
+     * crop blocks without requiring a long climb.
      * The actual altitude is randomised to
-     * {@code NAV_ALTITUDE_BASE + [0, NAV_ALTITUDE_RANGE)} (103–120).
+     * {@code NAV_ALTITUDE_BASE + [0, NAV_ALTITUDE_RANGE)} (87–91).
      */
-    private static final double NAV_ALTITUDE_BASE  = 103.0;
+    private static final double NAV_ALTITUDE_BASE  = 87.0;
 
     /**
      * Random range (blocks) added on top of {@link #NAV_ALTITUDE_BASE} when
      * computing the per-visit high-altitude navigation target.
-     * {@code random.nextInt(18)} produces altitudes 103–120.
+     * {@code random.nextInt(5)} produces altitudes 87–91.
      */
-    private static final int    NAV_ALTITUDE_RANGE = 18;
+    private static final int    NAV_ALTITUDE_RANGE = 5;
 
     /**
      * Maximum cruise altitude (blocks).  The pest killer never flies the player
      * above this Y during navigation; if the computed target is higher than this
-     * cap the Y is clamped to this value.  Set to 125 so it comfortably covers
-     * the high-altitude navigation range ({@link #NAV_ALTITUDE_BASE}–
-     * {@link #NAV_ALTITUDE_BASE}+{@link #NAV_ALTITUDE_RANGE}).
+     * cap the Y is clamped to this value.
      */
     private static final double MAX_CRUISE_Y        = 125.0;
 
@@ -1927,6 +1926,19 @@ public class PestKillerManager {
                 ? new Vec3d(target.x, MAX_CRUISE_Y, target.z)
                 : target;
 
+        // ── 1-block wall avoidance ─────────────────────────────────────────────
+        // If there is a solid block at the player's foot level in the direction of
+        // travel but the block above the head is clear, this is a 1-block-tall wall
+        // that can be cleared by flying 1.5 blocks higher.  Temporarily raise the
+        // effective target Y so the camera pitches upward and creative-flight carries
+        // the player over the obstacle without pressing the jump key (which can
+        // trigger Hypixel's anti-cheat when used rapidly).
+        double dyToTarget = target.y - player.getY();
+        if (dyToTarget < 2.0 && hasOneBlockWallAtFoot(player, effectiveTarget)) {
+            double clearY = Math.max(effectiveTarget.y, player.getY() + 1.5);
+            effectiveTarget = new Vec3d(effectiveTarget.x, clearY, effectiveTarget.z);
+        }
+
         Vec3d eye = player.getEyePos();
 
         // ── Altitude-climb priority (tptoplot disabled) ───────────────────────
@@ -2211,6 +2223,33 @@ public class PestKillerManager {
         int by = (int) Math.floor(player.getY()); // feet Y
         return !client.world.getBlockState(new BlockPos(bx, by,     bz)).isAir()
             || !client.world.getBlockState(new BlockPos(bx, by + 1, bz)).isAir();
+    }
+
+    /**
+     * Returns {@code true} when there is a solid block at the player's foot
+     * level 1.5 blocks ahead in the direction toward {@code target}, but the
+     * block two above the foot (i.e. one above the player's head) is clear.
+     *
+     * <p>This identifies a <em>1-block-tall wall</em> – an obstacle the player
+     * can fly straight over by ascending just 1.5 blocks, without needing to
+     * navigate around it.  {@link #flyToward} uses this to temporarily raise
+     * the effective navigation target so the camera pitches upward and
+     * creative-flight carries the player cleanly over the wall.
+     */
+    private boolean hasOneBlockWallAtFoot(ClientPlayerEntity player, Vec3d target) {
+        if (client.world == null) return false;
+        double dx = target.x - player.getX();
+        double dz = target.z - player.getZ();
+        double horizDist = Math.sqrt(dx * dx + dz * dz);
+        if (horizDist < 0.5) return false;
+        double nx = dx / horizDist;
+        double nz = dz / horizDist;
+        int bx = (int) Math.floor(player.getX() + nx * 1.5);
+        int bz = (int) Math.floor(player.getZ() + nz * 1.5);
+        int by = (int) Math.floor(player.getY()); // feet Y
+        boolean footBlocked   = !client.world.getBlockState(new BlockPos(bx, by,     bz)).isAir();
+        boolean aboveHeadClear = client.world.getBlockState(new BlockPos(bx, by + 2, bz)).isAir();
+        return footBlocked && aboveHeadClear;
     }
 
     /**

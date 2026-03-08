@@ -56,6 +56,7 @@ public class CropSelectScreen extends Screen {
         super(Text.literal("Select Crop"));
         this.parent = parent;
         this.config = config;
+        GuiTheme.activate(config);
     }
 
     @Override
@@ -127,26 +128,27 @@ public class CropSelectScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+        GuiTheme t = GuiTheme.current;
         int panelR = panelX + panelW;
         int panelB = panelY + panelH;
 
         // Full-screen dim
-        context.fill(0, 0, this.width, this.height, COL_SCREEN_DIM);
+        context.fill(0, 0, this.width, this.height, t.SCREEN_DIM);
         // Drop shadow
-        context.fill(panelX + 4, panelY + 4, panelR + 4, panelB + 4, COL_SHADOW);
+        context.fill(panelX + 4, panelY + 4, panelR + 4, panelB + 4, t.SHADOW);
         // Border
-        context.fill(panelX - 1, panelY - 1, panelR + 1, panelB + 1, COL_BORDER);
+        context.fill(panelX - 1, panelY - 1, panelR + 1, panelB + 1, t.BORDER);
         // Panel body
-        context.fill(panelX, panelY, panelR, panelB, COL_WIN_BG);
+        context.fill(panelX, panelY, panelR, panelB, t.WIN_BG);
         // Header accent bar (left edge of header)
-        context.fill(panelX, panelY, panelX + 3, panelY + HEADER_HEIGHT, COL_ACCENT);
+        context.fill(panelX, panelY, panelX + 3, panelY + HEADER_HEIGHT, t.ACCENT);
         // Header separator
         context.fill(panelX + 3, panelY + HEADER_HEIGHT - 1,
-                panelR, panelY + HEADER_HEIGHT, COL_SEP);
+                panelR, panelY + HEADER_HEIGHT, t.SEP);
         // Title
         context.drawTextWithShadow(this.textRenderer,
-                this.title.copy().withColor(COL_TEXT),
-                panelX + 10, panelY + (HEADER_HEIGHT - 8) / 2, COL_TEXT);
+                this.title.copy().withColor(t.TEXT),
+                panelX + 10, panelY + (HEADER_HEIGHT - 8) / 2, t.TEXT);
 
         // Highlight selected crop (only when it is in the visible window)
         for (int i = 0; i < CROPS.length; i++) {
@@ -168,13 +170,13 @@ public class CropSelectScreen extends Screen {
         int contentTopY = panelY + HEADER_HEIGHT + PADDING;
         if (scrollOffset > 0) {
             context.drawTextWithShadow(this.textRenderer,
-                    Text.literal("▲"), indicatorX, contentTopY, COL_TEXT_MUTED);
+                    Text.literal("▲"), indicatorX, contentTopY, t.TEXT_MUTED);
         }
         if (scrollOffset < maxScroll) {
             int bh = BUTTON_HEIGHT;
             int bottomY = panelY + panelH - bh - PADDING - 8;
             context.drawTextWithShadow(this.textRenderer,
-                    Text.literal("▼"), indicatorX, bottomY, COL_TEXT_MUTED);
+                    Text.literal("▼"), indicatorX, bottomY, t.TEXT_MUTED);
         }
     }
 

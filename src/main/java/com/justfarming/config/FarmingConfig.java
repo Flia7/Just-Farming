@@ -395,6 +395,14 @@ public class FarmingConfig {
     public int configPreset = 2;
 
     /**
+     * When {@code true} (the default), all Just Farming GUI screens use the
+     * dark colour theme (near-black backgrounds, white text).
+     * When {@code false}, screens switch to the light theme (near-white
+     * backgrounds, dark text).  The setting persists across sessions.
+     */
+    public boolean darkMode = true;
+
+    /**
      * Maximum total NPC sell value (in coins) of all items a visitor requests
      * before the visitor is automatically skipped.  Set to {@code 0} to disable
      * this check (no limit).

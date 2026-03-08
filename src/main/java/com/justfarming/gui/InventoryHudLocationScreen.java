@@ -78,6 +78,7 @@ public class InventoryHudLocationScreen extends Screen {
         this.invHudScale = Math.max(SCALE_MIN, Math.min(SCALE_MAX, config.inventoryOverlayScale));
         this.profitHudX  = config.profitHudX;
         this.profitHudY  = config.profitHudY;
+        GuiTheme.activate(config);
     }
 
     @Override
@@ -92,7 +93,8 @@ public class InventoryHudLocationScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        context.fill(0, 0, this.width, this.height, COL_SCREEN_DIM);
+        GuiTheme t = GuiTheme.current;
+        context.fill(0, 0, this.width, this.height, t.SCREEN_DIM);
 
         MinecraftClient mc  = MinecraftClient.getInstance();
         ClientPlayerEntity player = mc.player;
@@ -129,22 +131,22 @@ public class InventoryHudLocationScreen extends Screen {
                 + String.format("%.1f", invHudScale);
         int hintW = mc.textRenderer.getWidth(hint);
         context.drawTextWithShadow(mc.textRenderer,
-                Text.literal(hint).withColor(COL_HINT),
-                (this.width - hintW) / 2, 6, COL_HINT);
+                Text.literal(hint).withColor(t.TEXT),
+                (this.width - hintW) / 2, 6, t.TEXT);
 
         // ── Close button ───────────────────────────────────────────────────────
         boolean closeBtnHovered = mouseX >= closeBtnX && mouseX < closeBtnX + closeBtnW
                 && mouseY >= closeBtnY && mouseY < closeBtnY + closeBtnH;
-        int btnBg = closeBtnHovered ? COL_BTN_HOVER : COL_BTN_BG;
+        int btnBg = closeBtnHovered ? t.BTN_BG_HOVER : t.WIN_BG;
         context.fill(closeBtnX, closeBtnY, closeBtnX + closeBtnW, closeBtnY + closeBtnH, btnBg);
-        drawBtnBorder(context, closeBtnX, closeBtnY, closeBtnW, closeBtnH);
+        drawBtnBorder(context, closeBtnX, closeBtnY, closeBtnW, closeBtnH, t.BORDER);
         String btnLabel = "Done";
         int lblW = mc.textRenderer.getWidth(btnLabel);
         context.drawTextWithShadow(mc.textRenderer,
-                Text.literal(btnLabel).withColor(COL_BTN_TEXT),
+                Text.literal(btnLabel).withColor(t.TEXT),
                 closeBtnX + (closeBtnW - lblW) / 2,
                 closeBtnY + (closeBtnH - 8) / 2,
-                COL_BTN_TEXT);
+                t.TEXT);
 
         super.render(context, mouseX, mouseY, delta);
     }
@@ -198,12 +200,12 @@ public class InventoryHudLocationScreen extends Screen {
                 Text.literal(label).withColor(0x88FFFFFF), x + (w - lw) / 2, ly, 0x88FFFFFF);
     }
 
-    /** Draws a 1-pixel border around a rectangle using the button-border colour. */
-    private void drawBtnBorder(DrawContext context, int x, int y, int w, int h) {
-        context.fill(x,             y,             x + w, y + 1,         COL_BTN_BORDER);
-        context.fill(x,             y + h - 1,     x + w, y + h,         COL_BTN_BORDER);
-        context.fill(x,             y + 1,         x + 1, y + h - 1,     COL_BTN_BORDER);
-        context.fill(x + w - 1,     y + 1,         x + w, y + h - 1,     COL_BTN_BORDER);
+    /** Draws a 1-pixel border around a rectangle using the given colour. */
+    private void drawBtnBorder(DrawContext context, int x, int y, int w, int h, int col) {
+        context.fill(x,             y,             x + w, y + 1,         col);
+        context.fill(x,             y + h - 1,     x + w, y + h,         col);
+        context.fill(x,             y + 1,         x + 1, y + h - 1,     col);
+        context.fill(x + w - 1,     y + 1,         x + w, y + h - 1,     col);
     }
 
     // ── Input handling ────────────────────────────────────────────────────────

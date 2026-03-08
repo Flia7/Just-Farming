@@ -61,6 +61,7 @@ public class CropSettingsScreen extends Screen {
         this.parent = parent;
         this.config = config;
         this.crop   = config.selectedCrop;
+        GuiTheme.activate(config);
 
         // Load values from saved override, or fall back to crop defaults
         FarmingConfig.CropCustomSettings cs = config.getCropSettings(crop);
@@ -145,34 +146,35 @@ public class CropSettingsScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+        GuiTheme t = GuiTheme.current;
         int panelR = panelX + panelW;
         int panelB = panelY + panelH;
         int hdrH   = Math.round(HEADER_HEIGHT * scale);
         int sLH    = Math.max(8, Math.round(10 * scale));
 
         // Full-screen dim
-        context.fill(0, 0, this.width, this.height, COL_SCREEN_DIM);
+        context.fill(0, 0, this.width, this.height, t.SCREEN_DIM);
         // Drop shadow
-        context.fill(panelX + 4, panelY + 4, panelR + 4, panelB + 4, COL_SHADOW);
+        context.fill(panelX + 4, panelY + 4, panelR + 4, panelB + 4, t.SHADOW);
         // Outer border
-        context.fill(panelX - 1, panelY - 1, panelR + 1, panelB + 1, COL_BORDER);
+        context.fill(panelX - 1, panelY - 1, panelR + 1, panelB + 1, t.BORDER);
         // Panel body
-        context.fill(panelX, panelY, panelR, panelB, COL_WIN_BG);
+        context.fill(panelX, panelY, panelR, panelB, t.WIN_BG);
         // Header accent bar (left edge)
-        context.fill(panelX, panelY, panelX + 3, panelY + hdrH, COL_ACCENT);
+        context.fill(panelX, panelY, panelX + 3, panelY + hdrH, t.ACCENT);
         // Header separator
-        context.fill(panelX + 3, panelY + hdrH - 1, panelR, panelY + hdrH, COL_SEP);
+        context.fill(panelX + 3, panelY + hdrH - 1, panelR, panelY + hdrH, t.SEP);
 
         // Title + recommended speed (two-line header block, vertically centred)
         // 18 = 8px (first text line) + 2px gap + 8px (second text line)
         String cropName = Text.translatable(crop.getTranslationKey()).getString();
         int firstLineY = panelY + Math.max(2, (hdrH - 18) / 2);
         context.drawTextWithShadow(this.textRenderer,
-                Text.literal(cropName + " Settings").withColor(COL_TEXT),
-                panelX + 10, firstLineY, COL_TEXT);
+                Text.literal(cropName + " Settings").withColor(t.TEXT),
+                panelX + 10, firstLineY, t.TEXT);
         context.drawTextWithShadow(this.textRenderer,
-                Text.literal("Recommended Speed: " + crop.getRecommendedSpeed()).withColor(COL_TEXT_MUTED),
-                panelX + 10, firstLineY + 10, COL_TEXT_MUTED);
+                Text.literal("Recommended Speed: " + crop.getRecommendedSpeed()).withColor(t.TEXT_MUTED),
+                panelX + 10, firstLineY + 10, t.TEXT_MUTED);
 
         // Section labels
         drawSectionLabel(context, "Camera", sectionCameraY, sLH, panelR);
@@ -182,11 +184,12 @@ public class CropSettingsScreen extends Screen {
 
     private void drawSectionLabel(DrawContext context, String label,
                                    int y, int sLH, int panelR) {
-        context.fill(panelX + 4, y, panelR - 4, y + sLH, COL_SECTION_BG);
-        context.fill(panelX + 6, y + 1, panelX + 8, y + sLH - 1, COL_ACCENT);
+        GuiTheme t = GuiTheme.current;
+        context.fill(panelX + 4, y, panelR - 4, y + sLH, t.SECTION_BG);
+        context.fill(panelX + 6, y + 1, panelX + 8, y + sLH - 1, t.ACCENT);
         context.drawTextWithShadow(this.textRenderer,
-                Text.literal(label).withColor(COL_TEXT_MUTED),
-                panelX + 14, y + 1, COL_TEXT_MUTED);
+                Text.literal(label).withColor(t.TEXT_MUTED),
+                panelX + 14, y + 1, t.TEXT_MUTED);
     }
 
     @Override
