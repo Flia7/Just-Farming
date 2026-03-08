@@ -167,6 +167,21 @@ public class VisitorManager {
     private static final long WALK_JITTER_INTERVAL_MS = 800;
 
     /**
+     * Vertical offset (blocks) added to the walk-target Y when computing the
+     * camera pitch during {@link #walkToward}.  Aiming at roughly head height
+     * of the target produces a more natural look-direction than aiming at the
+     * target's foot position.
+     */
+    private static final double WALK_PITCH_HEAD_OFFSET = 1.0;
+
+    /**
+     * Minimum horizontal XZ distance (blocks) used as a divisor when computing
+     * the pitch toward the walk target.  Prevents division by zero when the
+     * target is directly above or below the player's eye.
+     */
+    private static final double WALK_PITCH_MIN_DIST_XZ = 0.01;
+
+    /**
      * Distance threshold (blocks) above {@link #INTERACT_RADIUS} at which the
      * off-axis navigation offset is active.  When the player is within this
      * distance of the visitor the offset is cleared and the camera aims directly.
@@ -1854,11 +1869,11 @@ public class VisitorManager {
         // killer's flyToward.
         Vec3d eye = player.getEyePos();
         double dx = target.x - eye.x;
-        double dy = (target.y + 1.0) - eye.y; // aim at head height of the target
+        double dy = (target.y + WALK_PITCH_HEAD_OFFSET) - eye.y; // aim at head height of the target
         double dz = target.z - eye.z;
         double distXZ = Math.sqrt(dx * dx + dz * dz);
         float baseTargetYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
-        targetPitch = (float) -Math.toDegrees(Math.atan2(dy, Math.max(distXZ, 0.01)));
+        targetPitch = (float) -Math.toDegrees(Math.atan2(dy, Math.max(distXZ, WALK_PITCH_MIN_DIST_XZ)));
 
         // Current SkyBlock speed multiplier (accounts for Speed buffs at any level).
         double speedMult = getSpeedMultiplier(player);

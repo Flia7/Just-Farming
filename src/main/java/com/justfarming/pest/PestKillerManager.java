@@ -563,6 +563,29 @@ public class PestKillerManager {
      */
     private long  pestAotvAllClicksDoneTime = 0L;
 
+    // ── 1-block wall avoidance ──────────────────────────────────────────────
+
+    /**
+     * Minimum horizontal distance (blocks) to the target before running the
+     * 1-block-wall-at-foot check.  When the target is closer than this the
+     * player is essentially already at the destination, so the check is skipped.
+     */
+    private static final double WALL_MIN_CHECK_DISTANCE = 0.5;
+
+    /**
+     * Look-ahead distance (blocks) used when probing for a 1-block wall directly
+     * ahead of the player.  1.5 blocks provides enough lead time for the camera
+     * pitch adjustment to take effect before the player reaches the obstacle.
+     */
+    private static final double WALL_PROBE_DISTANCE = 1.5;
+
+    /**
+     * How many blocks above the player's current Y position the effective
+     * navigation target is raised when a 1-block-tall wall is detected ahead.
+     * 1.5 blocks clears a single full-height block with a small margin.
+     */
+    private static final double WALL_CLEARANCE_HEIGHT = 1.5;
+
     // ── Humanised pest-aim drift ─────────────────────────────────────────────
 
     /**
@@ -1935,7 +1958,7 @@ public class PestKillerManager {
         // trigger Hypixel's anti-cheat when used rapidly).
         double dyToTarget = target.y - player.getY();
         if (dyToTarget < 2.0 && hasOneBlockWallAtFoot(player, effectiveTarget)) {
-            double clearY = Math.max(effectiveTarget.y, player.getY() + 1.5);
+            double clearY = Math.max(effectiveTarget.y, player.getY() + WALL_CLEARANCE_HEIGHT);
             effectiveTarget = new Vec3d(effectiveTarget.x, clearY, effectiveTarget.z);
         }
 
@@ -2241,11 +2264,11 @@ public class PestKillerManager {
         double dx = target.x - player.getX();
         double dz = target.z - player.getZ();
         double horizDist = Math.sqrt(dx * dx + dz * dz);
-        if (horizDist < 0.5) return false;
+        if (horizDist < WALL_MIN_CHECK_DISTANCE) return false;
         double nx = dx / horizDist;
         double nz = dz / horizDist;
-        int bx = (int) Math.floor(player.getX() + nx * 1.5);
-        int bz = (int) Math.floor(player.getZ() + nz * 1.5);
+        int bx = (int) Math.floor(player.getX() + nx * WALL_PROBE_DISTANCE);
+        int bz = (int) Math.floor(player.getZ() + nz * WALL_PROBE_DISTANCE);
         int by = (int) Math.floor(player.getY()); // feet Y
         boolean footBlocked   = !client.world.getBlockState(new BlockPos(bx, by,     bz)).isAir();
         boolean aboveHeadClear = client.world.getBlockState(new BlockPos(bx, by + 2, bz)).isAir();
