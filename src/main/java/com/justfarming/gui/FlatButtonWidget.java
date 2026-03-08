@@ -7,16 +7,12 @@ import net.minecraft.client.gui.widget.ClickableWidget;
 import net.minecraft.text.Text;
 
 /**
- * A flat, custom-rendered button that matches the dark GUI theme instead of
+ * A flat, custom-rendered button that matches the active GUI theme instead of
  * using the default Minecraft stone-button texture.
  */
 public class FlatButtonWidget extends ClickableWidget {
 
-    private static final int COL_BG_NORMAL = 0x1AFFFFFF;
-    private static final int COL_BG_HOVER  = 0x33FFFFFF;
-    private static final int COL_BORDER    = 0x28FFFFFF;
-    private static final int COL_ACCENT    = 0xFF7C4DFF;
-    private static final int COL_TEXT      = 0xF2FFFFFF;
+    private static final int COL_ACCENT = 0xFF7C4DFF;
 
     @FunctionalInterface
     public interface PressAction {
@@ -33,18 +29,19 @@ public class FlatButtonWidget extends ClickableWidget {
 
     @Override
     public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
+        GuiTheme t = GuiTheme.current;
         int x = getX(), y = getY(), w = getWidth(), h = getHeight();
         boolean hov = isHovered();
-        int bg = hov ? COL_BG_HOVER : COL_BG_NORMAL;
+        int bg = hov ? t.BTN_BG_HOVER : t.BTN_BG_NORMAL;
         // Background
         context.fill(x, y, x + w, y + h, bg);
         // Subtle inner bottom shadow for depth
         context.fill(x + 1, y + h - 2, x + w - 1, y + h - 1, 0x18000000);
         // 1-px border
-        context.fill(x,         y,         x + w,     y + 1,     COL_BORDER);
-        context.fill(x,         y + h - 1, x + w,     y + h,     COL_BORDER);
-        context.fill(x,         y + 1,     x + 1,     y + h - 1, COL_BORDER);
-        context.fill(x + w - 1, y + 1,     x + w,     y + h - 1, COL_BORDER);
+        context.fill(x,         y,         x + w,     y + 1,     t.BORDER);
+        context.fill(x,         y + h - 1, x + w,     y + h,     t.BORDER);
+        context.fill(x,         y + 1,     x + 1,     y + h - 1, t.BORDER);
+        context.fill(x + w - 1, y + 1,     x + w,     y + h - 1, t.BORDER);
         // Left accent bar: 3 px wide when hovered, 2 px otherwise
         int accentW = hov ? 3 : 2;
         context.fill(x, y, x + accentW, y + h, COL_ACCENT);
@@ -54,7 +51,7 @@ public class FlatButtonWidget extends ClickableWidget {
                 getMessage(),
                 x + w / 2,
                 y + (h - 8) / 2,
-                COL_TEXT);
+                t.TEXT);
     }
 
     @Override
@@ -75,23 +72,25 @@ public class FlatButtonWidget extends ClickableWidget {
      */
     public static void renderFlatSlider(DrawContext context, int x, int y, int w, int h,
                                          double value, Text message) {
+        GuiTheme t = GuiTheme.current;
         // Background
-        context.fill(x, y, x + w, y + h, 0x14FFFFFF);
+        context.fill(x, y, x + w, y + h, t.SLIDER_TRACK);
         // Filled portion
         int fillW = (int) Math.round(value * w);
-        if (fillW > 0) context.fill(x, y, x + fillW, y + h, 0x28FFFFFF);
+        if (fillW > 0) context.fill(x, y, x + fillW, y + h, t.SLIDER_FILL);
         // Left accent bar (always visible, 2 px)
         context.fill(x, y, x + 2, y + h, 0xFF7C4DFF);
         // Thumb indicator (2 px wide, full height)
         int thumbX = x + Math.max(2, Math.min(fillW, w - 2));
-        context.fill(thumbX - 1, y, thumbX + 1, y + h, 0xF2FFFFFF);
+        context.fill(thumbX - 1, y, thumbX + 1, y + h, t.SLIDER_THUMB);
         // Border (top, bottom, right)
-        context.fill(x,         y,         x + w, y + 1, 0x28FFFFFF);
-        context.fill(x,         y + h - 1, x + w, y + h, 0x28FFFFFF);
-        context.fill(x + w - 1, y,         x + w, y + h, 0x28FFFFFF);
+        context.fill(x,         y,         x + w, y + 1, t.BORDER);
+        context.fill(x,         y + h - 1, x + w, y + h, t.BORDER);
+        context.fill(x + w - 1, y,         x + w, y + h, t.BORDER);
         // Centered text
         context.drawCenteredTextWithShadow(
                 MinecraftClient.getInstance().textRenderer,
-                message, x + w / 2, y + (h - 8) / 2, 0xF2FFFFFF);
+                message, x + w / 2, y + (h - 8) / 2, t.TEXT);
     }
 }
+

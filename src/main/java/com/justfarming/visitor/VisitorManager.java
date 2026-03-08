@@ -120,9 +120,10 @@ public class VisitorManager {
      * Camera rotation speed (degrees per second) for smooth look-at movement.
      * The rotation is time-based (using elapsed wall-clock milliseconds) so the
      * angular speed is independent of frame rate: at this rate the camera covers
-     * 90° in one second, providing snappy but smooth tracking of visitor NPCs.
+     * 180° in one second, matching the pest-killer rotation speed for consistent
+     * yaw/pitch tracking of visitor NPCs.
      */
-    private static final float SMOOTH_LOOK_DEGREES_PER_SECOND = 90.0f;
+    private static final float SMOOTH_LOOK_DEGREES_PER_SECOND = 180.0f;
 
     /**
      * Faster camera rotation speed (degrees/second) used when the player is
@@ -164,6 +165,21 @@ public class VisitorManager {
      * Keeping this fairly short (< 1 s) produces natural-looking path variation.
      */
     private static final long WALK_JITTER_INTERVAL_MS = 800;
+
+    /**
+     * Vertical offset (blocks) added to the walk-target Y when computing the
+     * camera pitch during {@link #walkToward}.  Aiming at roughly head height
+     * of the target produces a more natural look-direction than aiming at the
+     * target's foot position.
+     */
+    private static final double WALK_PITCH_HEAD_OFFSET = 1.0;
+
+    /**
+     * Minimum horizontal XZ distance (blocks) used as a divisor when computing
+     * the pitch toward the walk target.  Prevents division by zero when the
+     * target is directly above or below the player's eye.
+     */
+    private static final double WALK_PITCH_MIN_DIST_XZ = 0.01;
 
     /**
      * Distance threshold (blocks) above {@link #INTERACT_RADIUS} at which the
@@ -1848,12 +1864,16 @@ public class VisitorManager {
             walkJitterNextUpdate = now + WALK_JITTER_INTERVAL_MS;
         }
 
-        // Direction from eye to target; keep pitch neutral during navigation.
+        // Direction from eye to target; compute proper yaw and pitch toward the target
+        // so the camera aims naturally (including slight up/down tilt) as in the pest
+        // killer's flyToward.
         Vec3d eye = player.getEyePos();
         double dx = target.x - eye.x;
+        double dy = (target.y + WALK_PITCH_HEAD_OFFSET) - eye.y; // aim at head height of the target
         double dz = target.z - eye.z;
+        double distXZ = Math.sqrt(dx * dx + dz * dz);
         float baseTargetYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
-        targetPitch = 0f;
+        targetPitch = (float) -Math.toDegrees(Math.atan2(dy, Math.max(distXZ, WALK_PITCH_MIN_DIST_XZ)));
 
         // Current SkyBlock speed multiplier (accounts for Speed buffs at any level).
         double speedMult = getSpeedMultiplier(player);

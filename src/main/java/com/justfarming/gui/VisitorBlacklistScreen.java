@@ -95,6 +95,7 @@ public class VisitorBlacklistScreen extends Screen {
         super(Text.literal("Blacklist Visitors"));
         this.parent = parent;
         this.config = config;
+        GuiTheme.activate(config);
     }
 
     /** Recomputes {@link #filteredVisitors} from {@link #searchQuery}. */
@@ -148,7 +149,7 @@ public class VisitorBlacklistScreen extends Screen {
                 this.textRenderer, wx, searchY, totalBW, SEARCH_HEIGHT, Text.empty());
         searchField.setMaxLength(64);
         searchField.setText(searchQuery);
-        searchField.setPlaceholder(Text.literal("Search visitors...").withColor(COL_TEXT_MUTED));
+        searchField.setPlaceholder(Text.literal("Search visitors...").withColor(GuiTheme.current.TEXT_MUTED));
         searchField.setChangedListener(text -> {
             searchQuery = text;
             scrollOffset = 0;
@@ -223,26 +224,27 @@ public class VisitorBlacklistScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+        GuiTheme t = GuiTheme.current;
         int panelR = panelX + panelW;
         int panelB = panelY + panelH;
 
         // Full-screen dim
-        context.fill(0, 0, this.width, this.height, COL_SCREEN_DIM);
+        context.fill(0, 0, this.width, this.height, t.SCREEN_DIM);
         // Drop shadow
-        context.fill(panelX + 4, panelY + 4, panelR + 4, panelB + 4, COL_SHADOW);
+        context.fill(panelX + 4, panelY + 4, panelR + 4, panelB + 4, t.SHADOW);
         // Border
-        context.fill(panelX - 1, panelY - 1, panelR + 1, panelB + 1, COL_BORDER);
+        context.fill(panelX - 1, panelY - 1, panelR + 1, panelB + 1, t.BORDER);
         // Panel body
-        context.fill(panelX, panelY, panelR, panelB, COL_WIN_BG);
+        context.fill(panelX, panelY, panelR, panelB, t.WIN_BG);
         // Header accent bar
-        context.fill(panelX, panelY, panelX + 3, panelY + HEADER_HEIGHT, COL_ACCENT);
+        context.fill(panelX, panelY, panelX + 3, panelY + HEADER_HEIGHT, t.ACCENT);
         // Header separator
         context.fill(panelX + 3, panelY + HEADER_HEIGHT - 1,
-                panelR, panelY + HEADER_HEIGHT, COL_SEP);
+                panelR, panelY + HEADER_HEIGHT, t.SEP);
         // Title
         context.drawTextWithShadow(this.textRenderer,
-                this.title.copy().withColor(COL_TEXT),
-                panelX + 10, panelY + (HEADER_HEIGHT - 8) / 2, COL_TEXT);
+                this.title.copy().withColor(t.TEXT),
+                panelX + 10, panelY + (HEADER_HEIGHT - 8) / 2, t.TEXT);
 
         // Highlight blacklisted visitors (only for visible filtered rows)
         if (config.visitorBlacklist != null) {
@@ -268,12 +270,12 @@ public class VisitorBlacklistScreen extends Screen {
         int contentTopY = panelY + HEADER_HEIGHT + PADDING + SEARCH_HEIGHT + PADDING;
         if (scrollOffset > 0) {
             context.drawTextWithShadow(this.textRenderer,
-                    Text.literal("▲"), indicatorX, contentTopY, COL_TEXT_MUTED);
+                    Text.literal("▲"), indicatorX, contentTopY, t.TEXT_MUTED);
         }
         if (scrollOffset < maxScroll) {
             int bottomY = panelY + panelH - BUTTON_HEIGHT - PADDING - 8;
             context.drawTextWithShadow(this.textRenderer,
-                    Text.literal("▼"), indicatorX, bottomY, COL_TEXT_MUTED);
+                    Text.literal("▼"), indicatorX, bottomY, t.TEXT_MUTED);
         }
     }
 

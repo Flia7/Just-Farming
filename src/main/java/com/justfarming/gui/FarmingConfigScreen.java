@@ -37,18 +37,27 @@ public class FarmingConfigScreen extends Screen {
     private static final int PADDING        = 10;
     private static final int TAB_HEIGHT     = 26;
 
-    // ── Colour palette (inspired by sw DEFAULT / MONOCHROME theme) ────────────
-    private static final int COL_SCREEN_DIM  = 0x60000000; // full-screen dim
-    private static final int COL_WIN_BG      = 0xBF000000; // rgba(0,0,0,0.75) window
-    private static final int COL_NAV_BG      = 0x99000000; // rgba(0,0,0,0.6)  nav panel
-    private static final int COL_BORDER      = 0x28FFFFFF; // rgba(1,1,1,0.16) border
-    private static final int COL_SEP         = 0x14FFFFFF; // rgba(1,1,1,0.08) separator
-    private static final int COL_SECTION_BG  = 0x14FFFFFF; // section label tint
-    private static final int COL_TEXT        = 0xF2FFFFFF; // rgba(1,1,1,0.95) text
-    private static final int COL_TEXT_MUTED  = 0x66FFFFFF; // rgba(1,1,1,0.40) muted text
-    private static final int COL_ACCENT      = 0xFF7C4DFF; // purple accent
-    private static final int COL_TAB_ACTIVE  = 0x26FFFFFF; // active tab tint
-    private static final int COL_SHADOW      = 0x60000000; // drop shadow
+    // ── Colour palette (resolved from GuiTheme.current at render time) ────────
+    // Kept as instance fields (not static) so they can be refreshed when the
+    // theme changes without requiring a full screen rebuild.
+    private int COL_SCREEN_DIM, COL_WIN_BG, COL_NAV_BG, COL_BORDER, COL_SEP;
+    private int COL_SECTION_BG, COL_TEXT, COL_TEXT_MUTED, COL_ACCENT;
+    private int COL_TAB_ACTIVE, COL_SHADOW;
+
+    private void refreshThemeColors() {
+        GuiTheme t = GuiTheme.current;
+        COL_SCREEN_DIM = t.SCREEN_DIM;
+        COL_WIN_BG     = t.WIN_BG;
+        COL_NAV_BG     = t.NAV_BG;
+        COL_BORDER     = t.BORDER;
+        COL_SEP        = t.SEP;
+        COL_SECTION_BG = t.SECTION_BG;
+        COL_TEXT       = t.TEXT;
+        COL_TEXT_MUTED = t.TEXT_MUTED;
+        COL_ACCENT     = t.ACCENT;
+        COL_TAB_ACTIVE = t.TAB_ACTIVE;
+        COL_SHADOW     = t.SHADOW;
+    }
 
     // ── Tabs ──────────────────────────────────────────────────────────────────
     private static final String[] TAB_NAMES = { "Farming", "Pests", "Visitors", "Hud's", "Misc", "Delays" };
@@ -138,6 +147,8 @@ public class FarmingConfigScreen extends Screen {
     private PestKillerVacuumRangeSlider   pestKillerVacuumRangeSlider;
     private FarmingToolSlotSlider         farmingToolSlotSlider;
 
+    // ── Tab 4 – Misc: dark/light mode ─────────────────────────────────────────
+    private FlatBoolToggleWidget darkModeButton;
 
     // ── Always-visible widget ─────────────────────────────────────────────────
     private FlatButtonWidget saveCloseButton;
@@ -149,6 +160,7 @@ public class FarmingConfigScreen extends Screen {
     private int sectionHudInvY, sectionHudProfitY, sectionHudDisplayY;
     // Settings tab (tab 4 in TAB_NAMES array)
     private int sectionSettingsCameraY, sectionSettingsMacroY, settingsCameraSeparatorY;
+    private int sectionSettingsThemeY;
     // Delays tab (tab 4)
     private int sectionGlobalRandomY, sectionLaneSwapY, sectionRewarpDelayY, sectionMousematDelayY, sectionVisitorDelaysY, sectionPestKillerDelaysY;
     // Visitors tab (tab 5)
@@ -167,10 +179,14 @@ public class FarmingConfigScreen extends Screen {
         this.macroManager   = macroManager;
         this.visitorManager = com.justfarming.JustFarming.getVisitorManager();
         this.pestKillerManager = com.justfarming.JustFarming.getPestKillerManager();
+        GuiTheme.activate(config);
+        refreshThemeColors();
     }
 
     @Override
     protected void init() {
+        GuiTheme.activate(config);
+        refreshThemeColors();
         // ── Compute scale so the window fits the screen with a small margin ────
         float sw = (float)(this.width  - 4) / WINDOW_WIDTH;
         float sh = (float)(this.height - 4) / WINDOW_HEIGHT;
@@ -459,6 +475,26 @@ public class FarmingConfigScreen extends Screen {
         macroEnabledInGuiButton.setTooltip(Tooltip.of(Text.literal(
                 "Continue moving and breaking blocks even while this GUI is open.\n" +
                 "Removes the brief pause when opening or closing a screen.")));
+        y += bh + pad + gap;
+
+        sectionSettingsThemeY = y;
+        y += sLH;
+
+        darkModeButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
+                        Text.literal("Dark Mode"),
+                        config.darkMode);
+        darkModeButton.setOnChange(() -> {
+            config.darkMode = darkModeButton.getValue();
+            config.save();
+            // Re-activate theme so all open screens pick up the change immediately.
+            GuiTheme.activate(config);
+            refreshThemeColors();
+            // Rebuild widgets so colours are applied (clearChildren + re-init).
+            clearAndInit();
+        });
+        this.addDrawableChild(darkModeButton);
+        darkModeButton.setTooltip(Tooltip.of(Text.literal(
+                "Toggle between dark mode (default) and light mode\nfor all Just Farming GUI screens.")));
         tabContentHeights[4] = y + bh - contentAreaTopY + tabScrollOffsets[4];
 
         // ── Tab 5 – Delays ────────────────────────────────────────────────────
@@ -696,6 +732,7 @@ public class FarmingConfigScreen extends Screen {
         gardenOnlyButton.visible        = t4 && inContentBounds(gardenOnlyButton);
         squeakyMousematButton.visible   = t4 && inContentBounds(squeakyMousematButton);
         macroEnabledInGuiButton.visible = t4 && inContentBounds(macroEnabledInGuiButton);
+        darkModeButton.visible          = t4 && inContentBounds(darkModeButton);
 
         boolean t5 = activeTab == 5;
         globalRandomSlider.visible            = t5 && inContentBounds(globalRandomSlider);
@@ -808,6 +845,8 @@ public class FarmingConfigScreen extends Screen {
                 context.fill(contentX + 16, settingsCameraSeparatorY, winR - 16, settingsCameraSeparatorY + 1, COL_SEP);
             if (yInContentBounds(sectionSettingsMacroY))
                 drawSectionLabel(context, "Macro", sectionSettingsMacroY);
+            if (yInContentBounds(sectionSettingsThemeY))
+                drawSectionLabel(context, "Theme", sectionSettingsThemeY);
         } else if (activeTab == 5) {
             if (yInContentBounds(sectionGlobalRandomY))
                 drawSectionLabel(context, "Global", sectionGlobalRandomY);
@@ -977,18 +1016,13 @@ public class FarmingConfigScreen extends Screen {
     }
 
     /**
-     * Boolean toggle widget that renders in the dark flat style instead of
+     * Boolean toggle widget that renders in the active flat theme style instead of
      * using the default Minecraft button texture.
      */
     private static class FlatBoolToggleWidget extends net.minecraft.client.gui.widget.ClickableWidget {
 
-        private static final int COL_BG_NORMAL = 0x1AFFFFFF;
-        private static final int COL_BG_HOVER  = 0x33FFFFFF;
-        private static final int COL_BORDER    = 0x28FFFFFF;
-        private static final int COL_ACCENT    = 0xFF7C4DFF;
-        private static final int COL_TEXT      = 0xF2FFFFFF;
-        private static final int COL_ON        = 0xFF50E890;
-        private static final int COL_OFF       = 0xFFFF5060;
+        private static final int COL_ACCENT = 0xFF7C4DFF;
+        private static final int COL_ON     = 0xFF50E890;
 
         private final net.minecraft.text.Text label;
         private boolean value;
@@ -1009,31 +1043,33 @@ public class FarmingConfigScreen extends Screen {
 
         @Override
         public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
+            GuiTheme t = GuiTheme.current;
             int x = getX(), y = getY(), w = getWidth(), h = getHeight();
-            int bg = isHovered() ? COL_BG_HOVER : COL_BG_NORMAL;
+            int bg = isHovered() ? t.BTN_BG_HOVER : t.BTN_BG_NORMAL;
             context.fill(x, y, x + w, y + h, bg);
             // Subtle inner bottom shadow for depth
             context.fill(x + 1, y + h - 2, x + w - 1, y + h - 1, 0x18000000);
             // 1-px border
-            context.fill(x,         y,         x + w, y + 1,     COL_BORDER);
-            context.fill(x,         y + h - 1, x + w, y + h,     COL_BORDER);
-            context.fill(x,         y + 1,     x + 1, y + h - 1, COL_BORDER);
-            context.fill(x + w - 1, y + 1,     x + w, y + h - 1, COL_BORDER);
+            context.fill(x,         y,         x + w, y + 1,     t.BORDER);
+            context.fill(x,         y + h - 1, x + w, y + h,     t.BORDER);
+            context.fill(x,         y + 1,     x + 1, y + h - 1, t.BORDER);
+            context.fill(x + w - 1, y + 1,     x + w, y + h - 1, t.BORDER);
             // 2-px left accent bar (purple when ON, dim when OFF)
-            context.fill(x, y, x + 2, y + h, value ? COL_ACCENT : COL_BORDER);
+            context.fill(x, y, x + 2, y + h, value ? COL_ACCENT : t.BORDER);
             // Label (left-aligned)
             var tr = MinecraftClient.getInstance().textRenderer;
-            context.drawTextWithShadow(tr, label, x + 8, y + (h - 8) / 2, COL_TEXT);
+            context.drawTextWithShadow(tr, label, x + 8, y + (h - 8) / 2, t.TEXT);
             // Pill-style toggle switch (right-aligned)
             int pillW = 28, pillH = Math.max(8, h - 10);
             int pillX = x + w - pillW - 8;
             int pillY = y + (h - pillH) / 2;
             // Track
             context.fill(pillX,          pillY,          pillX + pillW, pillY + pillH,
-                    value ? 0x9050E890 : 0x40FFFFFF);
+                    value ? 0x9050E890 : (GuiTheme.current == GuiTheme.DARK ? 0x40FFFFFF : 0x30000000));
             // Track border
-            context.fill(pillX,              pillY,              pillX + pillW, pillY + 1,          0x70FFFFFF);
-            context.fill(pillX,              pillY + pillH - 1,  pillX + pillW, pillY + pillH,      0x70FFFFFF);
+            int trackBorder = GuiTheme.current == GuiTheme.DARK ? 0x70FFFFFF : 0x60000000;
+            context.fill(pillX,              pillY,              pillX + pillW, pillY + 1,          trackBorder);
+            context.fill(pillX,              pillY + pillH - 1,  pillX + pillW, pillY + pillH,      trackBorder);
             context.fill(pillX,              pillY + 1,          pillX + 1,     pillY + pillH - 1,  0x70FFFFFF);
             context.fill(pillX + pillW - 1,  pillY + 1,          pillX + pillW, pillY + pillH - 1,  0x70FFFFFF);
             // Knob (slides right when ON, left when OFF)
@@ -1084,7 +1120,7 @@ public class FarmingConfigScreen extends Screen {
                         tabColor);
             } else if (hovered) {
                 context.fill(getX(), getY(), getX() + getWidth(), getY() + getHeight(),
-                        0x14FFFFFF);
+                        GuiTheme.current.BTN_BG_NORMAL);
             }
 
             int textColor = active ? COL_TEXT : COL_TEXT_MUTED;
