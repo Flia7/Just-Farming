@@ -8,11 +8,14 @@ import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.item.ItemStack;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Tracks items collected and profit earned during farming and pest killing.
@@ -59,6 +62,18 @@ public class FarmingProfitTracker {
     private long lastPestActiveMs = -1;
     /** How long after pest activity ends to still attribute gains to pest killing. */
     private static final long PEST_COOLDOWN_MS = 3_000L;
+
+    // ── Vinyl name normalization set ─────────────────────────────────────────
+    /**
+     * All individual pest-vinyl item names that should be grouped under the
+     * "Pest Vinyl" display entry in the profit HUD.
+     */
+    private static final Set<String> VINYL_NAMES = new HashSet<>(Arrays.asList(
+            "pretty fly", "not just a pest", "cricket choir", "cicada symphony",
+            "buzzin' beats", "dynamites", "wings of harmony", "rodent revolution",
+            "slow and groovy", "earthworm ensemble", "beetle beats", "slug groove",
+            "mosquito melody", "locust lullaby", "mite march"
+    ));
 
     // ── Previous inventory snapshot ──────────────────────────────────────────
     private final Map<String, Long> prevSnapshot = new HashMap<>();
@@ -170,9 +185,10 @@ public class FarmingProfitTracker {
         return map;
     }
 
-    /** Lower-cased, colour-stripped item name used as map key. */
+    /** Lower-cased, colour-stripped item name used as map key. Vinyl names are normalised to "pest vinyl". */
     private static String plainKey(ItemStack stack) {
-        return stripColor(stack.getName().getString()).toLowerCase().trim();
+        String key = stripColor(stack.getName().getString()).toLowerCase().trim();
+        return VINYL_NAMES.contains(key) ? "pest vinyl" : key;
     }
 
     /**

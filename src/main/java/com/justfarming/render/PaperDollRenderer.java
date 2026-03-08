@@ -273,8 +273,7 @@ public class PaperDollRenderer {
                              KeystrokesTracker tracker, long now) {
         int bg  = tracker.getKeyBgColor  (KeystrokesTracker.KEY_LMB, BG_PRESSED,  BG_RELEASED,  now);
         int txt = tracker.getKeyTextColor(KeystrokesTracker.KEY_LMB, TXT_PRESSED, TXT_RELEASED, now);
-        int cps = tracker.getLmbCps();
-        String label = cps > 0 ? String.valueOf(cps) : "L";
+        String label = "L";
         drawKeyBox(context, tr, x, y, w, h, label, bg, txt);
     }
 

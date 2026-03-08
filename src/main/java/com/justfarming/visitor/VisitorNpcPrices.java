@@ -87,8 +87,26 @@ public final class VisitorNpcPrices {
         NPC_PRICES.put("clipped wings",            1000.0);
         NPC_PRICES.put("atmospheric filter",     100000.0);
         NPC_PRICES.put("chirping stereo",        100000.0);
-        NPC_PRICES.put("pest vinyl",              50000.0);
         NPC_PRICES.put("wriggling larva",        250000.0);
+        NPC_PRICES.put("tool exp capsule",       100000.0);
+
+        // ── Pest vinyls (all 50k each) ─────────────────────────────────────────
+        NPC_PRICES.put("pest vinyl",              50000.0);
+        NPC_PRICES.put("pretty fly",              50000.0);
+        NPC_PRICES.put("not just a pest",         50000.0);
+        NPC_PRICES.put("cricket choir",           50000.0);
+        NPC_PRICES.put("cicada symphony",         50000.0);
+        NPC_PRICES.put("buzzin' beats",           50000.0);
+        NPC_PRICES.put("dynamites",               50000.0);
+        NPC_PRICES.put("wings of harmony",        50000.0);
+        NPC_PRICES.put("rodent revolution",       50000.0);
+        NPC_PRICES.put("slow and groovy",         50000.0);
+        NPC_PRICES.put("earthworm ensemble",      50000.0);
+        NPC_PRICES.put("beetle beats",            50000.0);
+        NPC_PRICES.put("slug groove",             50000.0);
+        NPC_PRICES.put("mosquito melody",         50000.0);
+        NPC_PRICES.put("locust lullaby",          50000.0);
+        NPC_PRICES.put("mite march",              50000.0);
 
         // ── Pets (sold via George) ────────────────────────────────────────────
         NPC_PRICES.put("rat pet",                  5000.0);

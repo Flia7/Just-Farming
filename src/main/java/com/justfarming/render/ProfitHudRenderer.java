@@ -42,7 +42,7 @@ public class ProfitHudRenderer {
     // ── Layout constants ─────────────────────────────────────────────────────
 
     /** Panel width in pixels. */
-    private static final int PANEL_W     = 200;
+    private static final int PANEL_W     = 170;
     /** Horizontal padding inside the panel. */
     private static final int PAD_X       = 6;
     /** Vertical padding at the top and bottom of the panel. */
@@ -118,13 +118,11 @@ public class ProfitHudRenderer {
 
         int curY = y + PAD_Y;
 
-        // ── Crop title: "Cocoa Beans (20m)" in the crop's colour ─────────────
+        // ── Crop title: crop name in the crop's colour ────────────────────────
         CropType crop = config.selectedCrop != null ? config.selectedCrop : CropType.COCOA_BEANS;
         int cropColor = crop.getDisplayColor();
         String cropName = Text.translatable(crop.getTranslationKey()).getString();
-        String timeStr  = formatElapsedTime(tracker.getSessionElapsedMs());
-        String titleStr = cropName + " (" + timeStr + ")";
-        context.drawTextWithShadow(tr, titleStr, x + PAD_X, curY, cropColor);
+        context.drawTextWithShadow(tr, cropName, x + PAD_X, curY, cropColor);
         curY += LINE_H;
 
         // ── BPS row (item scale) ──────────────────────────────────────────────
@@ -154,6 +152,11 @@ public class ProfitHudRenderer {
         curY = drawSeparator(context, x, curY);
         context.drawTextWithShadow(tr, "Stats", x + PAD_X, curY, COL_TITLE);
         curY += LINE_H;
+
+        // Time Elapsed at item scale
+        String timeElapsed = "Time Elapsed: " + formatElapsedTime(tracker.getSessionElapsedMs());
+        drawScaledText(context, tr, x + PAD_X, curY, timeElapsed, COL_ITEM);
+        curY += scaledLineH();
 
         // Combined Profit/Hour (farming + pests) at item scale
         double combinedPh = tracker.getFarmingProfitPerHour()
@@ -285,9 +288,10 @@ public class ProfitHudRenderer {
             h += sectionItemsH(tracker.getPestEntries());
         }
 
-        // Separator + Stats + profit/hour row
+        // Separator + Stats + time elapsed + profit/hour row
         h += separatorH();
         h += LINE_H;            // "Stats" label
+        h += scaledLineH();     // Time Elapsed row
         h += scaledLineH();     // Profit/Hour row
 
         return h;
@@ -331,8 +335,8 @@ public class ProfitHudRenderer {
         if (pestProfitEnabled) {
             h += separatorH() + LINE_H + 2 * scaledLineH();
         }
-        // Stats section (separator + label + profit/hour)
-        h += separatorH() + LINE_H + scaledLineH();
+        // Stats section (separator + label + time elapsed + profit/hour)
+        h += separatorH() + LINE_H + 2 * scaledLineH();
         return h;
     }
 
@@ -351,19 +355,24 @@ public class ProfitHudRenderer {
     }
 
     static String formatBps(double bps) {
-        if (bps <= 0) return "0.0";
-        return String.format(Locale.US, "%.1f", bps);
+        if (bps <= 0) return "0.00";
+        return String.format(Locale.US, "%.2f", bps);
     }
 
-    /** Formats elapsed milliseconds as "Xm" or "Xh Ym". */
+    /** Formats elapsed milliseconds as "Xh Ym Zs", "Ym Zs", or "Zs". */
     static String formatElapsedTime(long ms) {
         long totalSeconds = ms / 1000L;
-        long minutes = totalSeconds / 60L;
-        long hours   = minutes / 60L;
+        long seconds = totalSeconds % 60L;
+        long totalMinutes = totalSeconds / 60L;
+        long minutes = totalMinutes % 60L;
+        long hours   = totalMinutes / 60L;
         if (hours > 0) {
-            return hours + "h " + (minutes % 60) + "m";
+            return hours + "h" + minutes + "m" + seconds + "s";
         }
-        return minutes + "m";
+        if (minutes > 0) {
+            return minutes + "m" + seconds + "s";
+        }
+        return seconds + "s";
     }
 
     /** Pixel height of one item row at {@link #ITEM_SCALE}. */
