@@ -120,7 +120,6 @@ public class InventoryHudRenderer {
 
         int bgColor     = dark ? BG_COLOR_DARK    : BG_COLOR_LIGHT;
         int slotColor   = dark ? SLOT_BG_DARK     : SLOT_BG_LIGHT;
-        int borderColor = dark ? BORDER_COLOR_DARK : BORDER_COLOR_LIGHT;
         int accentColor = dark ? ACCENT_COLOR_DARK : ACCENT_COLOR_LIGHT;
 
         int totalW = scaledGridW + 2 * scaledBgPad;
@@ -132,10 +131,8 @@ public class InventoryHudRenderer {
         // Top accent stripe (1px) – bright cyan line matching the config GUI header.
         context.fill(bgX, bgY, bgX + totalW, bgY + 1, accentColor);
 
-        // Thin border outline around the remaining three sides (accent covers top).
-        context.fill(bgX,              bgY + totalH - 1, bgX + totalW, bgY + totalH,     borderColor); // bottom
-        context.fill(bgX,              bgY,          bgX + 1,          bgY + totalH,     borderColor); // left
-        context.fill(bgX + totalW - 1, bgY,          bgX + totalW,     bgY + totalH,     borderColor); // right
+        // No border outline – the panel connects seamlessly to the paper-doll
+        // panel on the right and the profit HUD below.
 
         // Items are rendered inside the background, offset by scaledBgPad.
         int startX = bgX + scaledBgPad;

@@ -421,8 +421,8 @@ public class FarmingConfig {
      * teleport wait, the routine skips the barn visit and warps directly back
      * to the Garden.
      *
-     * <p>Range: 1–6 (Hypixel SkyBlock allows up to 5 concurrent visitors, with
-     * a possible 6th appearing late).  Default {@code 1} means the routine
+     * <p>Range: 1–5 (Hypixel SkyBlock supports up to 5 concurrent visitors).
+     * Default {@code 1} means the routine
      * always runs when at least one visitor is present.
      */
     public int visitorsMinCount = 1;

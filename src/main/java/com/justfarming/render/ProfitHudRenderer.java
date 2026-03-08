@@ -164,11 +164,9 @@ public class ProfitHudRenderer {
         int height = computeHeight(tracker, inGarden);
         int pw = panelW();
 
-        // Background
+        // Background – no top accent stripe so the panel connects seamlessly to
+        // the inventory HUD and paper-doll panel above it.
         context.fill(x, y, x + pw, y + height, COL_BG());
-
-        // Top accent stripe (1px) – bright cyan matching the config GUI header.
-        context.fill(x, y, x + pw, y + 1, COL_ACCENT());
 
         int curY = y + PAD_Y;
 
