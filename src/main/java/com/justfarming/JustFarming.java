@@ -12,6 +12,7 @@ import com.justfarming.render.OverlayRenderer;
 import com.justfarming.render.PaperDollRenderer;
 import com.justfarming.render.ProfitHudRenderer;
 import com.justfarming.render.ScoreboardHudRenderer;
+import com.justfarming.util.MouseGraceHelper;
 import com.justfarming.visitor.VisitorManager;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
@@ -312,6 +313,17 @@ public class JustFarming implements ClientModInitializer {
             KeystrokesTracker.getInstance().update(client);
             // Update profit tracker
             profitTracker.onTick(client, macroManager, pestKillerManager, visitorManager.isActive());
+
+            // After the mouse-grace period expires, re-lock the cursor unless the
+            // "unlock mouse" option is keeping it free permanently.
+            long graceExpiry = MouseGraceHelper.guiCloseGraceUntilMs;
+            if (graceExpiry > 0 && System.currentTimeMillis() > graceExpiry) {
+                MouseGraceHelper.guiCloseGraceUntilMs = 0L;
+                boolean keepUnlocked = config.unlockedMouseEnabled && macroManager.isAnyMacroStateActive();
+                if (!keepUnlocked && client.currentScreen == null) {
+                    client.mouse.lockCursor();
+                }
+            }
 
             // Stop macro if Garden-only mode is enabled and the player left the Garden.
             // Do not stop while the visitor routine is active, while the macro is in

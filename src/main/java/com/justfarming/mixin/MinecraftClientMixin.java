@@ -2,8 +2,10 @@ package com.justfarming.mixin;
 
 import com.justfarming.JustFarming;
 import com.justfarming.MacroManager;
+import com.justfarming.pest.PestDetector;
 import com.justfarming.util.MouseGraceHelper;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.screen.GameMenuScreen;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.option.KeyBinding;
 import org.spongepowered.asm.mixin.Mixin;
@@ -44,15 +46,40 @@ public class MinecraftClientMixin {
     }
 
     /**
-     * Detect when a GUI screen is closed ({@code screen == null}) and start the
-     * 1-second cursor-ungrab grace period in {@link MouseMixin}.  This prevents
-     * Minecraft from immediately re-grabbing the cursor as the screen closes,
-     * which causes a perceptible micro-stutter in mouse input.
+     * Two interrelated {@code setScreen} hooks:
+     *
+     * <ol>
+     *   <li><b>ESC menu suppression</b> – while the farming macro is running,
+     *       block the game-pause screen ({@link GameMenuScreen}) from opening so
+     *       that pressing Escape or Alt-Tab focus-loss cannot interrupt the macro.
+     *       The macro can therefore keep running while the game window is in the
+     *       background.</li>
+     *   <li><b>Cursor-ungrab grace period</b> – when a GUI is closed
+     *       ({@code screen == null}) while the macro is active inside the Garden,
+     *       start the 1-second grace window that prevents Minecraft from
+     *       immediately re-grabbing the cursor.  Outside the Garden or while the
+     *       macro is stopped the grace period is not started, so vanilla cursor
+     *       behaviour is preserved.</li>
+     * </ol>
      */
-    @Inject(method = "setScreen", at = @At("HEAD"))
+    @Inject(method = "setScreen", at = @At("HEAD"), cancellable = true)
     private void onSetScreen(Screen screen, CallbackInfo ci) {
+        // ── ESC / game-menu suppression ──────────────────────────────────────
+        if (screen instanceof GameMenuScreen) {
+            MacroManager mm = JustFarming.getMacroManager();
+            if (mm != null && mm.isAnyMacroStateActive()) {
+                ci.cancel();
+                return;
+            }
+        }
+
+        // ── Cursor-ungrab grace period (only in Garden while macro runs) ────
         if (screen == null) {
-            MouseGraceHelper.notifyGuiClosed();
+            MacroManager mm = JustFarming.getMacroManager();
+            PestDetector pd = JustFarming.getPestDetector();
+            if (mm != null && pd != null && pd.isInGarden() && mm.isAnyMacroStateActive()) {
+                MouseGraceHelper.notifyGuiClosed();
+            }
         }
     }
 

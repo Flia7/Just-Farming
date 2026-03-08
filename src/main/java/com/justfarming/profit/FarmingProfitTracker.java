@@ -211,9 +211,9 @@ public class FarmingProfitTracker {
         DEFAULT_ICONS.put("pest vinyl",      Items.MUSIC_DISC_13);
     }
 
-    // ── Display-data cache (refreshed every 3 seconds) ────────────────────────
+    // ── Display-data cache (refreshed every second) ───────────────────────────
     /** How often (ms) the Profit HUD display data is refreshed. */
-    public static final long DISPLAY_UPDATE_INTERVAL_MS = 3000L;
+    public static final long DISPLAY_UPDATE_INTERVAL_MS = 1000L;
     /** Wall-clock time of the last display-cache refresh, or {@code 0} if never. */
     private long lastDisplayUpdateMs = 0L;
     /** Cached farming entry list for HUD rendering. */
@@ -486,6 +486,14 @@ public class FarmingProfitTracker {
         for (Map.Entry<String, Long> e : items.entrySet()) {
             String key   = e.getKey();
             long   count = e.getValue();
+            // If the enchanted form of this item has already been recorded (meaning
+            // compaction is active), suppress the base-item row.  This mirrors
+            // SkyHanni behaviour: basic items are shown until the sacks fill and
+            // compaction begins; once enchanted items appear only the enchanted row
+            // is displayed, eliminating the flickery appear/disappear cycle.
+            if (!key.startsWith("enchanted ") && items.containsKey("enchanted " + key)) {
+                continue;
+            }
             double price = VisitorNpcPrices.getPrice(key);
             double profit = count * price;
             String nice  = displayNames.getOrDefault(key, capitalize(key));
