@@ -35,7 +35,9 @@ import java.util.Locale;
  *  │  Total Pest Profit             +480     │
  *  ├─────────────────────────────────────────┤
  *  │  Stats                                  │  ← sub-title (white)
+ *  │  Time Elapsed:              20m30s      │  ← active session time (item scale)
  *  │  Profit/Hour:          +276,354/h       │  ← combined farming+pest (item scale)
+ *  │  Total Profit:         +276,354         │  ← combined farming+pest total (item scale)
  *  └─────────────────────────────────────────┘
  * </pre>
  */
@@ -207,14 +209,11 @@ public class ProfitHudRenderer {
         int height = computeHeight(tracker, inGarden);
         int pw = panelW();
 
-        // Background – the panel normally connects seamlessly to the inventory HUD
-        // and paper-doll panel above it.  When the inventory HUD is disabled there
-        // is nothing above this panel, so a blue accent stripe is drawn at the top
-        // to give it a visual "header" border.
+        // Background panel.
         context.fill(x, y, x + pw, y + height, COL_BG());
-        if (!config.inventoryOverlayEnabled) {
-            context.fill(x, y, x + pw, y + 1, COL_ACCENT());
-        }
+        // Separator line at the top of the profit panel so it is visually
+        // separated from the inventory HUD / paper-doll panel above it.
+        context.fill(x, y, x + pw, y + 1, COL_SEP());
 
         // ── Keystrokes widget – right side of the header ──────────────────────
         // Scale keystrokes so KS_HEIGHT fits in the header section height.
@@ -272,8 +271,8 @@ public class ProfitHudRenderer {
         curY += scaledLineH();
 
         // Combined Profit/Hour (farming + pests) at item scale
-        double combinedPh = tracker.getFarmingProfitPerHour()
-                + (config.pestProfitEnabled ? tracker.getPestProfitPerHour() : 0.0);
+        // Formula: (total farming profit + total pest profit) / session elapsed seconds × 3600
+        double combinedPh = tracker.getCombinedProfitPerHour(config.pestProfitEnabled);
         String phLabel = "Profit/Hour:";
         String phValue = "+" + formatCoins(combinedPh) + "/h";
         var matrices = context.getMatrices();
@@ -284,6 +283,20 @@ public class ProfitHudRenderer {
         int phRightX  = unscaledW - tr.getWidth(phValue);
         context.drawTextWithShadow(tr, phLabel, 0, 0, COL_TITLE());
         context.drawTextWithShadow(tr, phValue, phRightX, 0, COL_PROFIT());
+        matrices.popMatrix();
+        curY += scaledLineH();
+
+        // Total Profit (farming + pests) at item scale
+        double totalProfit = tracker.getFarmingProfit()
+                + (config.pestProfitEnabled ? tracker.getPestProfit() : 0.0);
+        String tpLabel = "Total Profit:";
+        String tpValue = "+" + formatCoins(totalProfit);
+        matrices.pushMatrix();
+        matrices.translate(x + PAD_X, curY);
+        matrices.scale(ITEM_SCALE, ITEM_SCALE);
+        int tpRightX = unscaledW - tr.getWidth(tpValue);
+        context.drawTextWithShadow(tr, tpLabel, 0, 0, COL_TITLE());
+        context.drawTextWithShadow(tr, tpValue, tpRightX, 0, COL_PROFIT());
         matrices.popMatrix();
 
         // ── Bottom accent stripe ──────────────────────────────────────────────
@@ -404,11 +417,12 @@ public class ProfitHudRenderer {
             h += sectionItemsH(tracker.getPestEntries());
         }
 
-        // Separator + Stats + time elapsed + profit/hour row
+        // Separator + Stats + time elapsed + profit/hour + total profit rows
         h += separatorH();
         h += LINE_H;            // "Stats" label
         h += scaledLineH();     // Time Elapsed row
         h += scaledLineH();     // Profit/Hour row
+        h += scaledLineH();     // Total Profit row
 
         return h;
     }
@@ -456,8 +470,8 @@ public class ProfitHudRenderer {
         if (pestProfitEnabled) {
             h += separatorH() + LINE_H + 2 * scaledLineH();
         }
-        // Stats section (separator + label + time elapsed + profit/hour)
-        h += separatorH() + LINE_H + 2 * scaledLineH();
+        // Stats section (separator + label + time elapsed + profit/hour + total profit)
+        h += separatorH() + LINE_H + 3 * scaledLineH();
         return h;
     }
 
