@@ -46,8 +46,6 @@ public class ScoreboardHudRenderer {
     private static final int COL_STAR      = 0xFFFFD700;  // gold
     /** Default text colour for scoreboard lines. */
     private static final int COL_TEXT      = 0xFFFFFFFF;  // white
-    /** Score value colour. */
-    private static final int COL_SCORE     = 0xFFFF5555;  // red (vanilla-like)
 
     // ── Layout ────────────────────────────────────────────────────────────────
 
@@ -101,15 +99,13 @@ public class ScoreboardHudRenderer {
         String headerText = "★ JUST FARMING ★";
         int headerW = tr.getWidth(headerText);
 
-        // Find widest content line (entry text + score)
+        // Find widest content line (entry text only, no score numbers)
         int maxLineW = headerW;
-        List<String[]> lineData = new ArrayList<>();  // [displayLine, scoreStr]
+        List<String> lineTexts = new ArrayList<>();
         for (ScoreboardEntry entry : entries) {
-            String scoreStr = String.valueOf(entry.value());
             String displayLine = getEntryDisplayLine(sb, entry);
-            int lineW = tr.getWidth(displayLine) + tr.getWidth("  " + scoreStr);
-            maxLineW = Math.max(maxLineW, lineW);
-            lineData.add(new String[]{ displayLine, scoreStr });
+            maxLineW = Math.max(maxLineW, tr.getWidth(displayLine));
+            lineTexts.add(displayLine);
         }
 
         int panelW = maxLineW + PAD_X * 2 + 2;
@@ -141,15 +137,12 @@ public class ScoreboardHudRenderer {
                 panelX + panelW - PAD_X, curY + ACCENT_H, COL_ACCENT);
         curY += ACCENT_H + 2;
 
-        // ── Scoreboard lines ──────────────────────────────────────────────────
-        for (String[] ld : lineData) {
-            String text     = ld[0];
-            String scoreStr = ld[1];
-            // Left-align display text
-            context.drawTextWithShadow(tr, text, panelX + PAD_X, curY, COL_TEXT);
-            // Right-align score value
-            int scoreX = panelX + panelW - PAD_X - tr.getWidth(scoreStr);
-            context.drawTextWithShadow(tr, scoreStr, scoreX, curY, COL_SCORE);
+        // ── Scoreboard lines (centered, no score numbers) ─────────────────────
+        int innerW = panelW - PAD_X * 2;
+        for (String text : lineTexts) {
+            int textW = tr.getWidth(text);
+            int textX = panelX + PAD_X + (innerW - textW) / 2;
+            context.drawTextWithShadow(tr, text, textX, curY, COL_TEXT);
             curY += LINE_H;
         }
     }

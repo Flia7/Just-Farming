@@ -93,6 +93,13 @@ public class FarmingConfig {
      */
     public boolean customScoreboardEnabled = true;
 
+    /**
+     * When {@code true}, hides the status-effects panel that Minecraft normally
+     * renders in the top-right corner of the screen.  Useful for keeping the
+     * screen clean while farming or using the custom scoreboard.
+     */
+    public boolean hideStatusEffects = true;
+
     // --- Inventory HUD Overlay ---
 
     /**

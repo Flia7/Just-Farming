@@ -48,6 +48,9 @@ public final class VisitorNpcPrices {
         NPC_PRICES.put("enchanted baked potato",  76800.0);
         NPC_PRICES.put("enchanted pumpkin",        1600.0);
         NPC_PRICES.put("enchanted melon",           320.0);
+        // "Enchanted Melon Slice" is the in-game item name for the 160× melon-slice
+        // enchanted version; the same NPC price applies.
+        NPC_PRICES.put("enchanted melon slice",     320.0);
         NPC_PRICES.put("enchanted sugar",           640.0);
         NPC_PRICES.put("enchanted nether wart",     640.0);
         NPC_PRICES.put("enchanted cactus green",    640.0);

@@ -1064,9 +1064,17 @@ public class MacroManager {
         // which uses client.crosshairTarget so only the block in the actual
         // crosshair is broken (fixes breaking of off-crosshair / immature crops).
         client.options.attackKey.setPressed(true);
-        // Register each tick for keystroke CPS display and BPS tracking.
-        KeystrokesTracker.getInstance().registerAttack();
-        com.justfarming.JustFarming.getProfitTracker().registerBlockBreak();
+
+        // When a GUI screen is open, Minecraft's game loop skips handleBlockBreaking()
+        // entirely (even though isCursorLocked() returns true via MouseMixin).  Drive
+        // block breaking manually so it still works with macroEnabledInGui = true.
+        if (client.currentScreen != null) {
+            directBreakBlock(); // also calls registerAttack() + registerBlockBreak()
+        } else {
+            // No GUI – vanilla's handleBlockBreaking() will fire; track manually here.
+            KeystrokesTracker.getInstance().registerAttack();
+            com.justfarming.JustFarming.getProfitTracker().registerBlockBreak();
+        }
 
         // Directional keys
         client.options.forwardKey.setPressed(forward);
