@@ -36,8 +36,6 @@ public class ScoreboardHudRenderer {
 
     /** Semi-transparent dark background. */
     private static final int COL_BG        = 0xA8000000;
-    /** Panel border / separator tint. */
-    private static final int COL_BORDER    = 0x30FFFFFF;
     /** Header accent line below the title. */
     private static final int COL_ACCENT    = 0xFF3AFF8A;  // bright green
     /** The "Just Farming" header text colour. */
@@ -55,7 +53,6 @@ public class ScoreboardHudRenderer {
     private static final int HEADER_H     = 12;
     private static final int ACCENT_H     = 1;
     private static final int MARGIN_RIGHT = 2;
-    private static final int MARGIN_TOP   = 5;
 
     /** Maximum scoreboard entries to show (matches vanilla's limit of 15). */
     private static final int MAX_ENTRIES  = 15;
@@ -115,14 +112,13 @@ public class ScoreboardHudRenderer {
                 + entries.size() * LINE_H   // entry rows
                 + PAD_Y;                    // bottom padding
 
-        // ── Position: right side of screen ───────────────────────────────────
+        // ── Position: right side, centered vertically ──────────────────────────
+        int screenH = mc.getWindow().getScaledHeight();
         int panelX = screenW - panelW - MARGIN_RIGHT;
-        int panelY = MARGIN_TOP;
+        int panelY = (screenH - panelH) / 2;
 
         // ── Background ────────────────────────────────────────────────────────
         context.fill(panelX, panelY, panelX + panelW, panelY + panelH, COL_BG);
-        // Thin border around the panel
-        drawOutline(context, panelX, panelY, panelW, panelH, COL_BORDER);
 
         int curY = panelY + PAD_Y;
 
@@ -185,11 +181,4 @@ public class ScoreboardHudRenderer {
         return entry.owner();
     }
 
-    /** Draws a 1-pixel outline rectangle. */
-    private static void drawOutline(DrawContext ctx, int x, int y, int w, int h, int color) {
-        ctx.fill(x,         y,         x + w,     y + 1,     color); // top
-        ctx.fill(x,         y + h - 1, x + w,     y + h,     color); // bottom
-        ctx.fill(x,         y,         x + 1,     y + h,     color); // left
-        ctx.fill(x + w - 1, y,         x + w,     y + h,     color); // right
-    }
 }

@@ -99,10 +99,11 @@ public class ProfitHudRenderer {
      * when {@link FarmingConfig#profitTrackerEnabled} is {@code true} and the
      * tracker has accumulated at least one item gain.
      *
-     * @param context the draw context
-     * @param tracker the profit tracker holding accumulated session data
+     * @param context  the draw context
+     * @param tracker  the profit tracker holding accumulated session data
+     * @param inGarden whether the player is currently in the Garden (controls pest section visibility)
      */
-    public void render(DrawContext context, FarmingProfitTracker tracker) {
+    public void render(DrawContext context, FarmingProfitTracker tracker, boolean inGarden) {
         if (!config.profitTrackerEnabled) return;
         if (tracker == null) return;
 
@@ -113,14 +114,10 @@ public class ProfitHudRenderer {
         int x = config.profitHudX;
         int y = config.profitHudY;
 
-        int height = computeHeight(tracker);
+        int height = computeHeight(tracker, inGarden);
 
-        // Background + thin border
+        // Background only – no border outline
         context.fill(x, y, x + panelW(), y + height, COL_BG);
-        context.fill(x, y, x + panelW(), y + 1, COL_SEP);
-        context.fill(x, y + height - 1, x + panelW(), y + height, COL_SEP);
-        context.fill(x, y, x + 1, y + height, COL_SEP);
-        context.fill(x + panelW() - 1, y, x + panelW(), y + height, COL_SEP);
 
         int curY = y + PAD_Y;
 
@@ -144,8 +141,8 @@ public class ProfitHudRenderer {
                 tracker.getFarmingEntries(), tracker.getFarmingProfit(),
                 "Total Farming Profit");
 
-        // ── Pests sub-section (optional) ──────────────────────────────────────
-        if (config.pestProfitEnabled) {
+        // ── Pests sub-section (optional, garden-only) ──────────────────────────
+        if (config.pestProfitEnabled && inGarden) {
             curY = drawSeparator(context, x, curY);
             context.drawTextWithShadow(tr, "Pests", x + PAD_X, curY, COL_TITLE);
             curY += LINE_H;
@@ -275,7 +272,7 @@ public class ProfitHudRenderer {
 
     // ── Height calculation ────────────────────────────────────────────────────
 
-    private int computeHeight(FarmingProfitTracker tracker) {
+    private int computeHeight(FarmingProfitTracker tracker, boolean inGarden) {
         int h = PAD_Y * 2;
 
         // Crop title + BPS
@@ -287,8 +284,8 @@ public class ProfitHudRenderer {
         h += LINE_H;            // "Farming" label
         h += sectionItemsH(tracker.getFarmingEntries());
 
-        // Pests (optional)
-        if (config.pestProfitEnabled) {
+        // Pests (optional, garden-only)
+        if (config.pestProfitEnabled && inGarden) {
             h += separatorH();
             h += LINE_H;        // "Pests" label
             h += sectionItemsH(tracker.getPestEntries());

@@ -62,13 +62,6 @@ public class FarmingConfigScreen extends Screen {
     };
     private int activeTab = 0;
 
-    // ── Preset mode ────────────────────────────────────────────────────────────
-    private static final int PRESET_BLATANT = 0;
-    private static final int PRESET_SMART   = 1;
-    private static final int PRESET_CUSTOM  = 2;
-    /** Currently active preset (0=Blatant, 1=Smart, 2=Custom). Not persisted. */
-    private int presetMode = PRESET_CUSTOM;
-
     // ── Dynamic layout (computed in init) ─────────────────────────────────────
     private float scale = 1.0f;
     private int winX, winY, winW, winH;
@@ -108,7 +101,6 @@ public class FarmingConfigScreen extends Screen {
     private FlatBoolToggleWidget  inventoryOverlayButton;
     private FlatBoolToggleWidget  paperDollButton;
     private FlatButtonWidget                  editHudButton;
-    private InventoryOverlayScaleSlider       inventoryOverlayScaleSlider;
     private FlatBoolToggleWidget  profitTrackerButton;
     private FlatBoolToggleWidget  pestProfitButton;
     private FlatButtonWidget      profitResetButton;
@@ -149,7 +141,6 @@ public class FarmingConfigScreen extends Screen {
 
     // ── Always-visible widget ─────────────────────────────────────────────────
     private FlatButtonWidget saveCloseButton;
-    private FlatButtonWidget presetButton;
 
     // ── Section-label Y positions (set in init, used in render) ───────────────
     private int sectionCropY, actionSeparatorY;
@@ -176,10 +167,6 @@ public class FarmingConfigScreen extends Screen {
         this.macroManager   = macroManager;
         this.visitorManager = com.justfarming.JustFarming.getVisitorManager();
         this.pestKillerManager = com.justfarming.JustFarming.getPestKillerManager();
-        // Restore the last-used preset indicator from persistent config (0=Blatant, 1=Smart, 2=Custom).
-        this.presetMode = config.configPreset < PRESET_BLATANT ? PRESET_BLATANT
-                        : config.configPreset > PRESET_CUSTOM  ? PRESET_CUSTOM
-                        : config.configPreset;
     }
 
     @Override
@@ -375,13 +362,6 @@ public class FarmingConfigScreen extends Screen {
         this.addDrawableChild(paperDollButton);
         paperDollButton.setTooltip(Tooltip.of(Text.literal(
                 "Show a player model with WASD keystrokes and CPS counter\nnext to the Inventory HUD. Requires Inventory HUD to be on.")));
-        y += bh + pad;
-
-        inventoryOverlayScaleSlider = new InventoryOverlayScaleSlider(widgetX, y, bw, bh,
-                        config.inventoryOverlayScale);
-        this.addDrawableChild(inventoryOverlayScaleSlider);
-        inventoryOverlayScaleSlider.setTooltip(Tooltip.of(Text.literal(
-                "Scale multiplier for the Inventory HUD. Range: 0.5–3.0.\nAlso adjustable by scrolling in Edit HUD mode.")));
         y += bh + pad + gap;
 
         sectionHudProfitY = y;
@@ -646,24 +626,9 @@ public class FarmingConfigScreen extends Screen {
                         btn -> close());
         this.addDrawableChild(saveCloseButton);
 
-        // ── Always-visible: Preset cycling button in the bottom-left (nav panel) ─
-        int presetBtnW = navW - pad * 2;
-        // Preset button moves up one slot to make room for Edit HUD button
-        int presetBtnY = closeBtnY - bh - pad;
-        presetButton = new FlatButtonWidget(winX + pad, presetBtnY, presetBtnW, bh,
-                        getPresetButtonText(),
-                        btn -> {
-                            applyConfig();
-                            cyclePreset();
-                        });
-        this.addDrawableChild(presetButton);
-        presetButton.setTooltip(Tooltip.of(Text.literal(
-                "Blatant: all features on, 0 delays.\n" +
-                "Smart: human-like delays and default settings.\n" +
-                "Custom: your current settings.")));
-
-        // Edit HUD button (nav panel, below preset)
-        editHudButton = new FlatButtonWidget(winX + pad, closeBtnY, presetBtnW, bh,
+        // Edit HUD button (nav panel, bottom-left)
+        int editHudBtnW = navW - pad * 2;
+        editHudButton = new FlatButtonWidget(winX + pad, closeBtnY - bh - pad, editHudBtnW, bh,
                         Text.literal("Edit HUD"),
                         btn -> {
                             applyConfig();
@@ -674,56 +639,7 @@ public class FarmingConfigScreen extends Screen {
         editHudButton.setTooltip(Tooltip.of(Text.literal(
                 "Open the HUD editor.\n" +
                 "Drag any HUD to reposition it.\n" +
-                "Scroll over the Inventory HUD to resize it.")));
-
-        // ── Register onChange callbacks so preset switches to "Custom" on user edits ─
-        Runnable markCustom = this::markPresetCustom;
-        // Tab 0
-        farmingToolSlotSlider.setOnChange(markCustom);
-        // Tab 1
-        pestHighlightButton.setOnChange(markCustom);
-        pestLabelsButton.setOnChange(markCustom);
-        titleScaleSlider.setOnChange(markCustom);
-        pestEspButton.setOnChange(markCustom);
-        pestTracerButton.setOnChange(markCustom);
-        pestKillerEnabledButton.setOnChange(markCustom);
-        pestKillerWarpToPlotButton.setOnChange(markCustom);
-        pestKillerVacuumRangeSlider.setOnChange(markCustom);
-        // Tab 3 (HUD)
-        inventoryOverlayButton.setOnChange(markCustom);
-        paperDollButton.setOnChange(markCustom);
-        inventoryOverlayScaleSlider.setOnChange(markCustom);
-        profitTrackerButton.setOnChange(markCustom);
-        pestProfitButton.setOnChange(markCustom);
-        customScoreboardButton.setOnChange(markCustom);
-        hideHudsOnTabF3Button.setOnChange(markCustom);
-        // Tab 4 (Misc)
-        unlockedMouseButton.setOnChange(markCustom);
-        gardenOnlyButton.setOnChange(markCustom);
-        squeakyMousematButton.setOnChange(markCustom);
-        macroEnabledInGuiButton.setOnChange(markCustom);
-        // Tab 5 (Delays)
-        globalRandomSlider.setOnChange(markCustom);
-        laneSwapDelaySlider.setOnChange(markCustom);
-        laneSwapRandomSlider.setOnChange(markCustom);
-        rewarpDelaySlider.setOnChange(markCustom);
-        rewarpRandomSlider.setOnChange(markCustom);
-        mousematSwapToSlider.setOnChange(markCustom);
-        mousematPreDelaySlider.setOnChange(markCustom);
-        mousematPostDelaySlider.setOnChange(markCustom);
-        mousematResumeDelaySlider.setOnChange(markCustom);
-        visitorsDelaySlider.setOnChange(markCustom);
-        visitorsRandomSlider.setOnChange(markCustom);
-        visitorsTeleportDelaySlider.setOnChange(markCustom);
-        bazaarSearchDelaySlider.setOnChange(markCustom);
-        pestKillerTeleportDelaySliderInDelays.setOnChange(markCustom);
-        pestKillerAfterTeleportSlider.setOnChange(markCustom);
-        pestKillerGoToNextPestSlider.setOnChange(markCustom);
-        // Tab 2 (Visitors)
-        visitorsEnabledButton.setOnChange(markCustom);
-        visitorsBuyFromBazaarButton.setOnChange(markCustom);
-        visitorsMinCountSlider.setOnChange(markCustom);
-        visitorsMaxPriceSlider.setOnChange(markCustom);
+                "Scroll over any HUD to resize it.")));
 
         refreshWidgetVisibility();
     }
@@ -768,7 +684,6 @@ public class FarmingConfigScreen extends Screen {
         boolean t3 = activeTab == 3;
         inventoryOverlayButton.visible      = t3 && inContentBounds(inventoryOverlayButton);
         paperDollButton.visible             = t3 && inContentBounds(paperDollButton);
-        inventoryOverlayScaleSlider.visible = t3 && inContentBounds(inventoryOverlayScaleSlider);
         profitTrackerButton.visible         = t3 && inContentBounds(profitTrackerButton);
         pestProfitButton.visible            = t3 && inContentBounds(pestProfitButton);
         profitResetButton.visible           = t3 && inContentBounds(profitResetButton);
@@ -992,7 +907,6 @@ public class FarmingConfigScreen extends Screen {
         config.macroEnabledInGui    = macroEnabledInGuiButton.getValue();
         config.inventoryOverlayEnabled = inventoryOverlayButton.getValue();
         config.paperDollEnabled     = paperDollButton.getValue();
-        config.inventoryOverlayScale = inventoryOverlayScaleSlider.getScaleValue();
         config.profitTrackerEnabled = profitTrackerButton.getValue();
         config.pestProfitEnabled    = pestProfitButton.getValue();
         config.visitorsEnabled          = visitorsEnabledButton.getValue();
@@ -1012,7 +926,6 @@ public class FarmingConfigScreen extends Screen {
         config.farmingToolHotbarSlot    = farmingToolSlotSlider.getSlotValue();
         config.customScoreboardEnabled  = customScoreboardButton.getValue();
         config.hideHudsOnTabF3          = hideHudsOnTabF3Button.getValue();
-        config.configPreset             = presetMode;
         macroManager.setConfig(config);
         if (visitorManager != null) visitorManager.setConfig(config);
         if (pestKillerManager != null) pestKillerManager.setConfig(config);
@@ -1051,131 +964,6 @@ public class FarmingConfigScreen extends Screen {
 
     private Text getRewarpButtonText() {
         return Text.translatable("gui.just-farming.set_rewarp");
-    }
-
-    // ── Preset helpers ────────────────────────────────────────────────────────
-
-    private Text getPresetButtonText() {
-        return switch (presetMode) {
-            case PRESET_BLATANT -> Text.literal("Preset: Blatant");
-            case PRESET_SMART   -> Text.literal("Preset: Smart");
-            default             -> Text.literal("Preset: Custom");
-        };
-    }
-
-    /**
-     * Called by any widget when the user modifies a value.
-     * Switches the preset indicator to "Custom" if it was previously Blatant or Smart.
-     */
-    private void markPresetCustom() {
-        if (presetMode != PRESET_CUSTOM) {
-            presetMode = PRESET_CUSTOM;
-            config.configPreset = PRESET_CUSTOM;
-            if (presetButton != null) {
-                presetButton.setMessage(getPresetButtonText());
-            }
-        }
-    }
-
-    /**
-     * Cycle through presets:
-     * <ul>
-     *   <li>Blatant → Smart</li>
-     *   <li>Smart   → Blatant</li>
-     *   <li>Custom  → Blatant</li>
-     * </ul>
-     */
-    private void cyclePreset() {
-        if (presetMode == PRESET_BLATANT) {
-            applySmartPreset();
-        } else {
-            applyBlatantPreset();
-        }
-    }
-
-    /** Apply the Blatant preset: all features enabled, 0 ms delays throughout. */
-    private void applyBlatantPreset() {
-        presetMode = PRESET_BLATANT;
-        config.configPreset                 = PRESET_BLATANT;
-        config.globalRandomizationMs        = 0;
-        config.laneSwapDelayMin             = 0;
-        config.laneSwapDelayRandom          = 0;
-        config.rewarpDelayMin               = 0;
-        config.rewarpDelayRandom            = 0;
-        config.mousematSwapToDelay          = 0;
-        config.mousematPreDelay             = 0;
-        config.mousematPostDelay            = 0;
-        config.mousematResumeDelay          = 0;
-        config.visitorsActionDelay          = 0;
-        config.visitorsActionDelayRandom    = 0;
-        config.visitorsTeleportDelay        = 0;
-        config.bazaarSearchDelay            = 0;
-        config.pestKillerTeleportDelay      = 0;
-        config.pestKillerGoToNextPestDelay  = 0;
-        config.pestKillerAfterTeleportDelay = 0;
-        config.pestHighlightEnabled         = true;
-        config.pestLabelsEnabled            = true;
-        config.pestEspEnabled               = true;
-        config.pestTracerEnabled            = true;
-        config.unlockedMouseEnabled         = true;
-        config.gardenOnlyEnabled            = true;
-        config.squeakyMousematEnabled       = true;
-        config.macroEnabledInGui            = true;
-        config.visitorsEnabled              = true;
-        config.visitorsBuyFromBazaar        = true;
-        config.autoPestKillerEnabled        = true;
-        config.pestKillerWarpToPlot         = true;
-        config.visitorsMinCount             = 1;
-        config.visitorsMaxPrice             = 0;
-        config.farmingToolHotbarSlot        = -1;
-        config.pestKillerVacuumRange        = 15;
-        config.save();
-        clearAndInit();
-    }
-
-    /** Apply the Smart preset: human-like delays and a recommended default configuration. */
-    private void applySmartPreset() {
-        presetMode = PRESET_SMART;
-        config.configPreset                 = PRESET_SMART;
-        config.globalRandomizationMs        = 150;
-        config.laneSwapDelayMin             = 400;
-        config.laneSwapDelayRandom          = 500;
-        config.rewarpDelayMin               = 1000;
-        config.rewarpDelayRandom            = 400;
-        config.mousematSwapToDelay          = 400;
-        config.mousematPreDelay             = 200;
-        config.mousematPostDelay            = 350;
-        config.mousematResumeDelay          = 450;
-        config.visitorsActionDelay          = 500;
-        config.visitorsActionDelayRandom    = 550;
-        config.visitorsTeleportDelay        = 2000;
-        config.bazaarSearchDelay            = 1250;
-        config.pestKillerTeleportDelay      = 1000;
-        config.pestKillerGoToNextPestDelay  = 350;
-        config.pestKillerAfterTeleportDelay = 500;
-        config.pestHighlightEnabled         = true;
-        config.pestLabelsEnabled            = true;
-        config.pestEspEnabled               = true;
-        config.pestTitleScale               = 0.5f;
-        config.pestTracerEnabled            = true;
-        config.unlockedMouseEnabled         = true;
-        config.gardenOnlyEnabled            = true;
-        config.squeakyMousematEnabled       = true;
-        config.macroEnabledInGui            = true;
-        config.visitorsEnabled              = true;
-        config.visitorsBuyFromBazaar        = true;
-        config.autoPestKillerEnabled        = true;
-        config.pestKillerWarpToPlot         = false;
-        config.visitorsMinCount             = 3;
-        config.visitorsMaxPrice             = 450000;
-        config.farmingToolHotbarSlot        = -1;
-        config.pestKillerVacuumRange        = 10;
-        config.visitorBlacklist.clear();
-        config.visitorBlacklist.add("Gold Forger");
-        config.visitorBlacklist.add("Spaceman");
-        config.visitorBlacklist.add("Rhys");
-        config.save();
-        clearAndInit();
     }
 
     // -------------------------------------------------------------------------
@@ -1926,64 +1714,6 @@ public class FarmingConfigScreen extends Screen {
         @Override
         protected void updateMessage() {
             setMessage(Text.literal(String.format("Vacuum Range: %d blocks", getRangeValue())));
-        }
-
-        @Override
-        public void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
-            FlatButtonWidget.renderFlatSlider(context, getX(), getY(), getWidth(), getHeight(), value, getMessage());
-        }
-    }
-
-    /** Slider for the inventory overlay scale (0.5–3.0, step 0.1). */
-    private static class InventoryOverlayScaleSlider extends SliderWidget {
-
-        private static final float MIN = 0.5f;
-        private static final float MAX = 3.0f;
-        private static final int GLFW_KEY_LEFT  = 263;
-        private static final int GLFW_KEY_RIGHT = 262;
-
-        private Runnable onChange;
-
-        InventoryOverlayScaleSlider(int x, int y, int width, int height, float initialValue) {
-            super(x, y, width, height, Text.empty(),
-                    (double)(Math.max(MIN, Math.min(MAX, initialValue)) - MIN) / (MAX - MIN));
-            updateMessage();
-        }
-
-        void setOnChange(Runnable r) { this.onChange = r; }
-
-        float getScaleValue() {
-            float raw = MIN + (float) value * (MAX - MIN);
-            // Round to nearest 0.1
-            return Math.round(raw * 10f) / 10f;
-        }
-
-        @Override
-        protected void applyValue() {
-            float raw = MIN + (float) value * (MAX - MIN);
-            float snapped = Math.round(raw * 10f) / 10f;
-            snapped = Math.max(MIN, Math.min(MAX, snapped));
-            this.value = (snapped - MIN) / (MAX - MIN);
-            if (onChange != null) onChange.run();
-        }
-
-        @Override
-        public boolean keyPressed(net.minecraft.client.input.KeyInput input) {
-            if (input.key() == GLFW_KEY_LEFT || input.key() == GLFW_KEY_RIGHT) {
-                double step = 0.1 / (MAX - MIN);
-                this.value = (input.key() == GLFW_KEY_LEFT)
-                        ? Math.max(0.0, this.value - step)
-                        : Math.min(1.0, this.value + step);
-                applyValue();
-                updateMessage();
-                return true;
-            }
-            return super.keyPressed(input);
-        }
-
-        @Override
-        protected void updateMessage() {
-            setMessage(Text.literal(String.format("Inventory HUD Scale: %.1f", getScaleValue())));
         }
 
         @Override

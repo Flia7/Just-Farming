@@ -130,6 +130,8 @@ public class MacroManager {
 
     private MacroState state = MacroState.IDLE;
     private boolean running = false;
+    /** Tracks whether the previous tick had GUI blocking active; used to detect GUI-close transitions. */
+    private boolean prevGuiBlocking = false;
     /**
      * {@code true} when the visitor routine is running and the farming macro
      * has been paused.  The macro will automatically restart once the visitor
@@ -467,6 +469,7 @@ public class MacroManager {
         running = false;
         waitingForVisitors = false;
         waitingForPestKiller = false;
+        prevGuiBlocking = false;
         state = MacroState.IDLE;
         lastRotationTime = 0;
         disableFlightStartTime = 0;
@@ -1055,10 +1058,15 @@ public class MacroManager {
         // Pause all movement and breaking when the GUI is blocking
         // (macroEnabledInGui = false while a screen is open).
         if (isGuiBlocking()) {
+            prevGuiBlocking = true;
             releaseKeys();
             lastPos = null; // prevent stationary ticks from triggering stuck detection
             return;
         }
+
+        // Detect a GUI-close transition (was blocking last tick, not blocking this tick).
+        boolean justClosedGui = prevGuiBlocking;
+        prevGuiBlocking = false;
 
         // Hold attack – lets vanilla's handleBlockBreaking() run naturally,
         // which uses client.crosshairTarget so only the block in the actual
@@ -1068,8 +1076,14 @@ public class MacroManager {
         // When a GUI screen is open, Minecraft's game loop skips handleBlockBreaking()
         // entirely (even though isCursorLocked() returns true via MouseMixin).  Drive
         // block breaking manually so it still works with macroEnabledInGui = true.
+        // Also drive manually on the first tick after a GUI closes so no crops are
+        // missed during the transition before vanilla's handleBlockBreaking resumes.
         if (client.currentScreen != null) {
             directBreakBlock(); // also calls registerAttack() + registerBlockBreak()
+        } else if (justClosedGui) {
+            // GUI just closed this tick – kick-start breaking immediately to avoid
+            // a one-tick gap that would require a physical LMB press to restart.
+            directBreakBlock();
         } else {
             // No GUI – vanilla's handleBlockBreaking() will fire; track manually here.
             KeystrokesTracker.getInstance().registerAttack();
