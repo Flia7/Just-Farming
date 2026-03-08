@@ -262,10 +262,10 @@ public class PestKillerManager {
     /**
      * Horizontal distance (blocks) from the computed plot centre at which the
      * {@link State#GOING_TO_PLOT_CENTER} state is considered to have arrived
-     * horizontally.  Set to 6 so the player must be within 6 blocks of the
-     * plot centre before descending to crop height.
+     * horizontally.  Set to 12 so the player begins descending once within a
+     * 12-block radius of the plot centre.
      */
-    private static final double PLOT_CENTRE_ARRIVE_RADIUS = 6.0;
+    private static final double PLOT_CENTRE_ARRIVE_RADIUS = 12.0;
 
     /**
      * Vertical distance (blocks) from the descent target Y at which
@@ -496,10 +496,10 @@ public class PestKillerManager {
     private static final long   PEST_AOTV_COOLDOWN_MS  = 400L;
 
     /**
-     * Assumed teleport distance (blocks) per AOTV/AOTE use when the lore
-     * cannot be parsed.  Matches the Aspect of the End default.
+     * Assumed teleport distance (blocks) per AOTV/AOTE use.
+     * Set to 12 so each right-click always teleports exactly 12 blocks.
      */
-    private static final int    PEST_AOTV_TELEPORT_DIST = 8;
+    private static final int    PEST_AOTV_TELEPORT_DIST = 12;
 
     /**
      * Safety cap on the number of right-clicks fired in a single AOTV/AOTE
@@ -512,16 +512,16 @@ public class PestKillerManager {
     /**
      * Minimum clicks per second used when randomising the inter-click delay for
      * AOTV/AOTE sequences.  Together with {@link #PEST_AOTV_MAX_CPS} this gives a
-     * tight 7–8 CPS range that is fast but still looks human-like.
+     * 5–7 CPS range that looks human-like.
      */
-    private static final int    PEST_AOTV_MIN_CPS       = 7;
+    private static final int    PEST_AOTV_MIN_CPS       = 5;
 
     /**
      * Maximum clicks per second used when randomising the inter-click delay.
      * Together with {@link #PEST_AOTV_MIN_CPS} the effective rate varies between
-     * 7 and {@value} CPS, producing fast but human-like clicking behaviour.
+     * 5 and {@value} CPS, producing human-like clicking behaviour.
      */
-    private static final int    PEST_AOTV_MAX_CPS       = 8;
+    private static final int    PEST_AOTV_MAX_CPS       = 7;
 
     /**
      * Inclusive size of the CPS range ({@link #PEST_AOTV_MAX_CPS} −
@@ -532,14 +532,12 @@ public class PestKillerManager {
 
     /**
      * Minimum Y coordinate the player must be at before the AOTV/AOTE sequence
-     * will start.  Set below the garden floor (≈ 68) so that AOTV fires as soon
-     * as the player activates creative flight after {@code /warp garden}, allowing
-     * the macro to teleport directly upward to the navigation altitude without
-     * waiting for normal creative flight to climb to Y = 80 first.
-     * The {@link #isNearWall} check still prevents teleporting through the garden
-     * barn or other structures immediately after the warp.
+     * will start.  Set to the base navigation altitude so the player always
+     * climbs above the farm structures (crops, barn, greenhouses) before AOTV
+     * fires.  This ensures the player is "outside the farm" and has a clear
+     * line of sight for horizontal teleports without clipping into structures.
      */
-    private static final double PEST_AOTV_MIN_FLY_Y     = 65.0;
+    private static final double PEST_AOTV_MIN_FLY_Y     = NAV_ALTITUDE_BASE;
 
     /**
      * If any detected pest is within this distance (blocks) of the player,
@@ -631,7 +629,37 @@ public class PestKillerManager {
      */
     private static final double WALL_CLEARANCE_HEIGHT = 1.5;
 
-    // ── Humanised pest-aim drift ─────────────────────────────────────────────
+    // ── Tall wall (barn / greenhouse) avoidance ──────────────────────────────
+
+    /**
+     * Number of blocks above foot level to scan when checking for a tall wall
+     * ahead of the player.  Structures like the barn and greenhouses can be
+     * 10+ blocks tall; a scan height of 8 reliably catches any structure that
+     * would block horizontal flight.
+     */
+    private static final int    TALL_WALL_SCAN_HEIGHT   = 8;
+
+    /**
+     * Look-ahead distance (blocks) used when probing for a tall wall.  3 blocks
+     * gives enough lead time to begin climbing above the structure before
+     * reaching it.
+     */
+    private static final double TALL_WALL_PROBE_DIST    = 3.0;
+
+    /**
+     * Minimum fraction of {@link #TALL_WALL_SCAN_HEIGHT} blocks that must be
+     * solid ahead of the player for the path to be classified as a tall wall
+     * (0.5 = half the scan range is solid = definitely a tall structure).
+     */
+    private static final double TALL_WALL_SOLID_FRACTION = 0.5;
+
+    /**
+     * Amount (blocks) to add to the player's current Y when ascending above a
+     * tall wall.  Enough to clear a full-height barn with margin.
+     */
+    private static final double TALL_WALL_RISE_HEIGHT   = 12.0;
+
+
 
     /**
      * Maximum radius (blocks) of the camera-aim drift applied during
@@ -1108,11 +1136,22 @@ public class PestKillerManager {
 
             case PRE_TELEPORT_WAIT -> {
                 if (now - stateEnteredAt >= preTeleportWaitMs) {
-                    // Pre-teleport delay elapsed: now send the warp command.
+                    // Pre-teleport delay elapsed: send the warp command.
+                    // Skip /warp garden if the player is already at the garden spawn
+                    // (set via /just setspawn) to avoid a wasteful round-trip.
+                    boolean alreadyAtSpawn = false;
+                    if (config != null && config.spawnSet && player != null) {
+                        double dx = player.getX() - config.spawnX;
+                        double dz = player.getZ() - config.spawnZ;
+                        if (Math.sqrt(dx * dx + dz * dz) < 10.0) {
+                            alreadyAtSpawn = true;
+                            LOGGER.info("[Just Farming-PestKiller] Player is already at garden spawn; skipping /warp garden.");
+                        }
+                    }
                     if (config != null && config.pestKillerWarpToPlot && currentPlotName != null) {
                         sendCommand("tptoplot " + currentPlotName);
                         LOGGER.info("[Just Farming-PestKiller] Sent /tptoplot {} to reach infested plot.", currentPlotName);
-                    } else {
+                    } else if (!alreadyAtSpawn) {
                         sendCommand("warp garden");
                         LOGGER.info("[Just Farming-PestKiller] Sent /warp garden to reach garden.");
                     }
@@ -2221,6 +2260,19 @@ public class PestKillerManager {
             effectiveTarget = new Vec3d(effectiveTarget.x, clearY, effectiveTarget.z);
         }
 
+        // ── Tall wall avoidance (barn / greenhouse) ────────────────────────────
+        // When a very tall wall (barn, greenhouse, etc.) is detected ahead, raise
+        // the effective target Y to fly over it rather than crashing into it.
+        // This is separate from the ceiling-avoidance manoeuvre which handles blocks
+        // directly above the player; here we proactively detect tall structures in
+        // the direction of travel and climb over them before reaching them.
+        if (hasTallWallAhead(player, effectiveTarget)) {
+            double overY = player.getY() + TALL_WALL_RISE_HEIGHT;
+            if (overY > MAX_CRUISE_Y) overY = MAX_CRUISE_Y;
+            effectiveTarget = new Vec3d(effectiveTarget.x, overY, effectiveTarget.z);
+            LOGGER.debug("[Just Farming-PestKiller] Tall wall ahead; raising target Y to {}.", (int) overY);
+        }
+
         Vec3d eye = player.getEyePos();
 
         // ── Altitude-climb priority (tptoplot disabled) ───────────────────────
@@ -2298,6 +2350,14 @@ public class PestKillerManager {
         boolean isNearGround = hasGroundBelow(player);
         boolean shouldJump  = dy > 1.5;
         boolean shouldSneak = (!isNearGround || directlyBelow) && dy < -1.0;
+
+        // Ground clearance: always keep at least 1 block of space below the player's
+        // feet so the player never lands on crops or the garden floor.  If a solid
+        // block is detected directly below the player's feet (within 1 block), force
+        // the jump key so creative-flight raises the player to a safe altitude.
+        if (hasBlockWithinOneBelow(player) && !shouldSneak) {
+            shouldJump = true;
+        }
 
         // ── Stuck detection ─────────────────────────────────────────────────
         if (lastProgressPos == null) {
@@ -2558,6 +2618,56 @@ public class PestKillerManager {
             }
         }
         return false;
+    }
+
+    /**
+     * Returns {@code true} if there is a tall wall (barn, greenhouse, or other
+     * tall structure) ahead of the player in the direction toward {@code target}.
+     *
+     * <p>Scans {@link #TALL_WALL_SCAN_HEIGHT} blocks above the player's feet at
+     * a look-ahead distance of {@link #TALL_WALL_PROBE_DIST} blocks.  If at
+     * least half of those blocks are solid, the path is classified as a tall
+     * wall and the caller should raise the effective navigation target to fly
+     * over it.
+     *
+     * @param player the local player
+     * @param target the current navigation target
+     * @return {@code true} when a tall wall is detected ahead
+     */
+    private boolean hasTallWallAhead(ClientPlayerEntity player, Vec3d target) {
+        if (client.world == null) return false;
+        double dx = target.x - player.getX();
+        double dz = target.z - player.getZ();
+        double horizDist = Math.sqrt(dx * dx + dz * dz);
+        if (horizDist < WALL_MIN_CHECK_DISTANCE) return false;
+        double nx = dx / horizDist;
+        double nz = dz / horizDist;
+        int bx = (int) Math.floor(player.getX() + nx * TALL_WALL_PROBE_DIST);
+        int bz = (int) Math.floor(player.getZ() + nz * TALL_WALL_PROBE_DIST);
+        int by = (int) Math.floor(player.getY()); // feet Y
+        int solidCount = 0;
+        for (int dy = 0; dy < TALL_WALL_SCAN_HEIGHT; dy++) {
+            if (!client.world.getBlockState(new BlockPos(bx, by + dy, bz)).isAir()) {
+                solidCount++;
+            }
+        }
+        return solidCount >= (int) Math.ceil(TALL_WALL_SCAN_HEIGHT * TALL_WALL_SOLID_FRACTION);
+    }
+
+    /**
+     * Returns {@code true} if there is at least one non-air block directly
+     * beneath the player's feet (within 1 block below feet Y).
+     *
+     * <p>Used by {@link #flyToward} to ensure the player always maintains at
+     * least 1 block of clearance above the ground, preventing accidental landing
+     * on crops or the garden floor which would deactivate creative flight.
+     */
+    private boolean hasBlockWithinOneBelow(ClientPlayerEntity player) {
+        if (client.world == null) return false;
+        int bx = (int) Math.floor(player.getX());
+        int bz = (int) Math.floor(player.getZ());
+        int feetY = (int) Math.floor(player.getY());
+        return !client.world.getBlockState(new BlockPos(bx, feetY - 1, bz)).isAir();
     }
 
     /** Aim the camera toward {@code target} using smooth interpolation. */

@@ -6,7 +6,9 @@ import org.spongepowered.asm.mixin.Mixin;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.KeyBinding;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(MinecraftClient.class)
 public class MinecraftClientMixin {
@@ -37,5 +39,27 @@ public class MinecraftClientMixin {
             return; // skip unpressAll whenever the macro is active
         }
         KeyBinding.unpressAll();
+    }
+
+    /**
+     * Suppress vanilla's {@code handleBlockBreaking()} call whenever the farming
+     * macro is actively breaking blocks.
+     *
+     * <p>The macro calls {@link MacroManager#directBreakBlock()} directly every
+     * tick to send break packets to the server, which is reliable regardless of
+     * whether a GUI screen is open or closed.  Allowing vanilla's
+     * {@code handleBlockBreaking()} to also run would cause it to either call
+     * {@code cancelBlockBreaking()} (when {@code breaking=false}, e.g. because a
+     * screen is open) and send an {@code ABORT_DESTROY_BLOCK} packet that resets
+     * server-side break progress, or to call {@code updateBlockBreakingProgress()}
+     * a second time in the same tick and produce double-break artifacts.
+     * Suppressing it here gives the macro full ownership of the break loop.
+     */
+    @Inject(method = "handleBlockBreaking", at = @At("HEAD"), cancellable = true)
+    private void onHandleBlockBreaking(boolean breaking, CallbackInfo ci) {
+        MacroManager mm = JustFarming.getMacroManager();
+        if (mm != null && mm.shouldBreak()) {
+            ci.cancel();
+        }
     }
 }
