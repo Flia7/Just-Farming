@@ -100,6 +100,28 @@ public enum CropType {
         return this == CACTUS;
     }
 
+    /**
+     * Returns the ARGB display colour associated with this crop type, used in
+     * the Profit HUD title to tint the crop name with its characteristic colour.
+     */
+    public int getDisplayColor() {
+        return switch (this) {
+            case WHEAT, WHEAT_S_SHAPE                       -> 0xFFFFCC55; // golden yellow
+            case CARROT, CARROT_S_SHAPE                     -> 0xFFFF8800; // orange
+            case POTATO, POTATO_S_SHAPE                     -> 0xFFDDC060; // tan/gold
+            case MELON, MELON_S_SHAPE                       -> 0xFF55FF55; // green
+            case PUMPKIN, PUMPKIN_S_SHAPE                   -> 0xFFFF7700; // orange
+            case SUGAR_CANE, SUGAR_CANE_S_SHAPE             -> 0xFF66DD44; // lime green
+            case CACTUS                                     -> 0xFF22AA22; // dark green
+            case MUSHROOM                                   -> 0xFFBB8855; // brown
+            case COCOA_BEANS                                -> 0xFFAA6633; // cocoa brown
+            case NETHER_WART, NETHER_WART_S_SHAPE           -> 0xFFFF5555; // red
+            case MOONFLOWER_S_SHAPE                         -> 0xFFBBBBFF; // pale blue/white
+            case SUNFLOWER_S_SHAPE                          -> 0xFFFFEE22; // yellow
+            case WILD_ROSE_S_SHAPE                          -> 0xFFFF6699; // pink
+        };
+    }
+
     @Override
     public String toString() {
         return translationKey;

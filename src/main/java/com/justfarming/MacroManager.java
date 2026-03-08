@@ -1243,6 +1243,7 @@ public class MacroManager {
             client.interactionManager.updateBlockBreakingProgress(pos, blockHit.getSide());
             client.player.swingHand(Hand.MAIN_HAND);
             KeystrokesTracker.getInstance().registerAttack();
+            com.justfarming.JustFarming.getProfitTracker().registerBlockBreak();
         }
     }
 

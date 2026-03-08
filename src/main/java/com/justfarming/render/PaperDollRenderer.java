@@ -150,8 +150,9 @@ public class PaperDollRenderer {
         int modelH = (panelH * 3) / 5;
         int ksH    = panelH - modelH;
 
-        // Compute a keystroke-section scale so the 3 key rows fit in the 2/5 height.
-        float ksScale = Math.max(MIN_KEYSTROKE_SCALE, (float) ksH / KS_HEIGHT);
+        // Compute a keystroke-section scale so the 3 key rows fit in the 2/5 height,
+        // then shrink to 85 % so the keys sit comfortably inside the panel bounds.
+        float ksScale = Math.max(MIN_KEYSTROKE_SCALE, (float) ksH / KS_HEIGHT) * 0.85f;
 
         int panelX = invHudX + invW + Math.round(PANEL_GAP * scale);
         int panelY = invHudY;

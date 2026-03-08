@@ -42,6 +42,24 @@ public class FarmingProfitTracker {
     private long pestSessionStartMs    = -1;
     private long pestTotalMs           = 0;
 
+    // ── Overall session start time (for the HUD title elapsed timer) ─────────
+    /** Wall-clock time when the first farming or pest activity began this session. */
+    private long sessionFirstStartMs   = -1;
+
+    // ── BPS (blocks per second) tracking via a sliding-window buffer ─────────
+    /** Circular timestamp buffer for recent block breaks. */
+    private final long[] breakTimestamps = new long[1000];
+    private int  breakHead  = 0;  // next write index
+    private int  breakCount = 0;  // number of valid entries
+    /** Sliding window length for BPS calculation (milliseconds). */
+    private static final long BPS_WINDOW_MS = 5_000L;
+
+    // ── Pest cooldown: keep attributing gains to pest for a short time ────────
+    /** Timestamp of the last tick where the pest killer was active (-1 if never). */
+    private long lastPestActiveMs = -1;
+    /** How long after pest activity ends to still attribute gains to pest killing. */
+    private static final long PEST_COOLDOWN_MS = 3_000L;
+
     // ── Previous inventory snapshot ──────────────────────────────────────────
     private final Map<String, Long> prevSnapshot = new HashMap<>();
 
@@ -77,6 +95,20 @@ public class FarmingProfitTracker {
 
         long nowMs = System.currentTimeMillis();
 
+        // ── Track overall session start ──────────────────────────────────────
+        if ((isFarming || isPestActive) && sessionFirstStartMs < 0) {
+            sessionFirstStartMs = nowMs;
+        }
+
+        // ── Track pest cooldown window ────────────────────────────────────────
+        if (isPestActive) {
+            lastPestActiveMs = nowMs;
+        }
+        // Attribute to pest if currently active OR within the cooldown window
+        boolean inPestCooldown = lastPestActiveMs >= 0
+                && (nowMs - lastPestActiveMs) < PEST_COOLDOWN_MS;
+        boolean trackAsPest = isPestActive || inPestCooldown;
+
         // ── Update time counters ─────────────────────────────────────────────
         if (isFarming) {
             if (!wasFarming) farmingSessionStartMs = nowMs;
@@ -99,7 +131,10 @@ public class FarmingProfitTracker {
         Map<String, Long> snapshot = takeSnapshot(client.player);
 
         // ── Attribute item gains ─────────────────────────────────────────────
-        if (isFarming || isPestActive) {
+        // Farming takes priority over the pest cooldown: if the macro is actively
+        // farming, attribute gains to farming even if a recent pest kill is still
+        // in the cooldown window.
+        if (isFarming || trackAsPest) {
             for (Map.Entry<String, Long> entry : snapshot.entrySet()) {
                 String key     = entry.getKey();
                 long current   = entry.getValue();
@@ -163,6 +198,43 @@ public class FarmingProfitTracker {
     /** Returns {@code true} once any item gain has been recorded this session. */
     public boolean hasData() {
         return trackerHasData;
+    }
+
+    /**
+     * Records a single block break event for BPS calculation.
+     * Should be called each time the macro actually attacks/breaks a block.
+     */
+    public void registerBlockBreak() {
+        long now = System.currentTimeMillis();
+        breakTimestamps[breakHead] = now;
+        breakHead = (breakHead + 1) % breakTimestamps.length;
+        if (breakCount < breakTimestamps.length) breakCount++;
+    }
+
+    /**
+     * Returns the average blocks-per-second broken over the recent sliding
+     * window ({@value #BPS_WINDOW_MS} ms).
+     */
+    public double getAverageBps() {
+        if (breakCount == 0) return 0.0;
+        long now = System.currentTimeMillis();
+        long windowStart = now - BPS_WINDOW_MS;
+        int recent = 0;
+        for (int i = 0; i < breakCount; i++) {
+            int idx = ((breakHead - 1 - i) + breakTimestamps.length) % breakTimestamps.length;
+            if (breakTimestamps[idx] >= windowStart) recent++;
+            else break;
+        }
+        return recent / (BPS_WINDOW_MS / 1000.0);
+    }
+
+    /**
+     * Returns the total elapsed milliseconds since this session's first farming
+     * or pest activity began.  Returns {@code 0} before any activity.
+     */
+    public long getSessionElapsedMs() {
+        if (sessionFirstStartMs < 0) return 0;
+        return System.currentTimeMillis() - sessionFirstStartMs;
     }
 
     /**
@@ -242,9 +314,13 @@ public class FarmingProfitTracker {
         pestTotalMs        = 0;
         farmingSessionStartMs = -1;
         pestSessionStartMs    = -1;
+        sessionFirstStartMs   = -1;
+        lastPestActiveMs      = -1;
         wasFarming    = false;
         wasPestActive = false;
         trackerHasData = false;
+        breakHead  = 0;
+        breakCount = 0;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
