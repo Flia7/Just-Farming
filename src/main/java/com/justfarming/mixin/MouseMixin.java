@@ -42,22 +42,24 @@ public class MouseMixin {
     }
 
     /**
-     * When the macro is running, allow Minecraft's {@code unlockCursor()} call
-     * to proceed so the OS cursor becomes visible when a GUI is opened.
+     * When the macro is running, suppress Minecraft's {@code unlockCursor()} so
+     * the GLFW cursor mode never transitions from DISABLED to NORMAL when a GUI
+     * opens.  This prevents the brief input-state glitch (micro-delay) that the
+     * GLFW cursor-mode change would otherwise cause.
      *
-     * <p>The {@link #onIsCursorLocked} override still returns {@code true} while
-     * the macro is running, ensuring all game inputs (attack key, movement) are
-     * processed normally even with the cursor visible.  This gives the user a
-     * visible cursor inside any open screen without causing the macro to pause.
+     * <p>Game inputs remain fully active because {@link #onIsCursorLocked} still
+     * reports the cursor as locked to Minecraft's input system.
      *
-     * <p>When {@code unlockedMouseEnabled} is {@code true} the cursor is already
-     * permanently unlocked via the {@link #onLockCursor} suppression, so no
-     * extra handling is needed here.
+     * <p>When {@code unlockedMouseEnabled} is {@code true}, {@link #onLockCursor}
+     * already keeps the cursor in NORMAL mode at all times; the suppression here
+     * ensures the same zero-delay behaviour for users who have that option off.
      */
     @Inject(method = "unlockCursor", at = @At("HEAD"), cancellable = true)
     private void onUnlockCursor(CallbackInfo ci) {
-        // Allow unlockCursor to run: cursor appears on screen when a GUI opens.
-        // onIsCursorLocked() keeps returning true so game inputs are not blocked.
+        MacroManager mm = JustFarming.getMacroManager();
+        if (mm != null && mm.isRunning()) {
+            ci.cancel(); // keep GLFW cursor DISABLED to prevent micro-delay
+        }
     }
 
     /**

@@ -2,6 +2,7 @@ package com.justfarming.render;
 
 import com.justfarming.CropType;
 import com.justfarming.config.FarmingConfig;
+import com.justfarming.input.KeystrokesTracker;
 import com.justfarming.profit.FarmingProfitTracker;
 import com.justfarming.profit.FarmingProfitTracker.ProfitEntry;
 import net.minecraft.client.MinecraftClient;
@@ -19,8 +20,9 @@ import java.util.Locale;
  * <p>Layout:
  * <pre>
  *  ┌─────────────────────────────────────────┐
- *  │  Cocoa Beans (20m)                      │  ← crop title (crop colour)
- *  │  BPS: 368.0                             │  ← average blocks/sec (item scale)
+ *  │  Cocoa Beans (20m)          [ ▲ ]       │  ← crop title + keystrokes (right)
+ *  │  BPS: 368.0             [◀][▼][▶]       │  ← BPS + WASD keys (right)
+ *  │                         [ L ][ R ]      │  ← LMB/RMB keys (right)
  *  ├─────────────────────────────────────────┤
  *  │  Farming                                │  ← sub-title (white)
  *  │  1,234 Cocoa Beans          +3,702      │  ← items (item scale, grey)
@@ -101,6 +103,47 @@ public class ProfitHudRenderer {
      */
     private static final float ITEM_SCALE = 0.85f;
 
+    // ── Keystrokes constants (Canelex KeyStrokes Revamp style) ───────────────
+
+    /** Unscaled side length (px) of each WASD key square. */
+    private static final int KS_KEY_SIZE = 11;
+    /** Unscaled gap (px) between adjacent keys. */
+    private static final int KS_KEY_GAP  = 1;
+    /** Unscaled horizontal padding inside the keystrokes section. */
+    private static final int KS_H_PAD    = 2;
+    /** Unscaled vertical padding above the first key row. */
+    private static final int KS_V_PAD    = 3;
+    /** Unscaled height of the full keystrokes widget (3 rows + gaps + top padding). */
+    private static final int KS_HEIGHT   = KS_V_PAD + 3 * KS_KEY_SIZE + 2 * KS_KEY_GAP;
+    /** Unscaled width of the keystrokes widget (3-key A/S/D row + horizontal padding). */
+    private static final int KS_WIDTH    = 2 * KS_H_PAD + 3 * KS_KEY_SIZE + 2 * KS_KEY_GAP;
+
+    /** Minimum keystroke scale factor so keys remain legible at low HUD scales. */
+    private static final float KS_MIN_SCALE = 0.25f;
+    /** Ratio of font scale to key pixel size for keystroke labels. */
+    private static final float KS_FONT_RATIO = 0.075f;
+    /** Minimum font scale for keystroke labels. */
+    private static final float KS_MIN_FONT = 0.3f;
+
+    // Keystroke key arrow symbols (Canelex inverted-T layout)
+    private static final String KS_ARROW_W = "▲";
+    private static final String KS_ARROW_A = "◀";
+    private static final String KS_ARROW_S = "▼";
+    private static final String KS_ARROW_D = "▶";
+
+    // Keystroke colours – dark mode
+    private static final int KS_BG_PRESSED_DARK    = 0xC0FFFFFF;
+    private static final int KS_BG_RELEASED_DARK   = 0x30FFFFFF;
+    private static final int KS_TXT_PRESSED_DARK   = 0xFF000000;
+    private static final int KS_TXT_RELEASED_DARK  = 0x80FFFFFF;
+
+    // Keystroke colours – light mode
+    private static final int KS_BG_PRESSED_LIGHT   = 0xD0203060;
+    private static final int KS_BG_RELEASED_LIGHT  = 0x30203060;
+    private static final int KS_TXT_PRESSED_LIGHT  = 0xFFEEF4F8;
+    private static final int KS_TXT_RELEASED_LIGHT = 0x80203060;
+
+
     private final FarmingConfig config;
 
     public ProfitHudRenderer(FarmingConfig config) {
@@ -168,6 +211,17 @@ public class ProfitHudRenderer {
         // the inventory HUD and paper-doll panel above it.
         context.fill(x, y, x + pw, y + height, COL_BG());
 
+        // ── Keystrokes widget – right side of the header ──────────────────────
+        // Scale keystrokes so KS_HEIGHT fits in the header section height.
+        int headerH = PAD_Y + LINE_H + scaledLineH();  // crop + BPS rows
+        float ksScale = Math.max(KS_MIN_SCALE,
+                (float) headerH / KS_HEIGHT * 0.90f);
+        int ksW = Math.round(KS_WIDTH  * ksScale);
+        // Right-align within the panel with PAD_X margin; top-align with content
+        int ksX = x + pw - PAD_X - ksW;
+        int ksY = y + PAD_Y;
+        renderKeystrokes(context, tr, ksX, ksY, ksW, ksScale, isDark());
+
         int curY = y + PAD_Y;
 
         // ── Crop title: crop name in the crop's colour ────────────────────────
@@ -224,6 +278,9 @@ public class ProfitHudRenderer {
         context.drawTextWithShadow(tr, phLabel, 0, 0, COL_TITLE());
         context.drawTextWithShadow(tr, phValue, phRightX, 0, COL_PROFIT());
         matrices.popMatrix();
+
+        // ── Bottom accent stripe ──────────────────────────────────────────────
+        context.fill(x, y + height - 1, x + pw, y + height, COL_ACCENT());
     }
 
     // ── Section helpers ───────────────────────────────────────────────────────
@@ -435,5 +492,98 @@ public class ProfitHudRenderer {
     /** Pixel height of one item row at {@link #ITEM_SCALE}. */
     private static int scaledLineH() {
         return Math.round(LINE_H * ITEM_SCALE) + 1;
+    }
+
+    // ── Keystrokes rendering ──────────────────────────────────────────────────
+
+    /**
+     * Renders the WASD + LMB/RMB keystrokes widget at the given position,
+     * using Canelex inverted-T layout:
+     * <pre>
+     *   [ ▲ ]              ← W  (centred)
+     *   [ ◀ ] [ ▼ ] [ ▶ ] ← A S D (centred)
+     *   [  L  ] [  R  ]   ← LMB / RMB
+     * </pre>
+     *
+     * @param x     left pixel of the widget
+     * @param y     top pixel of the widget
+     * @param w     width of the widget in screen pixels
+     * @param scale key pixel size multiplier
+     * @param dark  whether to use dark-mode colours
+     */
+    private void renderKeystrokes(DrawContext context, TextRenderer tr,
+                                   int x, int y, int w, float scale, boolean dark) {
+        KeystrokesTracker tracker = KeystrokesTracker.getInstance();
+        long now = System.currentTimeMillis();
+
+        int bgPressed  = dark ? KS_BG_PRESSED_DARK   : KS_BG_PRESSED_LIGHT;
+        int bgReleased = dark ? KS_BG_RELEASED_DARK  : KS_BG_RELEASED_LIGHT;
+        int txtPressed  = dark ? KS_TXT_PRESSED_DARK  : KS_TXT_PRESSED_LIGHT;
+        int txtReleased = dark ? KS_TXT_RELEASED_DARK : KS_TXT_RELEASED_LIGHT;
+
+        int ks     = Math.max(1, Math.round(KS_KEY_SIZE * scale));
+        int kg     = Math.max(1, Math.round(KS_KEY_GAP  * scale));
+        int stride = ks + kg;
+        int hPad   = Math.max(1, Math.round(KS_H_PAD * scale));
+        int vPad   = Math.max(1, Math.round(KS_V_PAD * scale));
+
+        // Row 1: W key, centred
+        int row1Y = y + vPad;
+        int wX    = x + (w - ks) / 2;
+        drawKsKey(context, tr, wX, row1Y, ks, KS_ARROW_W,
+                KeystrokesTracker.KEY_W, tracker, now, bgPressed, bgReleased, txtPressed, txtReleased);
+
+        // Row 2: A / S / D, centred
+        int row2Y     = row1Y + stride;
+        int threeW    = 3 * ks + 2 * kg;
+        int asdStartX = x + (w - threeW) / 2;
+        drawKsKey(context, tr, asdStartX,              row2Y, ks, KS_ARROW_A,
+                KeystrokesTracker.KEY_A, tracker, now, bgPressed, bgReleased, txtPressed, txtReleased);
+        drawKsKey(context, tr, asdStartX + stride,     row2Y, ks, KS_ARROW_S,
+                KeystrokesTracker.KEY_S, tracker, now, bgPressed, bgReleased, txtPressed, txtReleased);
+        drawKsKey(context, tr, asdStartX + 2 * stride, row2Y, ks, KS_ARROW_D,
+                KeystrokesTracker.KEY_D, tracker, now, bgPressed, bgReleased, txtPressed, txtReleased);
+
+        // Row 3: LMB / RMB, filling inner width
+        int row3Y  = row2Y + stride;
+        int inner  = w - 2 * hPad;
+        int lmbW   = (inner - kg) / 2;
+        int rmbW   = inner - lmbW - kg;
+        int lmbX   = x + hPad;
+        int rmbX   = lmbX + lmbW + kg;
+        drawKsKey(context, tr, lmbX, row3Y, lmbW, ks, "L",
+                KeystrokesTracker.KEY_LMB, tracker, now, bgPressed, bgReleased, txtPressed, txtReleased);
+        drawKsKey(context, tr, rmbX, row3Y, rmbW, ks, "R",
+                KeystrokesTracker.KEY_RMB, tracker, now, bgPressed, bgReleased, txtPressed, txtReleased);
+    }
+
+    private static void drawKsKey(DrawContext context, TextRenderer tr,
+                                   int x, int y, int w, int h, String label,
+                                   int keyIdx, KeystrokesTracker tracker, long now,
+                                   int bgPressed, int bgReleased, int txtPressed, int txtReleased) {
+        int bg  = tracker.getKeyBgColor  (keyIdx, bgPressed,  bgReleased,  now);
+        int txt = tracker.getKeyTextColor(keyIdx, txtPressed, txtReleased, now);
+        // Background fill
+        context.fill(x, y, x + w, y + h, bg);
+        // Centred label
+        float fontScale = Math.max(KS_MIN_FONT, h * KS_FONT_RATIO);
+        int glyphW = Math.round(tr.getWidth(label) * fontScale);
+        int glyphH = Math.round(8 * fontScale);
+        int tx = x + (w - glyphW) / 2;
+        int ty = y + (h - glyphH) / 2;
+        var matrices = context.getMatrices();
+        matrices.pushMatrix();
+        matrices.translate(tx, ty);
+        matrices.scale(fontScale, fontScale);
+        context.drawText(tr, label, 0, 0, txt, false);
+        matrices.popMatrix();
+    }
+
+    private static void drawKsKey(DrawContext context, TextRenderer tr,
+                                   int x, int y, int size, String label,
+                                   int keyIdx, KeystrokesTracker tracker, long now,
+                                   int bgPressed, int bgReleased, int txtPressed, int txtReleased) {
+        drawKsKey(context, tr, x, y, size, size, label, keyIdx, tracker, now,
+                bgPressed, bgReleased, txtPressed, txtReleased);
     }
 }

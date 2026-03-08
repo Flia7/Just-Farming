@@ -1267,23 +1267,10 @@ public class MacroManager {
     }
 
     /**
-     * Drives block breaking using the same left-click path as vanilla Minecraft:
-     * {@link net.minecraft.client.network.ClientPlayerInteractionManager#updateBlockBreakingProgress}.
-     *
-     * <p>This is the sole block-break driver when the macro is active.
-     * {@code MinecraftClientMixin} suppresses vanilla's
-     * {@code handleBlockBreaking()} call entirely while {@link #shouldBreak()}
-     * is {@code true}, so there is no risk of a double-call resetting break
-     * progress.
-     *
-     * <p>Using {@code updateBlockBreakingProgress} instead of the raw
-     * {@code attackBlock} packet mirrors what the game sends when a real player
-     * holds left click.  For instant-mine blocks (crops, hardness&nbsp;0) it
-     * completes the break in a single tick, exactly as before.  For blocks with
-     * non-zero hardness it only advances break progress rather than sending a
-     * fresh {@code START_DESTROY_BLOCK} packet every tick, which prevents the
-     * macro from repeatedly interrupting the break sequence when the crosshair
-     * drifts onto a non-crop block such as dirt or logs.
+     * Drives block breaking by sending a fresh {@code START_DESTROY_BLOCK}
+     * (attackBlock) packet every tick, matching what vanilla does when the player
+     * clicks on a new block.  For instant-mine crops (hardness&nbsp;0) this
+     * completes the break immediately.
      *
      * <p>A fresh {@code player.raycast()} call is used each tick rather than
      * reading the cached {@code client.crosshairTarget} because the crosshair
@@ -1300,11 +1287,11 @@ public class MacroManager {
         if (!(hit instanceof BlockHitResult blockHit)) return;
         BlockPos pos = blockHit.getBlockPos();
         if (!client.world.getBlockState(pos).isAir()) {
-            // Use updateBlockBreakingProgress – the same method vanilla calls when
-            // a player holds left click.  This mirrors real left-click behaviour:
-            // for instant-break crops it completes in one tick; for harder blocks
-            // it progresses without spamming START_DESTROY_BLOCK every tick.
-            client.interactionManager.updateBlockBreakingProgress(pos, blockHit.getSide());
+            // Use attackBlock (START_DESTROY_BLOCK) every tick so each new crop in
+            // the crosshair is broken immediately.  This is the correct packet for
+            // instant-mine blocks and avoids stale InteractionManager break-state
+            // that caused only the first crop to break.
+            client.interactionManager.attackBlock(pos, blockHit.getSide());
             client.player.swingHand(Hand.MAIN_HAND);
             KeystrokesTracker.getInstance().registerAttack();
             com.justfarming.JustFarming.getProfitTracker().registerBlockBreak();
