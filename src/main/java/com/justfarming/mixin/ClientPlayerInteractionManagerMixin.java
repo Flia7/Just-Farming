@@ -1,11 +1,17 @@
 package com.justfarming.mixin;
 
+import com.justfarming.JustFarming;
+import com.justfarming.MacroManager;
 import com.justfarming.access.ClientPlayerInteractionManagerExtension;
+import com.justfarming.profit.FarmingProfitTracker;
 import net.minecraft.client.network.ClientPlayerInteractionManager;
 import net.minecraft.util.math.BlockPos;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
  * Exposes a quiet reset for the block-breaking state in
@@ -20,6 +26,11 @@ import org.spongepowered.asm.mixin.Unique;
  * prefix.  This matches the behaviour observed after a GUI screen is opened and
  * closed (where Minecraft itself resets the state during the screen transition)
  * and eliminates the "weird packets" reported before a GUI has ever been opened.
+ *
+ * <p>Also hooks {@link #breakBlock(BlockPos)} to register each successful block
+ * break with the farming profit tracker so the BPS (blocks-per-second) counter
+ * works correctly when vanilla's {@code handleBlockBreaking} drives the breaking
+ * (attack key held) rather than direct {@code attackBlock} calls.
  */
 @Mixin(ClientPlayerInteractionManager.class)
 public class ClientPlayerInteractionManagerMixin implements ClientPlayerInteractionManagerExtension {
@@ -50,5 +61,26 @@ public class ClientPlayerInteractionManagerMixin implements ClientPlayerInteract
     public void justFarming$resetBreakingState() {
         breakingBlock      = false;
         currentBreakingPos = null;
+    }
+
+    /**
+     * Registers a block break with the farming profit tracker each time a block
+     * is successfully destroyed while the farming macro is actively breaking crops.
+     *
+     * <p>This hook fires at the entry point of
+     * {@link ClientPlayerInteractionManager#breakBlock(BlockPos)} which vanilla
+     * calls when the block's destruction progress reaches 1.0 (i.e., when the
+     * block is actually broken).  Only counts breaks when the macro's
+     * {@link MacroManager#shouldBreak()} is true so accidental non-macro breaks
+     * are not included in the BPS average.
+     */
+    @Inject(method = "breakBlock", at = @At("HEAD"))
+    private void justFarming$onBreakBlock(BlockPos pos, CallbackInfoReturnable<Boolean> cir) {
+        MacroManager mm = JustFarming.getMacroManager();
+        if (mm == null || !mm.shouldBreak()) return;
+        FarmingProfitTracker tracker = JustFarming.getProfitTracker();
+        if (tracker != null) {
+            tracker.registerBlockBreak();
+        }
     }
 }
