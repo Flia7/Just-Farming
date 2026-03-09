@@ -619,7 +619,8 @@ public class MacroManager {
                 waitingForPestKiller = false;
                 pestKillerManager.reset();
                 if (shouldRunVisitorRoutine()) {
-                    // Pest killer already sent /warp garden; visitors will /tptoplot barn.
+                    // Visitor routine always warps to garden first (WARPING_TO_GARDEN state)
+                    // then teleports to barn, so no extra warp is needed here.
                     waitingForVisitors = true;
                     // Keep cursor in its current state (unlocked if unlockedMouseEnabled).
                     visitorManager.start();

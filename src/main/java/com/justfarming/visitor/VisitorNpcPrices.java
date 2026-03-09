@@ -84,6 +84,8 @@ public final class VisitorNpcPrices {
         NPC_PRICES.put("tasty cheese",                4.0);
         NPC_PRICES.put("jelly",                       4.0);
         NPC_PRICES.put("dung",                        4.0);
+        NPC_PRICES.put("squeaky toy",             10000.0);
+        NPC_PRICES.put("squeaky mousemat",      1000000.0);
 
         // ── Rare / special pest drops ─────────────────────────────────────────
         NPC_PRICES.put("beady eyes",               1000.0);
