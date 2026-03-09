@@ -57,4 +57,29 @@ public class MinecraftClientMixin {
             }
         }
     }
+
+    /**
+     * When the game window gains or loses focus while any macro is running:
+     * <ul>
+     *   <li><em>Focus lost</em> (alt-tab out): unlock the cursor so the player can
+     *       interact with other windows on their desktop.</li>
+     *   <li><em>Focus gained</em> (re-tab in): re-lock the cursor so farming can
+     *       continue with the captured cursor.  If
+     *       {@link com.justfarming.config.FarmingConfig#unlockedMouseEnabled} is
+     *       {@code true}, the re-lock will be cancelled by
+     *       {@code MouseMixin.onLockCursor}, keeping the cursor unlocked.</li>
+     * </ul>
+     */
+    @Inject(method = "onWindowFocusChanged", at = @At("HEAD"))
+    private void justFarming$onWindowFocusChanged(boolean focused, CallbackInfo ci) {
+        MacroManager mm = JustFarming.getMacroManager();
+        if (mm == null || !mm.isAnyMacroStateActive()) return;
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null) return;
+        if (!focused) {
+            client.mouse.unlockCursor();
+        } else {
+            client.mouse.lockCursor();
+        }
+    }
 }
