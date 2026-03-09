@@ -74,6 +74,13 @@ public class VisitorManager {
     private static final long ACTION_DELAY_DEFAULT_MS = 600;
 
     /**
+     * Delay (ms) between each digit typed into the bazaar sign screen.
+     * 120 ms per character matches a natural hand-typing speed while ensuring
+     * each keypress is registered by the server before the next one is sent.
+     */
+    private static final long SIGN_TYPE_PER_CHAR_MS = 120L;
+
+    /**
      * Maximum time (ms) to keep polling for a bazaar screen / item to appear before
      * giving up.  Allows the routine to survive server lag without skipping purchases.
      */
@@ -122,17 +129,19 @@ public class VisitorManager {
      * angular speed is independent of frame rate: at this rate the camera covers
      * 180° in one second, matching the pest-killer rotation speed for consistent
      * yaw/pitch tracking of visitor NPCs.
-     * Reduced by 35% from 180°/s to 117°/s for a more natural-looking movement.
+     * Reduced by 35% from 180°/s to 117°/s, then a further 30% to ~82°/s for
+     * a more natural-looking movement.
      */
-    private static final float SMOOTH_LOOK_DEGREES_PER_SECOND = 117.0f;
+    private static final float SMOOTH_LOOK_DEGREES_PER_SECOND = 82.0f;
 
     /**
      * Faster camera rotation speed (degrees/second) used when the player is
      * already within {@link #VISITOR_DETECT_RADIUS} of a visitor and needs to
      * align quickly but still smoothly (not a hard snap).
-     * Reduced by 35% from 540°/s to 351°/s for a more natural-looking movement.
+     * Reduced by 35% from 540°/s to 351°/s, then a further 30% to ~246°/s for
+     * a more natural-looking movement.
      */
-    private static final float FAST_LOOK_DEGREES_PER_SECOND = 351.0f;
+    private static final float FAST_LOOK_DEGREES_PER_SECOND = 246.0f;
 
     /** How long (ms) to hold the space key for each press in the disable-flight sequence. */
     private static final long DISABLE_FLIGHT_PRESS_MS  = 100L;
@@ -511,6 +520,11 @@ public class VisitorManager {
          * pressing ESC to close the bazaar before scanning for visitors.
          */
         INSTA_SELL_CONFIRMING,
+        /**
+         * Bazaar GUI closed after insta-sell; waiting for it to re-appear
+         * (Hypixel may reopen a result screen), then closing it before scanning.
+         */
+        INSTA_SELL_WAITING_REOPEN,
         /** Looking for visitor NPC entities near the player. */
         SCANNING,
         /** Walking toward the {@link #currentVisitor}. */
@@ -1100,11 +1114,26 @@ public class VisitorManager {
                         }
                         // Close the bazaar regardless of whether we found the button.
                         player.closeHandledScreen();
-                        enterState(State.SCANNING);
+                        enterState(State.INSTA_SELL_WAITING_REOPEN);
                     } else {
                         // Screen already closed (sell may have completed automatically).
-                        enterState(State.SCANNING);
+                        enterState(State.INSTA_SELL_WAITING_REOPEN);
                     }
+                }
+            }
+
+            case INSTA_SELL_WAITING_REOPEN -> {
+                // After the sell is confirmed and GUI was closed, Hypixel may briefly
+                // reopen a result/confirmation screen.  Wait for it to appear and then
+                // close it before proceeding to scan for visitors.
+                if (client.currentScreen instanceof HandledScreen<?>) {
+                    // A GUI has (re-)appeared; close it and move on.
+                    player.closeHandledScreen();
+                    LOGGER.info("[Just Farming-Visitors] Closed re-opened bazaar screen after insta-sell.");
+                    enterState(State.SCANNING);
+                } else if (now - stateEnteredAt >= 3000L) {
+                    // No GUI appeared within 3 seconds; proceed to scanning anyway.
+                    enterState(State.SCANNING);
                 }
             }
 
@@ -1226,6 +1255,10 @@ public class VisitorManager {
                     targetPitch = aotvTeleportPitch;
                     fastRotateActive = true;
                     releaseMovementKeys();
+                    // Keep sneak released to avoid triggering etherwarp on the upcoming click.
+                    if (client.options != null) {
+                        client.options.sneakKey.setPressed(false);
+                    }
                     return;
                 }
 
@@ -1259,6 +1292,8 @@ public class VisitorManager {
                     player.setPitch(randomizedSnapPitch);
                     player.getInventory().setSelectedSlot(aotvSlot);
                     if (client.options != null) {
+                        // Release sneak before firing to prevent etherwarp (shift+right-click).
+                        client.options.sneakKey.setPressed(false);
                         client.options.useKey.setPressed(true);
                     }
                     aotvTeleportFired = true;
@@ -1469,11 +1504,8 @@ public class VisitorManager {
                         signTypingStep = 1;
                         signLastTypedAt = now; // start 300 ms typing-spread timer
                     } else if (amountToType != null && signTypingStep <= amountToType.length()) {
-                        // Space digits so the full sequence takes at least 300 ms.
-                        // For N digits: perCharMs = max(75, 300/N) → total ≥ 300 ms for N ≤ 4;
-                        // for N > 4 the 75 ms floor keeps pacing human-like (total > 300 ms).
-                        long perCharMs = Math.max(75L, 300L / (long) amountToType.length());
-                        if (now - signLastTypedAt >= perCharMs) {
+                        // Type each digit with a fixed interval for human-like pacing.
+                        if (now - signLastTypedAt >= SIGN_TYPE_PER_CHAR_MS) {
                             signScreen.charTyped(new net.minecraft.client.input.CharInput(
                                     (int) amountToType.charAt(signTypingStep - 1), 0));
                             signTypingStep++;
