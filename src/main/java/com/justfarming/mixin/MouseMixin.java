@@ -61,21 +61,29 @@ public class MouseMixin {
     }
 
     /**
-     * When the macro is running with "unlock mouse" enabled, the GLFW cursor is
-     * free (not captured), which causes {@code MinecraftClient.tick()} to pass
-     * {@code false} to {@code handleBlockBreaking} (because
-     * {@code attackKey.isPressed() && mouse.isCursorLocked()} evaluates to
-     * {@code false}).  Returning {@code true} here makes the block-breaking path
-     * treat the cursor as locked so that holding the attack key keeps breaking
-     * crops normally.  Actual physical mouse movement is still suppressed by
+     * When any macro is active, always report the cursor as locked regardless of
+     * the actual GLFW cursor state.  This prevents {@code MinecraftClient.tick()}
+     * from passing {@code false} to {@code handleBlockBreaking} (which evaluates
+     * {@code attackKey.isPressed() && mouse.isCursorLocked()}) in two scenarios:
+     * <ol>
+     *   <li>The "unlock mouse" option is enabled — the GLFW cursor is free by
+     *       design so the player can interact with other windows.</li>
+     *   <li>The "unlock mouse" option is <em>disabled</em> but the game window
+     *       temporarily loses focus (alt-tab) — {@code onWindowFocusChanged}
+     *       calls {@code unlockCursor()} to free the cursor while the window is
+     *       unfocused, and it calls {@code lockCursor()} when focus returns.
+     *       Without this override, the single-tick gap before re-locking (and
+     *       every tick while tabbed out) would abort the block-breaking
+     *       sequence.</li>
+     * </ol>
+     * Actual physical mouse movement is still suppressed by
      * {@code EntityMixin.changeLookDirection}, so the camera never spins.
      */
     @Inject(method = "isCursorLocked", at = @At("RETURN"), cancellable = true)
     private void onIsCursorLocked(CallbackInfoReturnable<Boolean> cir) {
         if (cir.getReturnValue()) return; // already locked — nothing to do
         MacroManager mm = JustFarming.getMacroManager();
-        FarmingConfig cfg = JustFarming.getConfig();
-        if (mm != null && cfg != null && cfg.unlockedMouseEnabled && mm.isAnyMacroStateActive()) {
+        if (mm != null && mm.isAnyMacroStateActive()) {
             cir.setReturnValue(true);
         }
     }
