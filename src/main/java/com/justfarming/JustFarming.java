@@ -370,7 +370,8 @@ public class JustFarming implements ClientModInitializer {
             }
         });
 
-        // Listen for Hypixel SkyBlock "You received" chat messages to track pest drops.
+        // Listen for Hypixel SkyBlock "You received", "RARE DROP!", and "PET DROP!" chat
+        // messages to track pest drops and farming crop sack deposits.
         // When the pest killer is active, item drops go directly to the player's
         // collection storage and never pass through the inventory, so they must be
         // tracked from the chat message rather than from inventory diffs.
@@ -378,7 +379,7 @@ public class JustFarming implements ClientModInitializer {
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
             if (overlay) return; // ignore action bar messages
             String text = message.getString();
-            profitTracker.onChatMessage(text, pestKillerManager);
+            profitTracker.onChatMessage(text, pestKillerManager, macroManager);
             // When the server confirms a /setspawn command, save the player's current
             // position as the spawn highlight block (without sending any command ourselves).
             if (text.contains("Your spawn location has been set")) {

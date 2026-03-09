@@ -112,6 +112,31 @@ public class FarmingProfitTracker {
     private static final Pattern CHAT_COIN_PATTERN =
             Pattern.compile("You received ([\\d,]+) Coins?\\.?", Pattern.CASE_INSENSITIVE);
 
+    /**
+     * Matches Hypixel SkyBlock rare-drop notifications.
+     *
+     * <p>Example (colour codes stripped):
+     * {@code "RARE DROP! Polished Pumpkin (+206)"}
+     *
+     * <p>The farming-fortune bonus {@code (+N)} is ignored; the item count is
+     * always 1.  The item name is captured up to the optional {@code (+N)} suffix.
+     */
+    private static final Pattern RARE_DROP_PATTERN =
+            Pattern.compile("RARE DROP! (.+?)(?:\\s*\\(\\+[\\d]+\\))?\\s*$", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * Matches Hypixel SkyBlock pet-drop notifications from pest kills.
+     *
+     * <p>Example (colour codes stripped):
+     * {@code "PET DROP! Rat (+206)"}
+     * {@code "PET DROP! Slug (+206)"}
+     *
+     * <p>The farming-fortune bonus {@code (+N)} is ignored; the item count is
+     * always 1.  The pet name is captured up to the optional {@code (+N)} suffix.
+     */
+    private static final Pattern PET_DROP_PATTERN =
+            Pattern.compile("PET DROP! (.+?)(?:\\s*\\(\\+[\\d]+\\))?\\s*$", Pattern.CASE_INSENSITIVE);
+
     /** Internal key used for coin entries in the pest items map. */
     private static final String COINS_KEY = "coins";
 
@@ -559,18 +584,22 @@ public class FarmingProfitTracker {
     /**
      * Parses one game chat message and attributes item/coin gains to the pest
      * profit section when the pest killer is active (or within its cooldown
-     * window).
+     * window), or to the farming profit section when the farming macro is active.
      *
      * <p>Hypixel SkyBlock sends a "You received Nx Item" message when a pest is
      * killed and its loot is teleported directly to the player's collection
      * storage, so it never passes through the inventory.  This method ensures
      * those gains are still captured by the profit tracker.
      *
-     * @param rawMessage      the plain-text chat line (colour codes already stripped
-     *                        by {@link net.minecraft.text.Text#getString()})
+     * <p>Also handles "RARE DROP! Item (+N)" and "PET DROP! Item (+N)" messages
+     * produced when a rare item or pet drops from a pest kill.
+     *
+     * @param rawMessage        the plain-text chat line (colour codes already stripped
+     *                          by {@link net.minecraft.text.Text#getString()})
      * @param pestKillerManager the pest killer manager used to determine context
+     * @param macroManager      the farming macro manager used to determine farming context
      */
-    public void onChatMessage(String rawMessage, PestKillerManager pestKillerManager) {
+    public void onChatMessage(String rawMessage, PestKillerManager pestKillerManager, MacroManager macroManager) {
         if (rawMessage == null || rawMessage.isBlank()) return;
 
         // Strip Minecraft colour codes in case the caller didn't.
@@ -581,24 +610,55 @@ public class FarmingProfitTracker {
         boolean inPestCooldown = lastPestActiveMs >= 0
                 && (nowMs - lastPestActiveMs) < PEST_COOLDOWN_MS;
         boolean trackAsPest = isPestActive || inPestCooldown;
+        boolean isFarming   = !trackAsPest && macroManager != null && macroManager.isRunning();
 
-        if (!trackAsPest) return;
+        if (!trackAsPest && !isFarming) return;
 
-        // Try to match coin reward first (e.g. "You received 450 Coins.")
-        Matcher coinMatcher = CHAT_COIN_PATTERN.matcher(plain);
-        if (coinMatcher.find()) {
-            try {
-                long amount = Long.parseLong(coinMatcher.group(1).replace(",", ""));
-                if (amount > 0) {
+        Map<String, Long> target = trackAsPest ? pestItems : farmingItems;
+
+        // Try to match coin reward first (e.g. "You received 450 Coins.") – pest only.
+        if (trackAsPest) {
+            Matcher coinMatcher = CHAT_COIN_PATTERN.matcher(plain);
+            if (coinMatcher.find()) {
+                try {
+                    long amount = Long.parseLong(coinMatcher.group(1).replace(",", ""));
+                    if (amount > 0) {
+                        trackerHasData = true;
+                        pestItems.merge(COINS_KEY, amount, Long::sum);
+                        displayNames.putIfAbsent(COINS_KEY, "Coins");
+                    }
+                } catch (NumberFormatException ignored) {}
+                return;
+            }
+
+            // Try to match RARE DROP! notification (e.g. "RARE DROP! Polished Pumpkin (+206)").
+            Matcher rareDropMatcher = RARE_DROP_PATTERN.matcher(plain);
+            if (rareDropMatcher.find()) {
+                String itemName = rareDropMatcher.group(1).trim();
+                if (!itemName.isEmpty()) {
+                    String key = normalizeItemName(itemName);
                     trackerHasData = true;
-                    pestItems.merge(COINS_KEY, amount, Long::sum);
-                    displayNames.putIfAbsent(COINS_KEY, "Coins");
+                    pestItems.merge(key, 1L, Long::sum);
+                    displayNames.putIfAbsent(key, itemName);
                 }
-            } catch (NumberFormatException ignored) {}
-            return;
+                return;
+            }
+
+            // Try to match PET DROP! notification (e.g. "PET DROP! Rat (+206)").
+            Matcher petDropMatcher = PET_DROP_PATTERN.matcher(plain);
+            if (petDropMatcher.find()) {
+                String petName = petDropMatcher.group(1).trim();
+                if (!petName.isEmpty()) {
+                    String key = normalizePetName(petName);
+                    trackerHasData = true;
+                    pestItems.merge(key, 1L, Long::sum);
+                    displayNames.putIfAbsent(key, petName + " Pet");
+                }
+                return;
+            }
         }
 
-        // Try to match item reward (e.g. "You received 163x Enchanted Nether Wart.")
+        // Try to match item reward (e.g. "You received 163x Enchanted Nether Wart.").
         Matcher itemMatcher = CHAT_ITEM_PATTERN.matcher(plain);
         if (itemMatcher.find()) {
             try {
@@ -607,7 +667,7 @@ public class FarmingProfitTracker {
                 if (amount > 0 && !itemName.isEmpty()) {
                     String key = normalizeItemName(itemName);
                     trackerHasData = true;
-                    pestItems.merge(key, amount, Long::sum);
+                    target.merge(key, amount, Long::sum);
                     displayNames.putIfAbsent(key, itemName);
                 }
             } catch (NumberFormatException ignored) {}
@@ -621,6 +681,17 @@ public class FarmingProfitTracker {
     private static String normalizeItemName(String rawName) {
         String key = rawName.toLowerCase().trim();
         return VINYL_NAMES.contains(key) ? "pest vinyl" : key;
+    }
+
+    /**
+     * Normalizes a raw pet name from a "PET DROP!" chat message to the
+     * price-table key used in {@link VisitorNpcPrices}.
+     *
+     * <p>Hypixel reports the pet name without the "Pet" suffix, e.g. "Rat" or
+     * "Slug".  This method appends " pet" so the key matches the price table.
+     */
+    private static String normalizePetName(String rawName) {
+        return rawName.toLowerCase().trim() + " pet";
     }
 
     /**
