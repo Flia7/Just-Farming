@@ -1056,10 +1056,12 @@ public class PestKillerManager {
             // ── Wardrobe states ──────────────────────────────────────────────
 
             case WARDROBE_OPENING -> {
-                // Wait for a HandledScreen with "Wardrobe" in the title to open.
+                // Wait for a HandledScreen with "Wardrobe" in the title to open,
+                // then wait WARDROBE_CLICK_DELAY_MS before acting (same pacing as
+                // the bazaar GUI delay in the visitor routine).
                 if (client.currentScreen instanceof HandledScreen<?> screen) {
                     String title = screen.getTitle().getString().toLowerCase();
-                    if (title.contains("wardrobe")) {
+                    if (title.contains("wardrobe") && now - stateEnteredAt >= WARDROBE_CLICK_DELAY_MS) {
                         int targetSlot = config != null
                                 ? Math.max(MIN_WARDROBE_SLOT, Math.min(MAX_WARDROBE_SLOT, config.pestWardrobeSlot))
                                 : MIN_WARDROBE_SLOT;
@@ -1078,16 +1080,23 @@ public class PestKillerManager {
 
             case WARDROBE_NEXT_PAGE -> {
                 if (!wardrobeNextPageClicked) {
-                    if (client.currentScreen instanceof HandledScreen<?> screen) {
-                        if (tryClickWardrobeSlotWithName(screen, "next page")) {
-                            wardrobeNextPageClicked = true;
-                            LOGGER.info("[Just Farming-PestKiller] Clicked 'Next Page' in wardrobe.");
-                            stateEnteredAt = now; // reset timer for the delay
-                        } else if (now - stateEnteredAt >= WARDROBE_CLICK_DELAY_MS) {
-                            LOGGER.warn("[Just Farming-PestKiller] Could not find 'Next Page' in wardrobe.");
-                            enterState(State.WARDROBE_SLOT);
+                    // Wait the full click delay before attempting to click "Next Page"
+                    // so the screen has fully loaded its slot data.
+                    if (now - stateEnteredAt >= WARDROBE_CLICK_DELAY_MS) {
+                        if (client.currentScreen instanceof HandledScreen<?> screen) {
+                            if (tryClickWardrobeSlotWithName(screen, "next page")) {
+                                wardrobeNextPageClicked = true;
+                                LOGGER.info("[Just Farming-PestKiller] Clicked 'Next Page' in wardrobe.");
+                                stateEnteredAt = now; // reset timer for the post-click delay
+                            } else {
+                                LOGGER.warn("[Just Farming-PestKiller] Could not find 'Next Page' in wardrobe.");
+                                enterState(State.WARDROBE_SLOT);
+                            }
+                        } else {
+                            LOGGER.warn("[Just Farming-PestKiller] Wardrobe screen closed unexpectedly.");
+                            enterState(State.PRE_TELEPORT_WAIT);
                         }
-                    } else {
+                    } else if (client.currentScreen == null) {
                         LOGGER.warn("[Just Farming-PestKiller] Wardrobe screen closed unexpectedly.");
                         enterState(State.PRE_TELEPORT_WAIT);
                     }
@@ -1098,25 +1107,31 @@ public class PestKillerManager {
 
             case WARDROBE_SLOT -> {
                 if (!wardrobeSlotClicked) {
-                    if (client.currentScreen instanceof HandledScreen<?> screen) {
-                        int targetSlot = config != null
-                                ? Math.max(MIN_WARDROBE_SLOT, Math.min(MAX_WARDROBE_SLOT, config.pestWardrobeSlot))
-                                : MIN_WARDROBE_SLOT;
-                        // After "Next Page", page 2 shows slots 10-18 labelled as "Slot 10", "Slot 11", etc.
-                        // On page 1, slots 1-9 are labelled "Slot 1", "Slot 2", etc.
-                        String slotLabel = "slot " + targetSlot;
-                        if (tryClickWardrobeSlotWithName(screen, slotLabel)) {
-                            wardrobeSlotClicked = true;
-                            LOGGER.info("[Just Farming-PestKiller] Clicked '{}' in wardrobe.", slotLabel);
-                            stateEnteredAt = now;
-                        } else if (now - stateEnteredAt >= WARDROBE_CLICK_DELAY_MS) {
-                            LOGGER.warn("[Just Farming-PestKiller] Could not find '{}' in wardrobe.", slotLabel);
-                            // Close screen and proceed
-                            if (player != null) player.closeHandledScreen();
+                    // Wait the full click delay before clicking the slot so the page
+                    // has had time to load after a "Next Page" navigation.
+                    if (now - stateEnteredAt >= WARDROBE_CLICK_DELAY_MS) {
+                        if (client.currentScreen instanceof HandledScreen<?> screen) {
+                            int targetSlot = config != null
+                                    ? Math.max(MIN_WARDROBE_SLOT, Math.min(MAX_WARDROBE_SLOT, config.pestWardrobeSlot))
+                                    : MIN_WARDROBE_SLOT;
+                            // After "Next Page", page 2 shows slots 10-18 labelled as "Slot 10", "Slot 11", etc.
+                            // On page 1, slots 1-9 are labelled "Slot 1", "Slot 2", etc.
+                            String slotLabel = "slot " + targetSlot;
+                            if (tryClickWardrobeSlotWithName(screen, slotLabel)) {
+                                wardrobeSlotClicked = true;
+                                LOGGER.info("[Just Farming-PestKiller] Clicked '{}' in wardrobe.", slotLabel);
+                                stateEnteredAt = now;
+                            } else {
+                                LOGGER.warn("[Just Farming-PestKiller] Could not find '{}' in wardrobe.", slotLabel);
+                                // Close screen and proceed
+                                if (player != null) player.closeHandledScreen();
+                                enterState(State.WARDROBE_CLOSING);
+                            }
+                        } else {
+                            // Screen closed before we could click – proceed anyway
                             enterState(State.WARDROBE_CLOSING);
                         }
-                    } else {
-                        // Screen closed before we could click – proceed anyway
+                    } else if (client.currentScreen == null) {
                         enterState(State.WARDROBE_CLOSING);
                     }
                 } else if (now - stateEnteredAt >= WARDROBE_CLICK_DELAY_MS) {
@@ -1661,7 +1676,7 @@ public class PestKillerManager {
             case WARDROBE_RESTORE_OPENING -> {
                 if (client.currentScreen instanceof HandledScreen<?> screen) {
                     String title = screen.getTitle().getString().toLowerCase();
-                    if (title.contains("wardrobe")) {
+                    if (title.contains("wardrobe") && now - stateEnteredAt >= WARDROBE_CLICK_DELAY_MS) {
                         int restoreSlot = config != null
                                 ? Math.max(MIN_WARDROBE_SLOT, Math.min(MAX_WARDROBE_SLOT, config.pestWardrobeRestoreSlot))
                                 : MIN_WARDROBE_SLOT;
@@ -1679,16 +1694,21 @@ public class PestKillerManager {
 
             case WARDROBE_RESTORE_NEXT_PAGE -> {
                 if (!wardrobeRestoreNextPageClicked) {
-                    if (client.currentScreen instanceof HandledScreen<?> screen) {
-                        if (tryClickWardrobeSlotWithName(screen, "next page")) {
-                            wardrobeRestoreNextPageClicked = true;
-                            LOGGER.info("[Just Farming-PestKiller] Restore: clicked 'Next Page' in wardrobe.");
-                            stateEnteredAt = now;
-                        } else if (now - stateEnteredAt >= WARDROBE_CLICK_DELAY_MS) {
-                            LOGGER.warn("[Just Farming-PestKiller] Restore: could not find 'Next Page'; trying slot directly.");
-                            enterState(State.WARDROBE_RESTORE_SLOT);
+                    if (now - stateEnteredAt >= WARDROBE_CLICK_DELAY_MS) {
+                        if (client.currentScreen instanceof HandledScreen<?> screen) {
+                            if (tryClickWardrobeSlotWithName(screen, "next page")) {
+                                wardrobeRestoreNextPageClicked = true;
+                                LOGGER.info("[Just Farming-PestKiller] Restore: clicked 'Next Page' in wardrobe.");
+                                stateEnteredAt = now;
+                            } else {
+                                LOGGER.warn("[Just Farming-PestKiller] Restore: could not find 'Next Page'; trying slot directly.");
+                                enterState(State.WARDROBE_RESTORE_SLOT);
+                            }
+                        } else {
+                            LOGGER.warn("[Just Farming-PestKiller] Restore wardrobe screen closed unexpectedly.");
+                            enterState(State.RETURNING);
                         }
-                    } else {
+                    } else if (client.currentScreen == null) {
                         LOGGER.warn("[Just Farming-PestKiller] Restore wardrobe screen closed unexpectedly.");
                         enterState(State.RETURNING);
                     }
@@ -1699,21 +1719,25 @@ public class PestKillerManager {
 
             case WARDROBE_RESTORE_SLOT -> {
                 if (!wardrobeRestoreSlotClicked) {
-                    if (client.currentScreen instanceof HandledScreen<?> screen) {
-                        int restoreSlot = config != null
-                                ? Math.max(MIN_WARDROBE_SLOT, Math.min(MAX_WARDROBE_SLOT, config.pestWardrobeRestoreSlot))
-                                : MIN_WARDROBE_SLOT;
-                        String slotLabel = "slot " + restoreSlot;
-                        if (tryClickWardrobeSlotWithName(screen, slotLabel)) {
-                            wardrobeRestoreSlotClicked = true;
-                            LOGGER.info("[Just Farming-PestKiller] Restore: clicked '{}' in wardrobe.", slotLabel);
-                            stateEnteredAt = now;
-                        } else if (now - stateEnteredAt >= WARDROBE_CLICK_DELAY_MS) {
-                            LOGGER.warn("[Just Farming-PestKiller] Restore: could not find '{}'; proceeding.", slotLabel);
-                            if (player != null) player.closeHandledScreen();
+                    if (now - stateEnteredAt >= WARDROBE_CLICK_DELAY_MS) {
+                        if (client.currentScreen instanceof HandledScreen<?> screen) {
+                            int restoreSlot = config != null
+                                    ? Math.max(MIN_WARDROBE_SLOT, Math.min(MAX_WARDROBE_SLOT, config.pestWardrobeRestoreSlot))
+                                    : MIN_WARDROBE_SLOT;
+                            String slotLabel = "slot " + restoreSlot;
+                            if (tryClickWardrobeSlotWithName(screen, slotLabel)) {
+                                wardrobeRestoreSlotClicked = true;
+                                LOGGER.info("[Just Farming-PestKiller] Restore: clicked '{}' in wardrobe.", slotLabel);
+                                stateEnteredAt = now;
+                            } else {
+                                LOGGER.warn("[Just Farming-PestKiller] Restore: could not find '{}'; proceeding.", slotLabel);
+                                if (player != null) player.closeHandledScreen();
+                                enterState(State.WARDROBE_RESTORE_CLOSING);
+                            }
+                        } else {
                             enterState(State.WARDROBE_RESTORE_CLOSING);
                         }
-                    } else {
+                    } else if (client.currentScreen == null) {
                         enterState(State.WARDROBE_RESTORE_CLOSING);
                     }
                 } else if (now - stateEnteredAt >= WARDROBE_CLICK_DELAY_MS) {

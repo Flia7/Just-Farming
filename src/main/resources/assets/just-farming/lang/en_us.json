@@ -27,6 +27,7 @@
   "gui.just-farming.stop_pest": "Stop Pest Macro",
   "gui.just-farming.visitors_enabled_label": "Visitor's macro:",
   "gui.just-farming.visitors_buy_bazaar_label": "Auto-Buy from Bazaar:",
+  "gui.just-farming.visitors_insta_sell_label": "Insta-Sell Inventory:",
   "gui.just-farming.visitors_blacklist_label": "Blacklist Visitors...",
   "gui.just-farming.pest_killer_enabled_label": "Pest Killer:",
   "gui.just-farming.pest_killer_warp_to_plot_label": "Enable Warping to Plot:",

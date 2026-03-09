@@ -408,6 +408,17 @@ public class FarmingConfig {
     public int pestKillerAfterTeleportDelay = 500;
 
     /**
+     * When {@code true}, the visitor routine will open the Bazaar and click
+     * "Sell Inventory Now" immediately after teleporting to the barn (before
+     * scanning for visitors).  This lets the player quickly clear a full
+     * inventory of farming crops without leaving the macro.
+     *
+     * <p>The same bazaar timing delays ({@link #bazaarSearchDelay} and
+     * {@link #visitorsActionDelay}) apply so the sequence looks human-like.
+     */
+    public boolean visitorsInstaSell = false;
+
+    /**
      * Minimum number of visitors that must be present at the barn for the
      * visitor routine to proceed.  If fewer visitors are found after the
      * teleport wait, the routine skips the barn visit and warps directly back

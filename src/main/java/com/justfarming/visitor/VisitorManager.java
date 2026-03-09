@@ -469,6 +469,13 @@ public class VisitorManager {
      */
     private static final long VISITOR_START_DELAY_MS = 1000L;
 
+    /**
+     * Extra timeout (ms) added on top of {@link #BAZAAR_WAIT_MS} when waiting
+     * for the bazaar screen to open during the insta-sell sequence.  The
+     * extra headroom handles server lag after a fresh teleport.
+     */
+    private static final long INSTA_SELL_BAZAAR_EXTRA_TIMEOUT_MS = 3000L;
+
     // ── State machine ────────────────────────────────────────────────────────
 
     /** Internal states of the visitor routine. */
@@ -480,14 +487,30 @@ public class VisitorManager {
         /** Double-pressing space to turn off creative flight before the routine begins. */
         DISABLING_FLIGHT,
         /**
-         * Sends {@code /warp garden} to ensure the player is at the garden spawn
-         * before teleporting to the barn.  This guarantees that {@code /tptoplot barn}
-         * lands the player in a reliable position regardless of where the farming or
-         * pest-killer routine left them.
+         * No longer used in the normal flow.  Kept in the enum so that any
+         * saved state references or log messages that mention it still compile.
+         * The routine now sends {@code /tptoplot barn} directly from
+         * {@link #PRE_START_WAIT} / {@link #DISABLING_FLIGHT}.
          */
         WARPING_TO_GARDEN,
         /** Waiting for the server to teleport the player to the barn. */
         TELEPORTING,
+        /**
+         * {@code /bazaar} sent; waiting for the bazaar screen to open so the
+         * player can insta-sell their whole inventory before visiting NPCs.
+         * Only entered when {@link FarmingConfig#visitorsInstaSell} is {@code true}.
+         */
+        INSTA_SELL_OPENING_BAZAAR,
+        /**
+         * Bazaar screen is open; clicking the "Sell Inventory Now" button.
+         */
+        INSTA_SELL_CLICKING_SELL,
+        /**
+         * "Sell Inventory Now" clicked; waiting for and clicking the
+         * "Confirm" / "Selling Whole Inventory" confirmation button, then
+         * pressing ESC to close the bazaar before scanning for visitors.
+         */
+        INSTA_SELL_CONFIRMING,
         /** Looking for visitor NPC entities near the player. */
         SCANNING,
         /** Walking toward the {@link #currentVisitor}. */
@@ -557,6 +580,11 @@ public class VisitorManager {
     private long  lastSmoothLookTime = 0;
     /** Combined angular distance at rotation start; used for exponential acceleration. */
     private float initialAngularDist = 0f;
+    /**
+     * Counter used to skip camera tremor 5 out of every 6 calls, reducing the
+     * visible shake frequency by 6× without changing the per-tremor amplitude.
+     */
+    private int   tremorSkipCount = 0;
     /**
      * When {@code true}, {@link #onRenderTick()} rotates the camera at
      * {@link #FAST_LOOK_DEGREES_PER_SECOND} rather than the normal rate.
@@ -979,7 +1007,7 @@ public class VisitorManager {
                         LOGGER.info("[Just Farming-Visitors] Player is flying; disabling flight before starting routine.");
                         enterState(State.DISABLING_FLIGHT);
                     } else {
-                        enterState(State.WARPING_TO_GARDEN);
+                        teleportToBarn();
                     }
                 }
             }
@@ -995,11 +1023,11 @@ public class VisitorManager {
                 long phase3End = DISABLE_FLIGHT_PRESS_MS * 2 + DISABLE_FLIGHT_GAP_MS;
 
                 if (elapsed >= phase3End + DISABLE_FLIGHT_DONE_MS) {
-                    // Sequence complete – proceed to warp to garden.
+                    // Sequence complete – send /tptoplot barn and wait for teleport.
                     disableFlightStartTime = 0;
                     if (client.options != null) client.options.jumpKey.setPressed(false);
-                    LOGGER.info("[Just Farming-Visitors] Disable-flight sequence complete; warping to garden.");
-                    enterState(State.WARPING_TO_GARDEN);
+                    LOGGER.info("[Just Farming-Visitors] Disable-flight sequence complete; teleporting to barn.");
+                    teleportToBarn();
                 } else {
                     boolean jumpPressed = elapsed < phase1End
                             || (elapsed >= phase2End && elapsed < phase3End);
@@ -1010,25 +1038,73 @@ public class VisitorManager {
                 }
             }
 
+            // WARPING_TO_GARDEN is no longer entered in the normal flow; kept
+            // as a dead-code safety net so it compiles without removal.
             case WARPING_TO_GARDEN -> {
-                // Send /warp garden to ensure the player is at the garden spawn
-                // before using /tptoplot barn.  This makes the barn teleport reliable
-                // regardless of where the player is when the routine begins.
-                if (warpToGardenSentAt == 0) {
-                    sendCommand("warp garden");
-                    warpToGardenSentAt = now;
-                    LOGGER.info("[Just Farming-Visitors] Sent /warp garden before /tptoplot barn.");
-                } else if (now - warpToGardenSentAt >= WARP_COMMAND_WAIT_MS + randomExtra150) {
-                    warpToGardenSentAt = 0;
-                    enterState(State.TELEPORTING);
-                    sendCommand("tptoplot barn");
-                }
+                LOGGER.warn("[Just Farming-Visitors] Entered WARPING_TO_GARDEN unexpectedly; redirecting to TELEPORTING.");
+                teleportToBarn();
             }
 
             case TELEPORTING -> {
                 if (now - stateEnteredAt >= teleportWaitMs) {
-                    LOGGER.info("[Just Farming-Visitors] Teleport wait elapsed; scanning.");
+                    LOGGER.info("[Just Farming-Visitors] Teleport wait elapsed; {}.",
+                            config.visitorsInstaSell ? "opening bazaar to insta-sell" : "scanning");
+                    if (config.visitorsInstaSell) {
+                        sendCommand("bazaar");
+                        enterState(State.INSTA_SELL_OPENING_BAZAAR);
+                    } else {
+                        enterState(State.SCANNING);
+                    }
+                }
+            }
+
+            case INSTA_SELL_OPENING_BAZAAR -> {
+                // /bazaar was sent when entering this state; wait for the bazaar screen.
+                // Use the same timing logic as OPENING_BAZAAR (visitor bazaar buying).
+                if (client.currentScreen instanceof HandledScreen<?>) {
+                    if (now - stateEnteredAt >= currentActionDelay) {
+                        enterState(State.INSTA_SELL_CLICKING_SELL);
+                    }
+                } else if (now - stateEnteredAt >= BAZAAR_WAIT_MS + INSTA_SELL_BAZAAR_EXTRA_TIMEOUT_MS) {
+                    // Bazaar screen didn't open in time – skip insta-sell and go to scan.
+                    LOGGER.warn("[Just Farming-Visitors] Bazaar screen did not open for insta-sell; continuing to scan.");
                     enterState(State.SCANNING);
+                }
+            }
+
+            case INSTA_SELL_CLICKING_SELL -> {
+                // Click "Sell Inventory Now" in the bazaar screen.
+                if (now - stateEnteredAt >= currentActionDelay) {
+                    if (client.currentScreen instanceof HandledScreen<?> screen) {
+                        if (tryClickSlotWithName(screen, "Sell Inventory Now")) {
+                            LOGGER.info("[Just Farming-Visitors] Clicked 'Sell Inventory Now'.");
+                            enterState(State.INSTA_SELL_CONFIRMING);
+                        } else if (now - stateEnteredAt >= BAZAAR_WAIT_MS) {
+                            // Button not found – close and proceed.
+                            LOGGER.warn("[Just Farming-Visitors] 'Sell Inventory Now' not found; skipping insta-sell.");
+                            player.closeHandledScreen();
+                            enterState(State.SCANNING);
+                        }
+                    } else if (now - stateEnteredAt >= BAZAAR_WAIT_MS) {
+                        enterState(State.SCANNING);
+                    }
+                }
+            }
+
+            case INSTA_SELL_CONFIRMING -> {
+                // Click the confirmation button ("Selling Whole Inventory" or "Confirm").
+                if (now - stateEnteredAt >= currentActionDelay) {
+                    if (client.currentScreen instanceof HandledScreen<?> screen) {
+                        if (tryClickSlotWithName(screen, "Selling Whole Inventory", "Confirm", "Yes")) {
+                            LOGGER.info("[Just Farming-Visitors] Confirmed insta-sell.");
+                        }
+                        // Close the bazaar regardless of whether we found the button.
+                        player.closeHandledScreen();
+                        enterState(State.SCANNING);
+                    } else {
+                        // Screen already closed (sell may have completed automatically).
+                        enterState(State.SCANNING);
+                    }
                 }
             }
 
@@ -2357,10 +2433,15 @@ public class VisitorManager {
         // When already close to the target, apply micro-rotation corrections to
         // simulate the natural micro-tremor of a player holding their mouse still
         // while aiming.  This makes the aim look alive rather than completely frozen.
+        // Tremor is applied only every 6th call to reduce visible shake frequency.
+        tremorSkipCount++;
+        boolean applyTremor = tremorSkipCount >= 6;
+        if (applyTremor) tremorSkipCount = 0;
+
         if (Math.abs(yawDiff) < MICRO_ROTATION_THRESHOLD_DEGREES
                 && Math.abs(pitchDiff) < MICRO_ROTATION_THRESHOLD_DEGREES) {
-            float microYaw   = generateTremor(MICRO_ROTATION_AMPLITUDE);
-            float microPitch = generateTremor(MICRO_ROTATION_AMPLITUDE * SMOOTH_LOOK_TREMOR_PITCH_SCALE);
+            float microYaw   = applyTremor ? generateTremor(MICRO_ROTATION_AMPLITUDE) : 0f;
+            float microPitch = applyTremor ? generateTremor(MICRO_ROTATION_AMPLITUDE * SMOOTH_LOOK_TREMOR_PITCH_SCALE) : 0f;
             player.setYaw(currentYaw + microYaw);
             player.setPitch(Math.max(-90f, Math.min(90f, currentPitch + microPitch)));
             return;
@@ -2377,13 +2458,13 @@ public class VisitorManager {
         float step = degreesPerSecond * speedMult * deltaMs / 1000.0f;
 
         // Compute rotation deltas: clamp each axis to at most one step, then add
-        // a tiny tremor that mimics the natural micro-vibration of a real mouse.
-        // Both components are pure deltas applied to the current rotation – no
-        // absolute Vec3d target is used.
+        // a tiny tremor (only every 6th frame) that mimics the natural micro-vibration
+        // of a real mouse.  Both components are pure deltas applied to the current
+        // rotation – no absolute Vec3d target is used.
         float deltaYaw   = Math.max(-step, Math.min(step, yawDiff))
-                         + generateTremor(SMOOTH_LOOK_TREMOR_AMPLITUDE);
+                         + (applyTremor ? generateTremor(SMOOTH_LOOK_TREMOR_AMPLITUDE) : 0f);
         float deltaPitch = Math.max(-step, Math.min(step, pitchDiff))
-                         + generateTremor(SMOOTH_LOOK_TREMOR_AMPLITUDE * SMOOTH_LOOK_TREMOR_PITCH_SCALE);
+                         + (applyTremor ? generateTremor(SMOOTH_LOOK_TREMOR_AMPLITUDE * SMOOTH_LOOK_TREMOR_PITCH_SCALE) : 0f);
 
         // Apply deltas to the current rotation.  Pitch is clamped after applying
         // the tremor so it never escapes the valid [-90, 90] range.
@@ -2777,6 +2858,17 @@ public class VisitorManager {
         if (client.player != null && client.player.networkHandler != null) {
             client.player.networkHandler.sendChatCommand(command);
         }
+    }
+
+    /**
+     * Sends {@code /tptoplot barn} and transitions to {@link State#TELEPORTING}.
+     * Used as a shared helper from {@link State#PRE_START_WAIT},
+     * {@link State#DISABLING_FLIGHT}, and the fallback {@link State#WARPING_TO_GARDEN}.
+     */
+    private void teleportToBarn() {
+        sendCommand("tptoplot barn");
+        LOGGER.info("[Just Farming-Visitors] Sent /tptoplot barn; waiting for teleport.");
+        enterState(State.TELEPORTING);
     }
 
     /**

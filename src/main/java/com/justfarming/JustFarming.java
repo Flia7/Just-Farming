@@ -375,10 +375,16 @@ public class JustFarming implements ClientModInitializer {
         // When the pest killer is active, item drops go directly to the player's
         // collection storage and never pass through the inventory, so they must be
         // tracked from the chat message rather than from inventory diffs.
+        // Action-bar (overlay) messages are also processed to catch sack-deposit
+        // notifications like "+5 Red Mushroom ➜ Sack" from mooshroom-cow drops.
         // Also intercepts the server "/setspawn" confirmation to set the spawn highlight.
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
-            if (overlay) return; // ignore action bar messages
             String text = message.getString();
+            if (overlay) {
+                // Action-bar messages: only parse sack-deposit "+N Item" patterns.
+                profitTracker.onActionBarMessage(text, macroManager);
+                return;
+            }
             profitTracker.onChatMessage(text, pestKillerManager, macroManager);
             // When the server confirms a /setspawn command, save the player's current
             // position as the spawn highlight block (without sending any command ourselves).

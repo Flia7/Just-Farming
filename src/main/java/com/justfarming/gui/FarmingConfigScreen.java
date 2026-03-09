@@ -132,6 +132,7 @@ public class FarmingConfigScreen extends Screen {
     // ── Tab 4 – Visitors widgets ──────────────────────────────────────────────
     private FlatBoolToggleWidget  visitorsEnabledButton;
     private FlatBoolToggleWidget  visitorsBuyFromBazaarButton;
+    private FlatBoolToggleWidget  visitorsInstaSellButton;
     private FlatButtonWidget              visitorsBlacklistButton;
     private VisitorsDelaySlider           visitorsDelaySlider;
     private VisitorsRandomSlider          visitorsRandomSlider;
@@ -615,6 +616,16 @@ public class FarmingConfigScreen extends Screen {
                 "Automatically run /bazaar <item> and buy required items\nbefore accepting each visitor's offer.")));
         y += bh + pad;
 
+        visitorsInstaSellButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
+                        Text.translatable("gui.just-farming.visitors_insta_sell_label"),
+                        config.visitorsInstaSell);
+        this.addDrawableChild(visitorsInstaSellButton);
+        visitorsInstaSellButton.setTooltip(Tooltip.of(Text.literal(
+                "When enabled, the visitor routine opens /bazaar immediately after\n" +
+                "arriving at the barn and clicks 'Sell Inventory Now' to instantly sell\n" +
+                "all farming crops before interacting with visitors.")));
+        y += bh + pad;
+
         visitorsBlacklistButton = new FlatButtonWidget(widgetX, y, bw, bh,
                         Text.translatable("gui.just-farming.visitors_blacklist_label"),
                         btn -> {
@@ -708,6 +719,7 @@ public class FarmingConfigScreen extends Screen {
         boolean t2 = activeTab == 2;
         visitorsEnabledButton.visible       = t2 && inContentBounds(visitorsEnabledButton);
         visitorsBuyFromBazaarButton.visible = t2 && inContentBounds(visitorsBuyFromBazaarButton);
+        visitorsInstaSellButton.visible     = t2 && inContentBounds(visitorsInstaSellButton);
         visitorsBlacklistButton.visible     = t2 && inContentBounds(visitorsBlacklistButton);
         visitorsMinCountSlider.visible      = t2 && inContentBounds(visitorsMinCountSlider);
         visitorsMaxPriceSlider.visible      = t2 && inContentBounds(visitorsMaxPriceSlider);
@@ -942,6 +954,7 @@ public class FarmingConfigScreen extends Screen {
         config.pestProfitEnabled    = pestProfitButton.getValue();
         config.visitorsEnabled          = visitorsEnabledButton.getValue();
         config.visitorsBuyFromBazaar    = visitorsBuyFromBazaarButton.getValue();
+        config.visitorsInstaSell        = visitorsInstaSellButton.getValue();
         config.visitorsActionDelay      = visitorsDelaySlider.getDelayValue();
         config.visitorsActionDelayRandom = visitorsRandomSlider.getRandomValue();
         config.visitorsTeleportDelay    = visitorsTeleportDelaySlider.getDelayValue();

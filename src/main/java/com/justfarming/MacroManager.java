@@ -169,6 +169,12 @@ public class MacroManager {
     private float rotationInitialDist = 0f;
 
     /**
+     * Counter used to skip camera tremor 5 out of every 6 render frames, reducing
+     * the visible shake frequency by 6× without changing the per-tremor amplitude.
+     */
+    private int tremorSkipCount = 0;
+
+    /**
      * When a crop has a custom key configuration this flag tracks which
      * "half" of the direction cycle we are in.  {@code false} = primary keys,
      * {@code true} = flipped keys (forward↔back, left↔right swapped).
@@ -603,11 +609,18 @@ public class MacroManager {
         float newPitch = currentPitch + Math.max(-step, Math.min(step, pitchDiff));
         newPitch = Math.max(-90f, Math.min(90f, newPitch));
 
-        float tremorYaw   = (random.nextFloat() * 2f - 1f) * ROTATION_TREMOR_AMPLITUDE;
-        float tremorPitch = (random.nextFloat() * 2f - 1f) * ROTATION_TREMOR_AMPLITUDE * ROTATION_TREMOR_PITCH_SCALE;
-
-        player.setYaw(newYaw + tremorYaw);
-        player.setPitch(newPitch + tremorPitch);
+        // Apply tremor only every 6th render frame to reduce visible shake frequency.
+        tremorSkipCount++;
+        if (tremorSkipCount >= 6) {
+            tremorSkipCount = 0;
+            float tremorYaw   = (random.nextFloat() * 2f - 1f) * ROTATION_TREMOR_AMPLITUDE;
+            float tremorPitch = (random.nextFloat() * 2f - 1f) * ROTATION_TREMOR_AMPLITUDE * ROTATION_TREMOR_PITCH_SCALE;
+            player.setYaw(newYaw + tremorYaw);
+            player.setPitch(newPitch + tremorPitch);
+        } else {
+            player.setYaw(newYaw);
+            player.setPitch(newPitch);
+        }
     }
 
     /** Called every client tick. Executes one step of the macro if active. */
