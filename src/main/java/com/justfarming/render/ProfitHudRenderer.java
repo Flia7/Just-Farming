@@ -251,9 +251,23 @@ public class ProfitHudRenderer {
         curY += LINE_H;
 
         // ── BPS row (item scale) ──────────────────────────────────────────────
-        drawScaledText(context, tr, x + PAD_X, curY,
-                "BPS: " + formatBps(tracker.getAverageBps()), COL_ITEM());
+        double bps = tracker.getAverageBps();
+        double cropsPerSecond = tracker.calculateCropsPerSecond(crop);
+        String bpsLine;
+        if (bps > 0) {
+            bpsLine = "BPS: " + formatBps(bps) + "  Crops/s: " + formatBps(cropsPerSecond);
+        } else {
+            bpsLine = "BPS: " + formatBps(bps);
+        }
+        drawScaledText(context, tr, x + PAD_X, curY, bpsLine, COL_ITEM());
         curY += scaledLineH();
+        // Show farming fortune when it has been detected from the tab list.
+        double fortune = tracker.getFarmingFortune();
+        if (fortune > 0) {
+            drawScaledText(context, tr, x + PAD_X, curY,
+                    "Fortune: " + (int) fortune, COL_ITEM());
+            curY += scaledLineH();
+        }
 
         // ── Farming sub-section ───────────────────────────────────────────────
         curY = drawSeparator(context, x, curY);
@@ -439,9 +453,12 @@ public class ProfitHudRenderer {
     private int computeHeight(FarmingProfitTracker tracker, boolean inGarden) {
         int h = PAD_Y * 2;
 
-        // Crop title + BPS
-        h += LINE_H;            // crop name + time
-        h += scaledLineH();     // BPS row
+        // Crop title + BPS + optional fortune row
+        h += LINE_H;            // crop name
+        h += scaledLineH();     // BPS / Crops-per-second row
+        if (tracker.getFarmingFortune() > 0) {
+            h += scaledLineH(); // Fortune row (only when detected)
+        }
 
         // Separator + Farming subtitle + items + total
         h += separatorH();

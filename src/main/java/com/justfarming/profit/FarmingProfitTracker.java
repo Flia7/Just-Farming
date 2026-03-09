@@ -1,16 +1,21 @@
 package com.justfarming.profit;
 
+import com.justfarming.CropType;
 import com.justfarming.MacroManager;
 import com.justfarming.pest.PestKillerManager;
 import com.justfarming.visitor.VisitorNpcPrices;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.network.ClientPlayNetworkHandler;
 import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
+import net.minecraft.text.Text;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -66,6 +71,31 @@ public class FarmingProfitTracker {
     private static final long BPS_WINDOW_MS = 5_000L;
     /** Milliseconds in one hour, used for profit/hour calculations. */
     private static final double MS_PER_HOUR = 3_600_000.0;
+
+    // ── Farming fortune (read from the tab list) ──────────────────────────────
+    /**
+     * Total farming fortune detected from the player-list (tab) entries.
+     * Combines the general "Farming Fortune" stat and the crop-specific
+     * "{Crop} Fortune" stat so the formula uses the full effective value.
+     * Updated on each game tick via {@link #refreshFarmingFortune(MinecraftClient, CropType)}.
+     */
+    private double farmingFortune = 0.0;
+    /** How often (ms) the tab-list farming fortune is re-read. */
+    private static final long FORTUNE_REFRESH_MS = 2_000L;
+    /** Wall-clock time of the last fortune refresh, or {@code 0} if never. */
+    private long lastFortuneRefreshMs = 0L;
+
+    /** Matches "Farming Fortune: 1,234" in stripped tab-list text. */
+    private static final Pattern FARMING_FORTUNE_PATTERN =
+            Pattern.compile("Farming\\s+Fortune:\\s*([\\d,]+)", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * Matches "{word(s)} Fortune: 123" for crop-specific fortune entries.
+     * Requires at least one letter followed by " Fortune:" so it won't match
+     * "Farming Fortune" (which is handled separately by FARMING_FORTUNE_PATTERN).
+     */
+    private static final Pattern CROP_FORTUNE_PATTERN =
+            Pattern.compile("([A-Za-z][A-Za-z ]+?)\\s+Fortune:\\s*([\\d,]+)", Pattern.CASE_INSENSITIVE);
 
     // ── Pest cooldown: keep attributing gains to pest for a short time ────────
     /** Timestamp of the last tick where the pest killer was active (-1 if never). */
@@ -443,6 +473,91 @@ public class FarmingProfitTracker {
     }
 
     /**
+     * Calculates the estimated crops harvested per second using the full
+     * Hypixel SkyBlock farming fortune formula:
+     * <pre>
+     *   Crops/s = baseDrops × (1 + farmingFortune / 100) × BPS
+     * </pre>
+     * Returns {@code 0.0} when the BPS counter is zero (macro not running).
+     *
+     * @param crop the currently selected crop (provides baseDrops)
+     */
+    public double calculateCropsPerSecond(CropType crop) {
+        double bps = getAverageBps();
+        if (bps <= 0 || crop == null) return 0.0;
+        return crop.getBaseDrops() * (1.0 + farmingFortune / 100.0) * bps;
+    }
+
+    /**
+     * Returns the last detected total farming fortune (general + crop-specific),
+     * as read from the player-list (tab) entries.  Returns {@code 0.0} if the
+     * fortune has not yet been detected or if the value could not be parsed.
+     */
+    public double getFarmingFortune() {
+        return farmingFortune;
+    }
+
+    /**
+     * Reads the player-list (tab list) entries to detect the current farming
+     * fortune.  Combines both the general {@code "Farming Fortune: N"} entry and
+     * any crop-specific {@code "{Crop} Fortune: N"} entry so the full effective
+     * fortune is available for the crops-per-second formula.
+     *
+     * <p>Refreshes at most every {@value #FORTUNE_REFRESH_MS} ms.  Crop-specific
+     * fortune uses the name of the currently selected crop (e.g. "Carrot Fortune"
+     * when the selected crop is CARROT).
+     *
+     * @param client      the Minecraft client (must not be null)
+     * @param selectedCrop the currently configured crop (used to find crop-specific fortune)
+     */
+    public void refreshFarmingFortune(MinecraftClient client, CropType selectedCrop) {
+        long now = System.currentTimeMillis();
+        if (lastFortuneRefreshMs > 0 && now - lastFortuneRefreshMs < FORTUNE_REFRESH_MS) return;
+        lastFortuneRefreshMs = now;
+
+        ClientPlayNetworkHandler handler = client.getNetworkHandler();
+        if (handler == null) return;
+
+        Collection<PlayerListEntry> entries = handler.getPlayerList();
+        if (entries == null || entries.isEmpty()) return;
+
+        // Crop-specific fortune key e.g. "carrot", "nether wart" (via CropType helper).
+        String cropKey = selectedCrop != null ? selectedCrop.getCropFortuneKey() : "";
+
+        double baseFortune = 0.0;
+        double cropFortune = 0.0;
+
+        for (PlayerListEntry entry : entries) {
+            Text displayName = entry.getDisplayName();
+            if (displayName == null) continue;
+            String text = stripColor(displayName.getString());
+
+            // Check for general "Farming Fortune: N" first.
+            Matcher fm = FARMING_FORTUNE_PATTERN.matcher(text);
+            if (fm.find()) {
+                try {
+                    baseFortune = Double.parseDouble(fm.group(1).replace(",", ""));
+                } catch (NumberFormatException ignored) {}
+                continue; // don't also check the crop pattern on the same entry
+            }
+
+            // Check for crop-specific fortune only when a crop is selected.
+            if (!cropKey.isEmpty()) {
+                Matcher cm = CROP_FORTUNE_PATTERN.matcher(text);
+                if (cm.find()) {
+                    String label = cm.group(1).trim().toLowerCase();
+                    if (label.equals(cropKey)) {
+                        try {
+                            cropFortune = Double.parseDouble(cm.group(2).replace(",", ""));
+                        } catch (NumberFormatException ignored) {}
+                    }
+                }
+            }
+        }
+        farmingFortune = baseFortune + cropFortune;
+    }
+
+    /**
      * Returns the total elapsed milliseconds during which at least one macro
      * (farming, pest killer, or visitor) was running this session.
      * Pauses automatically when no macro is active, so the timer only advances
@@ -799,6 +914,8 @@ public class FarmingProfitTracker {
         trackerHasData = false;
         breakHead  = 0;
         breakCount = 0;
+        farmingFortune        = 0.0;
+        lastFortuneRefreshMs  = 0L;
         // Invalidate display cache so the cleared state is shown immediately.
         lastDisplayUpdateMs = 0L;
         displayFarmingEntries = List.of();

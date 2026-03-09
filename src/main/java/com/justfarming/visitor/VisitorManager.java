@@ -1652,11 +1652,10 @@ public class VisitorManager {
             walkLastJumpTime          = 0;
         }
         if (next == State.NAVIGATING) {
-            // Re-randomise the lateral offset so the approach angle varies each time and
-            // the camera never looks directly at the visitor while walking toward them.
-            // Bias the offset at least NAV_OFFSET_MIN_BLOCKS to one side so it is always noticeable.
-            float sign = random.nextBoolean() ? 1f : -1f;
-            navAimAsideBlocks = sign * (NAV_OFFSET_MIN_BLOCKS + random.nextFloat() * NAV_OFFSET_RANGE_BLOCKS);
+            // Always aim slightly to the right of the visitor during approach so the
+            // camera rotation is consistent (right → centre) rather than randomly
+            // oscillating left/right between visitors, which looked robotic.
+            navAimAsideBlocks = NAV_OFFSET_MIN_BLOCKS + random.nextFloat() * NAV_OFFSET_RANGE_BLOCKS;
         }
         LOGGER.info("[Just Farming-Visitors] -> {}", next);
     }
