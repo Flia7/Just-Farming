@@ -137,6 +137,26 @@ public class FarmingProfitTracker {
     private static final Pattern PET_DROP_PATTERN =
             Pattern.compile("PET DROP! (.+?)(?:\\s*\\(\\+[\\d]+\\))?\\s*$", Pattern.CASE_INSENSITIVE);
 
+    /**
+     * Matches Hypixel SkyBlock sack-deposit notifications sent both as regular
+     * chat messages and as action-bar overlay entries when an item is collected
+     * and deposited into a sack rather than the player's inventory.
+     *
+     * <p>Examples (colour codes stripped):
+     * <ul>
+     *   <li>{@code "+1 Sugar Cane ➜ Sugar Cane Sack"}</li>
+     *   <li>{@code "+5 Red Mushroom → Red Mushroom Sack"}</li>
+     *   <li>{@code "+64 Cocoa Beans"}</li>
+     * </ul>
+     *
+     * <p>Group 1 = item count, Group 2 = item name (before any arrow / end-of-line).
+     * Used to count crop and mushroom drops that bypass the player's inventory.
+     * Arrow characters: U+279C (➜), U+2192 (→), and plain ASCII &gt; as fallback.
+     */
+    private static final Pattern SACK_DEPOSIT_PATTERN =
+            Pattern.compile("^\\+(\\d[\\d,]*)\\s+([A-Za-z][A-Za-z0-9 ]*)\\s*(?:[➜→>]|$)",
+                    Pattern.CASE_INSENSITIVE);
+
     /** Internal key used for coin entries in the pest items map. */
     private static final String COINS_KEY = "coins";
 
@@ -669,6 +689,67 @@ public class FarmingProfitTracker {
                     trackerHasData = true;
                     target.merge(key, amount, Long::sum);
                     displayNames.putIfAbsent(key, itemName);
+                }
+            } catch (NumberFormatException ignored) {}
+            return; // matched – don't also try the sack pattern
+        }
+
+        // Try to match Hypixel sack-deposit messages: "+5 Red Mushroom ➜ Sack"
+        // These are sent when items are deposited into a sack rather than the
+        // player's inventory (e.g. mooshroom-cow mushroom drops during farming).
+        Matcher sackMatcher = SACK_DEPOSIT_PATTERN.matcher(plain);
+        if (sackMatcher.find()) {
+            try {
+                long amount = Long.parseLong(sackMatcher.group(1).replace(",", ""));
+                String itemName = sackMatcher.group(2).trim();
+                if (amount > 0 && !itemName.isEmpty()) {
+                    String key = normalizeItemName(itemName);
+                    // Only count items that are in the price table or the icon map
+                    // to avoid accumulating random "+N" strings from unrelated text.
+                    if (VisitorNpcPrices.getPrice(key) > 0 || DEFAULT_ICONS.containsKey(key)) {
+                        trackerHasData = true;
+                        target.merge(key, amount, Long::sum);
+                        displayNames.putIfAbsent(key, itemName);
+                    }
+                }
+            } catch (NumberFormatException ignored) {}
+        }
+    }
+
+    /**
+     * Called for every action-bar (overlay) message received while the farming
+     * macro is running.  Parses Hypixel SkyBlock sack-deposit notifications in
+     * the form {@code "+N ItemName"} and attributes them to the farming profit
+     * so that drops going directly to sacks (e.g. mooshroom-cow mushroom drops)
+     * are counted even though they never appear in the player's inventory.
+     *
+     * @param rawMessage    the raw action-bar text (may contain colour codes)
+     * @param macroManager  the farming macro manager used to determine context
+     */
+    public void onActionBarMessage(String rawMessage, MacroManager macroManager) {
+        if (rawMessage == null || rawMessage.isBlank()) return;
+
+        String plain = stripColor(rawMessage).trim();
+
+        long nowMs = System.currentTimeMillis();
+        boolean isPestActive = lastPestActiveMs >= 0 && (nowMs - lastPestActiveMs) < PEST_COOLDOWN_MS;
+        boolean isFarming = !isPestActive && macroManager != null && macroManager.isRunning();
+        if (!isFarming) return;
+
+        // The action bar may contain multiple "+N Item" tokens separated by spaces.
+        // Scan across the whole string for every sack-deposit pattern match.
+        java.util.regex.Matcher m = SACK_DEPOSIT_PATTERN.matcher(plain);
+        while (m.find()) {
+            try {
+                long amount = Long.parseLong(m.group(1).replace(",", ""));
+                String itemName = m.group(2).trim();
+                if (amount > 0 && !itemName.isEmpty()) {
+                    String key = normalizeItemName(itemName);
+                    if (VisitorNpcPrices.getPrice(key) > 0 || DEFAULT_ICONS.containsKey(key)) {
+                        trackerHasData = true;
+                        farmingItems.merge(key, amount, Long::sum);
+                        displayNames.putIfAbsent(key, itemName);
+                    }
                 }
             } catch (NumberFormatException ignored) {}
         }
