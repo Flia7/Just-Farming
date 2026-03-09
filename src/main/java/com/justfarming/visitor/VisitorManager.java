@@ -479,6 +479,13 @@ public class VisitorManager {
         PRE_START_WAIT,
         /** Double-pressing space to turn off creative flight before the routine begins. */
         DISABLING_FLIGHT,
+        /**
+         * Sends {@code /warp garden} to ensure the player is at the garden spawn
+         * before teleporting to the barn.  This guarantees that {@code /tptoplot barn}
+         * lands the player in a reliable position regardless of where the farming or
+         * pest-killer routine left them.
+         */
+        WARPING_TO_GARDEN,
         /** Waiting for the server to teleport the player to the barn. */
         TELEPORTING,
         /** Looking for visitor NPC entities near the player. */
@@ -536,6 +543,8 @@ public class VisitorManager {
     private long  returnWarpDelay = 0;
     /** Timestamp (ms) when /warp garden was sent in RETURNING_TO_FARM; 0 = not yet sent. */
     private long  returnWarpSentAt = 0;
+    /** Timestamp (ms) when /warp garden was sent in WARPING_TO_GARDEN; 0 = not yet sent. */
+    private long  warpToGardenSentAt = 0;
 
     private final MinecraftClient client;
     private FarmingConfig config;
@@ -839,6 +848,7 @@ public class VisitorManager {
         skipCurrentVisitorDueToBlacklist = false;
         returnWarpDelay = 0;
         returnWarpSentAt = 0;
+        warpToGardenSentAt = 0;
         midRunRescanPerformed = false;
         positionAnchored = false;
         anchorLookPos = null;
@@ -969,8 +979,7 @@ public class VisitorManager {
                         LOGGER.info("[Just Farming-Visitors] Player is flying; disabling flight before starting routine.");
                         enterState(State.DISABLING_FLIGHT);
                     } else {
-                        enterState(State.TELEPORTING);
-                        sendCommand("tptoplot barn");
+                        enterState(State.WARPING_TO_GARDEN);
                     }
                 }
             }
@@ -986,13 +995,11 @@ public class VisitorManager {
                 long phase3End = DISABLE_FLIGHT_PRESS_MS * 2 + DISABLE_FLIGHT_GAP_MS;
 
                 if (elapsed >= phase3End + DISABLE_FLIGHT_DONE_MS) {
-                    // Sequence complete – proceed to teleport whether or not flight
-                    // is already off (it should be, but guard against edge cases).
+                    // Sequence complete – proceed to warp to garden.
                     disableFlightStartTime = 0;
                     if (client.options != null) client.options.jumpKey.setPressed(false);
-                    LOGGER.info("[Just Farming-Visitors] Disable-flight sequence complete; teleporting.");
-                    enterState(State.TELEPORTING);
-                    sendCommand("tptoplot barn");
+                    LOGGER.info("[Just Farming-Visitors] Disable-flight sequence complete; warping to garden.");
+                    enterState(State.WARPING_TO_GARDEN);
                 } else {
                     boolean jumpPressed = elapsed < phase1End
                             || (elapsed >= phase2End && elapsed < phase3End);
@@ -1000,6 +1007,21 @@ public class VisitorManager {
                         client.options.jumpKey.setPressed(jumpPressed);
                         client.options.forwardKey.setPressed(false);
                     }
+                }
+            }
+
+            case WARPING_TO_GARDEN -> {
+                // Send /warp garden to ensure the player is at the garden spawn
+                // before using /tptoplot barn.  This makes the barn teleport reliable
+                // regardless of where the player is when the routine begins.
+                if (warpToGardenSentAt == 0) {
+                    sendCommand("warp garden");
+                    warpToGardenSentAt = now;
+                    LOGGER.info("[Just Farming-Visitors] Sent /warp garden before /tptoplot barn.");
+                } else if (now - warpToGardenSentAt >= WARP_COMMAND_WAIT_MS + randomExtra150) {
+                    warpToGardenSentAt = 0;
+                    enterState(State.TELEPORTING);
+                    sendCommand("tptoplot barn");
                 }
             }
 
@@ -1509,6 +1531,9 @@ public class VisitorManager {
         stateEnteredAt = System.currentTimeMillis();
         currentActionDelay = rollActionDelay();
         randomExtra150 = random.nextInt(Math.max(1, config.globalRandomizationMs));
+        if (next == State.WARPING_TO_GARDEN) {
+            warpToGardenSentAt = 0;
+        }
         if (next == State.NAVIGATING || next == State.ACCEPTING_OFFER) {
             // Reset stuck / wall-crash detection so each new navigation leg starts fresh.
             walkLastProgressPos       = null;
