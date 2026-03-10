@@ -312,6 +312,8 @@ public class JustFarming implements ClientModInitializer {
             KeystrokesTracker.getInstance().update(client);
             // Update profit tracker
             profitTracker.onTick(client, macroManager, pestKillerManager, visitorManager.isActive());
+            // Refresh farming fortune from the tab list (throttled internally to every 2 s).
+            profitTracker.refreshFarmingFortune(client, config.selectedCrop);
 
             // Stop macro if Garden-only mode is enabled and the player left the Garden.
             // Do not stop while the visitor routine is active, while the macro is in
