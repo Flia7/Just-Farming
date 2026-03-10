@@ -101,6 +101,30 @@ public class FarmingProfitTracker {
     /** Timestamp of the last tick where the pest killer was active (-1 if never). */
     private long lastPestActiveMs = -1;
     /** How long after pest activity ends to still attribute gains to pest killing. */
+
+    // ── Cocoa beans formula tracking ─────────────────────────────────────────
+    /**
+     * Fractional accumulator for formula-calculated cocoa-bean drops.
+     * Each block break while farming COCOA_BEANS adds
+     * {@code baseDrops × (1 + farmingFortune / 100)} here; once the value
+     * reaches ≥ 1 the integer portion is flushed to {@link #farmingItems}.
+     */
+    private double pendingCocoaDrops = 0.0;
+    /**
+     * Wall-clock timestamp (ms) of the most recent
+     * {@link #registerCropBlockBreak(CropType)} call for COCOA_BEANS.
+     * Used to detect whether the formula-tracking path is currently active so
+     * that inventory-diff and sack-message paths can suppress the "cocoa beans"
+     * key and avoid double-counting.
+     */
+    private long cocoaFormulaLastCallMs = 0L;
+    /**
+     * How long (ms) after the last cocoa-bean block break before the formula
+     * tracking is considered inactive.  A 5-second window handles typical tick
+     * jitter and brief pauses (lane swaps, etc.) without falsely suppressing
+     * sack messages during a different crop session.
+     */
+    private static final long COCOA_FORMULA_ACTIVE_WINDOW_MS = 5_000L;
     private static final long PEST_COOLDOWN_MS = 3_000L;
 
     // ── Vinyl name normalization set ─────────────────────────────────────────
@@ -383,6 +407,10 @@ public class FarmingProfitTracker {
 
             // Record all item gains (positive deltas only).
             for (String key : allKeys) {
+                // When farming Cocoa Beans, drops are tracked via the per-break
+                // formula in registerCropBlockBreak() and should not be
+                // double-counted from the inventory diff.
+                if (isFarming && key.equals("cocoa beans") && isCocoaFormulaActive()) continue;
                 long current = snapshot.getOrDefault(key, 0L);
                 long prev    = prevSnapshot.getOrDefault(key, 0L);
                 long delta   = current - prev;
@@ -453,6 +481,55 @@ public class FarmingProfitTracker {
         breakTimestamps[breakHead] = now;
         breakHead = (breakHead + 1) % breakTimestamps.length;
         if (breakCount < breakTimestamps.length) breakCount++;
+    }
+
+    /**
+     * Records a block break for BPS tracking and, for Cocoa Beans, directly
+     * accumulates formula-calculated drops into {@link #farmingItems} so that
+     * the profit count works even when beans bypass the player's inventory and
+     * go straight to a sack.
+     *
+     * <p>Formula: {@code avgDrops = baseDrops × (1 + farmingFortune / 100)}.
+     * Drops are accumulated fractionally and flushed once the running total
+     * reaches 1 or more, preventing rounding errors from accumulating over a
+     * long session.
+     *
+     * <p>For all crops other than Cocoa Beans this method is equivalent to
+     * {@link #registerBlockBreak()} – item gains continue to be detected via
+     * the normal inventory-diff path in {@link #onTick}.
+     *
+     * @param crop the crop type currently being farmed (may be {@code null})
+     */
+    public void registerCropBlockBreak(CropType crop) {
+        registerBlockBreak(); // Always register for BPS tracking
+        if (crop != CropType.COCOA_BEANS) return;
+        // Cocoa beans: add expected drops directly to farmingItems so that
+        // beans going to sacks (which skip the inventory) are counted correctly.
+        // When farmingFortune has not yet been detected (= 0) the formula falls
+        // back to the base drop rate, which is still a better estimate than
+        // waiting for sack/inventory messages that may never arrive.
+        double avgDrops = crop.getBaseDrops() * (1.0 + farmingFortune / 100.0);
+        pendingCocoaDrops += avgDrops;
+        if (pendingCocoaDrops >= 1.0) {
+            long drops = (long) Math.floor(pendingCocoaDrops);
+            pendingCocoaDrops -= drops;
+            trackerHasData = true;
+            farmingItems.merge("cocoa beans", drops, Long::sum);
+            displayNames.putIfAbsent("cocoa beans", "Cocoa Beans");
+        }
+        cocoaFormulaLastCallMs = System.currentTimeMillis();
+    }
+
+    /**
+     * Returns {@code true} when cocoa-bean formula tracking is currently active
+     * (i.e. {@link #registerCropBlockBreak} was called with COCOA_BEANS within
+     * the last {@value #COCOA_FORMULA_ACTIVE_WINDOW_MS} ms).  Used to suppress
+     * inventory-diff and sack-message tracking for "cocoa beans" to prevent
+     * double-counting.
+     */
+    private boolean isCocoaFormulaActive() {
+        return cocoaFormulaLastCallMs > 0
+                && System.currentTimeMillis() - cocoaFormulaLastCallMs < COCOA_FORMULA_ACTIVE_WINDOW_MS;
     }
 
     /**
@@ -801,6 +878,8 @@ public class FarmingProfitTracker {
                 String itemName = itemMatcher.group(2).trim();
                 if (amount > 0 && !itemName.isEmpty()) {
                     String key = normalizeItemName(itemName);
+                    // Cocoa beans are tracked via per-break formula; skip to avoid double-count.
+                    if (isFarming && key.equals("cocoa beans") && isCocoaFormulaActive()) return;
                     trackerHasData = true;
                     target.merge(key, amount, Long::sum);
                     displayNames.putIfAbsent(key, itemName);
@@ -819,6 +898,8 @@ public class FarmingProfitTracker {
                 String itemName = sackMatcher.group(2).trim();
                 if (amount > 0 && !itemName.isEmpty()) {
                     String key = normalizeItemName(itemName);
+                    // Cocoa beans are tracked via per-break formula; skip to avoid double-count.
+                    if (isFarming && key.equals("cocoa beans") && isCocoaFormulaActive()) return;
                     // Only count items that are in the price table or the icon map
                     // to avoid accumulating random "+N" strings from unrelated text.
                     if (VisitorNpcPrices.getPrice(key) > 0 || DEFAULT_ICONS.containsKey(key)) {
@@ -860,6 +941,8 @@ public class FarmingProfitTracker {
                 String itemName = m.group(2).trim();
                 if (amount > 0 && !itemName.isEmpty()) {
                     String key = normalizeItemName(itemName);
+                    // Cocoa beans are tracked via per-break formula; skip to avoid double-count.
+                    if (key.equals("cocoa beans") && isCocoaFormulaActive()) continue;
                     if (VisitorNpcPrices.getPrice(key) > 0 || DEFAULT_ICONS.containsKey(key)) {
                         trackerHasData = true;
                         farmingItems.merge(key, amount, Long::sum);
@@ -916,6 +999,8 @@ public class FarmingProfitTracker {
         breakCount = 0;
         farmingFortune        = 0.0;
         lastFortuneRefreshMs  = 0L;
+        pendingCocoaDrops     = 0.0;
+        cocoaFormulaLastCallMs = 0L;
         // Invalidate display cache so the cleared state is shown immediately.
         lastDisplayUpdateMs = 0L;
         displayFarmingEntries = List.of();

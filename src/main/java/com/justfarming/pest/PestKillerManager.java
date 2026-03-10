@@ -71,11 +71,12 @@ public class PestKillerManager {
 
     /**
      * Scan timeout (ms) used after at least one pest has been killed on the
-     * current plot.  Kept short so the macro moves to the next plot almost
-     * immediately once no pests remain; the entity detector refreshes every
-     * tick (50 ms) so a few hundred milliseconds is more than enough.
+     * current plot.  Reduced to 400 ms to improve responsiveness: once no
+     * pests remain the macro moves to the next plot almost immediately.
+     * The entity detector refreshes every tick (50 ms) so this window is
+     * more than enough to confirm a clean plot.
      */
-    private static final long SCAN_TIMEOUT_AFTER_KILL_MS = 500;
+    private static final long SCAN_TIMEOUT_AFTER_KILL_MS = 400;
 
     /** Fallback kill radius (blocks) used when the config value is not set. */
     private static final double KILL_RADIUS = 5.0;

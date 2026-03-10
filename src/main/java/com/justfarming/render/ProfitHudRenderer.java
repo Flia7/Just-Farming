@@ -252,13 +252,7 @@ public class ProfitHudRenderer {
 
         // ── BPS row (item scale) ──────────────────────────────────────────────
         double bps = tracker.getAverageBps();
-        double cropsPerSecond = tracker.calculateCropsPerSecond(crop);
-        String bpsLine;
-        if (bps > 0) {
-            bpsLine = "BPS: " + formatBps(bps) + "  Crops/s: " + formatBps(cropsPerSecond);
-        } else {
-            bpsLine = "BPS: " + formatBps(bps);
-        }
+        String bpsLine = "BPS: " + formatBps(bps);
         drawScaledText(context, tr, x + PAD_X, curY, bpsLine, COL_ITEM());
         curY += scaledLineH();
         // Show farming fortune when it has been detected from the tab list.
