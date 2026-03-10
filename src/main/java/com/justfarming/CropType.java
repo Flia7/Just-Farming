@@ -92,8 +92,12 @@ public enum CropType {
      * Returns the crop-specific fortune label used in the Hypixel SkyBlock tab list,
      * e.g. {@code "carrot"} for Carrot/Carrot_S_Shape (matched against "{name} Fortune").
      * The returned string is lower-cased and has the "_S_SHAPE" suffix stripped.
+     *
+     * <p>Special case: Hypixel SkyBlock displays "Cocoa Bean Fortune" (singular),
+     * not "Cocoa Beans Fortune", so {@code COCOA_BEANS} returns {@code "cocoa bean"}.
      */
     public String getCropFortuneKey() {
+        if (this == COCOA_BEANS) return "cocoa bean";
         return name().replace("_S_SHAPE", "").replace('_', ' ').toLowerCase();
     }
 

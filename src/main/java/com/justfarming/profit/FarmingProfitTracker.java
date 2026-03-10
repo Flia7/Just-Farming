@@ -80,6 +80,12 @@ public class FarmingProfitTracker {
      * Updated on each game tick via {@link #refreshFarmingFortune(MinecraftClient, CropType)}.
      */
     private double farmingFortune = 0.0;
+    /**
+     * The crop-specific portion of {@link #farmingFortune} (e.g. "Carrot Fortune").
+     * Stored separately so the HUD can display the breakdown.
+     * {@code 0.0} when no crop-specific fortune has been detected.
+     */
+    private double cropFortune = 0.0;
     /** How often (ms) the tab-list farming fortune is re-read. */
     private static final long FORTUNE_REFRESH_MS = 2_000L;
     /** Wall-clock time of the last fortune refresh, or {@code 0} if never. */
@@ -575,6 +581,16 @@ public class FarmingProfitTracker {
     }
 
     /**
+     * Returns the last detected crop-specific fortune (e.g. "Carrot Fortune"),
+     * as read from the player-list (tab) entries.  Returns {@code 0.0} if no
+     * crop-specific fortune has been detected for the currently selected crop.
+     * This value is already included in {@link #getFarmingFortune()}.
+     */
+    public double getCropFortune() {
+        return cropFortune;
+    }
+
+    /**
      * Reads the player-list (tab list) entries to detect the current farming
      * fortune.  Combines both the general {@code "Farming Fortune: N"} entry and
      * any crop-specific {@code "{Crop} Fortune: N"} entry so the full effective
@@ -631,7 +647,8 @@ public class FarmingProfitTracker {
                 }
             }
         }
-        farmingFortune = baseFortune + cropFortune;
+        this.cropFortune  = cropFortune;
+        farmingFortune    = baseFortune + cropFortune;
     }
 
     /**
@@ -998,6 +1015,7 @@ public class FarmingProfitTracker {
         breakHead  = 0;
         breakCount = 0;
         farmingFortune        = 0.0;
+        cropFortune           = 0.0;
         lastFortuneRefreshMs  = 0L;
         pendingCocoaDrops     = 0.0;
         cocoaFormulaLastCallMs = 0L;
