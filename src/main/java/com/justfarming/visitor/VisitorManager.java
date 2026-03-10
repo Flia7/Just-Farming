@@ -183,14 +183,6 @@ public class VisitorManager {
     private static final long WALK_JITTER_INTERVAL_MS = 800;
 
     /**
-     * Vertical offset (blocks) added to the walk-target Y when computing the
-     * camera pitch during {@link #walkToward}.  Aiming at roughly head height
-     * of the target produces a more natural look-direction than aiming at the
-     * target's foot position.
-     */
-    private static final double WALK_PITCH_HEAD_OFFSET = 1.0;
-
-    /**
      * Minimum horizontal XZ distance (blocks) used as a divisor when computing
      * the pitch toward the walk target.  Prevents division by zero when the
      * target is directly above or below the player's eye.
@@ -995,7 +987,7 @@ public class VisitorManager {
      */
     public void onRenderTick() {
         if (state != State.NAVIGATING && state != State.ACCEPTING_OFFER
-                && state != State.USING_AOTV) return;
+                && state != State.USING_AOTV && state != State.INTERACTING) return;
         ClientPlayerEntity player = client.player;
         if (player == null) return;
         float speed = fastRotateActive ? FAST_LOOK_DEGREES_PER_SECOND : SMOOTH_LOOK_DEGREES_PER_SECOND;
@@ -1190,8 +1182,11 @@ public class VisitorManager {
                     return;
                 }
 
-                Vec3d visitorPos = new Vec3d(currentVisitor.getX(), currentVisitor.getY(), currentVisitor.getZ());
-                double dist = new Vec3d(player.getX(), player.getY(), player.getZ()).distanceTo(visitorPos);
+                Vec3d visitorPos = new Vec3d(currentVisitor.getX(),
+                        currentVisitor.getY() + currentVisitor.getHeight() / 2.0,
+                        currentVisitor.getZ());
+                double dist = new Vec3d(player.getX(), player.getY(), player.getZ()).distanceTo(
+                        new Vec3d(currentVisitor.getX(), currentVisitor.getY(), currentVisitor.getZ()));
 
                 // ── Normal navigation (non-AOTV, or AOTV after the teleport) ────
                 if (positionAnchored && !useAotv) {
@@ -1556,12 +1551,15 @@ public class VisitorManager {
                     nextVisitor();
                     return;
                 }
-                Vec3d visitorPos = new Vec3d(currentVisitor.getX(), currentVisitor.getY(), currentVisitor.getZ());
+                Vec3d visitorPos = new Vec3d(currentVisitor.getX(),
+                        currentVisitor.getY() + currentVisitor.getHeight() / 2.0,
+                        currentVisitor.getZ());
                 // Always aim at the anchored look position (set when the first visitor was
                 // reached). If positionAnchored is somehow false, fall back to the current
-                // visitor's position so the routine still works in degenerate cases.
+                // visitor's centre so the routine still works in degenerate cases.
                 Vec3d lookTarget = (positionAnchored && anchorLookPos != null) ? anchorLookPos : visitorPos;
-                double dist = new Vec3d(player.getX(), player.getY(), player.getZ()).distanceTo(visitorPos);
+                double dist = new Vec3d(player.getX(), player.getY(), player.getZ()).distanceTo(
+                        new Vec3d(currentVisitor.getX(), currentVisitor.getY(), currentVisitor.getZ()));
                 releaseMovementKeys();
                 fastRotateActive = dist <= VISITOR_DETECT_RADIUS;
                 lookAt(player, lookTarget, fastRotateActive
@@ -1641,6 +1639,12 @@ public class VisitorManager {
             walkRecoveryBackupEndTime = 0;
             walkRecoveryEndTime       = 0;
             walkLastJumpTime          = 0;
+            // Reset the smooth-camera timer so the first smoothRotateCamera call after
+            // returning from a long pause (e.g. bazaar shopping) uses the safe
+            // SMOOTH_LOOK_INITIAL_DELTA_MS step instead of a potentially huge stale delta
+            // that would cause a visible camera snap.
+            lastSmoothLookTime = 0;
+            initialAngularDist = 0f;
         }
         if (next == State.NAVIGATING) {
             // navAimAsideBlocks is no longer used; walk directly toward visitors.
@@ -2028,10 +2032,10 @@ public class VisitorManager {
 
         // Direction from eye to target; compute proper yaw and pitch toward the target
         // so the camera aims naturally (including slight up/down tilt) as in the pest
-        // killer's flyToward.
+        // killer's flyToward.  target is already the entity centre height; no offset needed.
         Vec3d eye = player.getEyePos();
         double dx = target.x - eye.x;
-        double dy = (target.y + WALK_PITCH_HEAD_OFFSET) - eye.y; // aim at head height of the target
+        double dy = target.y - eye.y;
         double dz = target.z - eye.z;
         double distXZ = Math.sqrt(dx * dx + dz * dz);
         float baseTargetYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
@@ -2398,11 +2402,14 @@ public class VisitorManager {
      * Smoothly rotate the player's camera toward {@code target} at
      * {@code degreesPerSecond} degrees per second.  Higher values make the
      * camera align quickly (used when within {@link #VISITOR_DETECT_RADIUS}).
+     *
+     * <p>{@code target} should already point to the desired aim position
+     * (e.g. the entity hitbox centre); no vertical offset is added internally.
      */
     private void lookAt(ClientPlayerEntity player, Vec3d target, float degreesPerSecond) {
         Vec3d eye = player.getEyePos();
         double dx = target.x - eye.x;
-        double dy = (target.y + 1.0) - eye.y; // aim at roughly head height
+        double dy = target.y - eye.y; // target is already the centre-height aim point
         double dz = target.z - eye.z;
         double distXZ = Math.sqrt(dx * dx + dz * dz);
         targetYaw   = (float) Math.toDegrees(Math.atan2(-dx, dz));
