@@ -1229,16 +1229,7 @@ public class VisitorManager {
                     }
                 } else {
                     fastRotateActive = false;
-                    // When still walking toward the visitor, aim slightly to the side
-                    // (navAimAsideBlocks) so the camera never points directly at them
-                    // during approach.  This prevents the macro from accidentally
-                    // opening the trade menu when the player teleports close to a visitor.
-                    // The offset is cleared once the player is within INTERACT_RADIUS
-                    // and the routine switches to direct look-at for the interact.
-                    Vec3d walkTarget = dist > INTERACT_RADIUS + NAV_OFFSET_DISABLE_DIST
-                            ? computeOffAxisNavTarget(player, visitorPos, navAimAsideBlocks)
-                            : visitorPos;
-                    walkToward(player, walkTarget);
+                    walkToward(player, visitorPos);
                 }
             }
 
@@ -1652,10 +1643,8 @@ public class VisitorManager {
             walkLastJumpTime          = 0;
         }
         if (next == State.NAVIGATING) {
-            // Always aim slightly to the right of the visitor during approach so the
-            // camera rotation is consistent (right → centre) rather than randomly
-            // oscillating left/right between visitors, which looked robotic.
-            navAimAsideBlocks = NAV_OFFSET_MIN_BLOCKS + random.nextFloat() * NAV_OFFSET_RANGE_BLOCKS;
+            // navAimAsideBlocks is no longer used; walk directly toward visitors.
+            navAimAsideBlocks = 0f;
         }
         LOGGER.info("[Just Farming-Visitors] -> {}", next);
     }
@@ -1739,7 +1728,16 @@ public class VisitorManager {
         String name    = stripFormatting(rawName);
         if (!KNOWN_VISITOR_NAMES.contains(name)) return false;
         if (GARDEN_RESIDENT_NPC_NAMES.contains(name)) {
-            boolean visitorMode = rawName.startsWith("§6") && !rawName.startsWith("§6§l");
+            // Visitor NPCs use plain gold (§6); permanent resident NPCs use gold-bold
+            // (§6§l) or a different colour.  Strip any leading §r reset codes before
+            // checking the colour prefix – Hypixel sometimes prepends §r to entity names.
+            int startIdx = 0;
+            while (startIdx + 1 < rawName.length()
+                    && rawName.charAt(startIdx) == '§' && rawName.charAt(startIdx + 1) == 'r') {
+                startIdx += 2;
+            }
+            String normalizedRaw = startIdx > 0 ? rawName.substring(startIdx) : rawName;
+            boolean visitorMode = normalizedRaw.startsWith("§6") && !normalizedRaw.startsWith("§6§l");
             if (!visitorMode) {
                 LOGGER.debug("[Just Farming-Visitors] Skipping garden-resident NPC '{}' "
                         + "(not in visitor mode, raw='{}')", name, rawName);
