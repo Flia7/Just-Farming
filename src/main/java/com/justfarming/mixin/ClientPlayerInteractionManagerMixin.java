@@ -80,7 +80,9 @@ public class ClientPlayerInteractionManagerMixin implements ClientPlayerInteract
         if (mm == null || !mm.shouldBreak()) return;
         FarmingProfitTracker tracker = JustFarming.getProfitTracker();
         if (tracker != null) {
-            tracker.registerBlockBreak();
+            com.justfarming.config.FarmingConfig cfg = JustFarming.getConfig();
+            com.justfarming.CropType selectedCrop = cfg != null ? cfg.selectedCrop : null;
+            tracker.registerCropBlockBreak(selectedCrop);
         }
     }
 }
