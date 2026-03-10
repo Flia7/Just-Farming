@@ -535,18 +535,39 @@ public class FarmingProfitTracker {
     /**
      * Returns the average blocks-per-second broken over the recent sliding
      * window ({@value #BPS_WINDOW_MS} ms).
+     *
+     * <p>BPS is derived from the actual time span between the oldest and newest
+     * break events observed in the window, giving continuous precision instead
+     * of the coarse {@code 1 / windowSeconds} steps produced by a fixed-window
+     * count.  The formula {@code (N-1) / span} counts the N-1 inter-break
+     * intervals covered by N events, which is the correct unbiased estimator
+     * for a periodic process.
      */
     public double getAverageBps() {
         if (breakCount == 0) return 0.0;
         long now = System.currentTimeMillis();
         long windowStart = now - BPS_WINDOW_MS;
+
         int recent = 0;
+        long newestTs = 0;
+        long oldestTs = 0;
+
         for (int i = 0; i < breakCount; i++) {
             int idx = ((breakHead - 1 - i) + breakTimestamps.length) % breakTimestamps.length;
-            if (breakTimestamps[idx] >= windowStart) recent++;
-            else break;
+            long ts = breakTimestamps[idx];
+            if (ts >= windowStart) {
+                recent++;
+                if (recent == 1) newestTs = ts;  // first iteration = newest
+                oldestTs = ts;
+            } else {
+                break;
+            }
         }
-        return recent / (BPS_WINDOW_MS / 1000.0);
+
+        if (recent < 2) return 0.0;
+        long spanMs = newestTs - oldestTs;
+        if (spanMs <= 0) return 0.0;
+        return (recent - 1) * 1000.0 / spanMs;
     }
 
     /**
