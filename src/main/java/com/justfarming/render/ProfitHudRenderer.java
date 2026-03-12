@@ -256,10 +256,13 @@ public class ProfitHudRenderer {
         drawScaledText(context, tr, x + PAD_X, curY, bpsLine, COL_ITEM());
         curY += scaledLineH();
         // Show farming fortune when it has been detected from the tab list.
-        double fortune = tracker.getFarmingFortune();
+        double fortune     = tracker.getFarmingFortune();
+        double cropFortune = tracker.getCropFortune();
         if (fortune > 0) {
-            drawScaledText(context, tr, x + PAD_X, curY,
-                    "Fortune: " + (int) fortune, COL_ITEM());
+            String fortuneText = cropFortune > 0
+                    ? "Fortune: " + (int)(fortune - cropFortune) + " + " + (int)cropFortune + " (crop)"
+                    : "Fortune: " + (int) fortune;
+            drawScaledText(context, tr, x + PAD_X, curY, fortuneText, COL_ITEM());
             curY += scaledLineH();
         }
 
