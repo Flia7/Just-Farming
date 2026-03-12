@@ -32,6 +32,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -826,25 +827,27 @@ public class VisitorManager {
     );
 
     /**
-     * Names of NPCs that are permanently present in the Hypixel SkyBlock Garden
-     * barn area <em>and</em> can also appear as visitors.  When an entity with
-     * one of these names is found during a scan its raw (unstripped) custom name
-     * must start with {@code "§6"} (gold, no bold) to be treated as a visitor.
+     * Maps names of NPCs that are permanently present in the Hypixel SkyBlock
+     * Garden barn area <em>and</em> can also appear as visitors, to the raw
+     * colour-code prefix that identifies them as being in visitor mode.
      *
-     * <p>In Hypixel SkyBlock, active visitor NPCs show their name in plain gold
-     * ({@code §6Name}), while the same characters acting as permanent resident
-     * NPCs use a different colour or bold formatting ({@code §6§lName},
-     * {@code §eNpc}, etc.).  Checking the raw prefix prevents the macro from
-     * navigating to, and attempting to trade with, these resident NPCs when they
-     * are not in visitor mode.
+     * <p>Most visitor NPCs display their name in plain gold ({@code §6Name}).
+     * Jacob is an exception: his visitor instance uses light green ({@code §a}),
+     * while the permanent contest NPC uses gold ({@code §6}).  Checking the raw
+     * prefix prevents the macro from navigating to, and attempting to trade with,
+     * these resident NPCs when they are not in visitor mode.
      *
      * <p>If you observe that a legitimate visitor is being skipped, enable DEBUG
      * logging and look for the log line
      * {@code "Skipping garden-resident NPC … raw='…'"} to verify the raw name
      * format and adjust this check accordingly.
      */
-    private static final Set<String> GARDEN_RESIDENT_NPC_NAMES = Set.of(
-            "Sam", "Jacob", "Anita", "Phillip", "Pamela"
+    private static final Map<String, String> GARDEN_RESIDENT_VISITOR_PREFIXES = Map.of(
+            "Sam",    "§6",
+            "Jacob",  "§a",
+            "Anita",  "§6",
+            "Phillip", "§6",
+            "Pamela", "§6"
     );
 
     // ── Constructor ──────────────────────────────────────────────────────────
@@ -1708,11 +1711,16 @@ public class VisitorManager {
      *
      * <p>For most visitor names the check is a simple membership test in
      * {@link #KNOWN_VISITOR_NAMES}.  For the small subset of names listed in
-     * {@link #GARDEN_RESIDENT_NPC_NAMES} an additional raw-name format check is
-     * applied: the custom name must start with {@code "§6"} (plain gold) but
-     * <em>not</em> with {@code "§6§l"} (gold-bold), because permanent resident
-     * NPCs use bold or a different colour while active visitor instances use
-     * plain gold.
+     * {@link #GARDEN_RESIDENT_VISITOR_PREFIXES} an additional raw-name format
+     * check is applied: the custom name must start with the name's registered
+     * visitor colour prefix (but not that prefix followed by {@code §l} for bold),
+     * because permanent resident NPCs use a different colour or bold formatting
+     * while active visitor instances use the registered prefix.
+     *
+     * <p>For example, Jacob the visitor uses light green ({@code §a}), while the
+     * permanent contest NPC Jacob uses gold ({@code §6}).  Most other resident
+     * NPCs (Sam, Anita, Phillip, Pamela) use plain gold ({@code §6}) when acting
+     * as visitors.
      *
      * <p>If you observe that a legitimate visitor is being skipped, enable DEBUG
      * logging and look for the log line
@@ -1727,17 +1735,18 @@ public class VisitorManager {
         String rawName = entity.getCustomName().getString();
         String name    = stripFormatting(rawName);
         if (!KNOWN_VISITOR_NAMES.contains(name)) return false;
-        if (GARDEN_RESIDENT_NPC_NAMES.contains(name)) {
-            // Visitor NPCs use plain gold (§6); permanent resident NPCs use gold-bold
-            // (§6§l) or a different colour.  Strip any leading §r reset codes before
-            // checking the colour prefix – Hypixel sometimes prepends §r to entity names.
+        String visitorPrefix = GARDEN_RESIDENT_VISITOR_PREFIXES.get(name);
+        if (visitorPrefix != null) {
+            // Strip any leading §r reset codes before checking the colour prefix –
+            // Hypixel sometimes prepends §r to entity names.
             int startIdx = 0;
             while (startIdx + 1 < rawName.length()
                     && rawName.charAt(startIdx) == '§' && rawName.charAt(startIdx + 1) == 'r') {
                 startIdx += 2;
             }
             String normalizedRaw = startIdx > 0 ? rawName.substring(startIdx) : rawName;
-            boolean visitorMode = normalizedRaw.startsWith("§6") && !normalizedRaw.startsWith("§6§l");
+            boolean visitorMode = normalizedRaw.startsWith(visitorPrefix)
+                    && !normalizedRaw.startsWith(visitorPrefix + "§l");
             if (!visitorMode) {
                 LOGGER.debug("[Just Farming-Visitors] Skipping garden-resident NPC '{}' "
                         + "(not in visitor mode, raw='{}')", name, rawName);
