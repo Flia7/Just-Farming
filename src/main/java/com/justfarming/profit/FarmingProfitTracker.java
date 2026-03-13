@@ -52,6 +52,7 @@ public class FarmingProfitTracker {
     private static final int MAX_SPEED_HISTORY_SIZE = 20;
     private static final int AVERAGE_WINDOW_SIZE = 6;
     private static final double MS_PER_HOUR = 3_600_000.0;
+    private static final double SECONDS_PER_HOUR = 3_600.0;
 
     // ── Farming fortune (read from the tab list) ──────────────────────────────
     private double farmingFortune = 0.0;
@@ -388,7 +389,6 @@ public class FarmingProfitTracker {
         if (size <= 1) return 0.0;
         int startIndex = Math.max(0, size - AVERAGE_WINDOW_SIZE);
         List<Integer> recent = blocksSpeedList.subList(startIndex, size);
-        if (recent.size() <= 1) return 0.0;
         List<Integer> forAvg = recent.subList(0, recent.size() - 1);
         return forAvg.stream().mapToInt(Integer::intValue).average().orElse(0.0);
     }
@@ -404,7 +404,7 @@ public class FarmingProfitTracker {
         double cps = calculateCropsPerSecond(selectedCrop);
         if (cps <= 0) return 0.0;
         double npcPrice = VisitorNpcPrices.getPrice(selectedCrop.getBaseNpcPriceKey());
-        return cps * npcPrice * 3600.0;
+        return cps * npcPrice * SECONDS_PER_HOUR;
     }
 
     public double getFarmingFortune() {
