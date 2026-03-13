@@ -50,8 +50,9 @@ public class FarmingProfitTracker {
     private int secondsStopped = 0;
     private static final int SPEED_RESET_SECONDS = 5;
     private static final int MAX_SPEED_HISTORY_SIZE = 20;
+    // AVERAGE_WINDOW_SIZE = 6: take last 6 per-second buckets, average the first 5
+    // (dropping the last/current-in-progress second), matching SkyHanni's getRecentBPS().
     private static final int AVERAGE_WINDOW_SIZE = 6;
-    private static final double MS_PER_HOUR = 3_600_000.0;
     private static final double SECONDS_PER_HOUR = 3_600.0;
 
     // ── Farming fortune (read from the tab list) ──────────────────────────────
@@ -386,9 +387,10 @@ public class FarmingProfitTracker {
 
     public double getAverageBps() {
         int size = blocksSpeedList.size();
-        if (size <= 1) return 0.0;
+        if (size < 2) return 0.0;
         int startIndex = Math.max(0, size - AVERAGE_WINDOW_SIZE);
         List<Integer> recent = blocksSpeedList.subList(startIndex, size);
+        if (recent.size() < 2) return 0.0;
         List<Integer> forAvg = recent.subList(0, recent.size() - 1);
         return forAvg.stream().mapToInt(Integer::intValue).average().orElse(0.0);
     }
@@ -511,31 +513,6 @@ public class FarmingProfitTracker {
         return pestItems.entrySet().stream()
                 .mapToDouble(e -> e.getValue() * VisitorNpcPrices.getPrice(e.getKey()))
                 .sum();
-    }
-
-    public double getFarmingProfitPerHour() {
-        long totalMs = farmingTotalMs;
-        if (wasFarming && farmingSessionStartMs >= 0) {
-            totalMs += System.currentTimeMillis() - farmingSessionStartMs;
-        }
-        if (totalMs <= 0) return 0.0;
-        return getFarmingProfit() / (totalMs / MS_PER_HOUR);
-    }
-
-    public double getPestProfitPerHour() {
-        long totalMs = pestTotalMs;
-        if (wasPestActive && pestSessionStartMs >= 0) {
-            totalMs += System.currentTimeMillis() - pestSessionStartMs;
-        }
-        if (totalMs <= 0) return 0.0;
-        return getPestProfit() / (totalMs / MS_PER_HOUR);
-    }
-
-    public double getCombinedProfitPerHour(boolean includePest) {
-        long elapsedMs = getSessionElapsedMs();
-        if (elapsedMs <= 0) return 0.0;
-        double totalProfit = getFarmingProfit() + (includePest ? getPestProfit() : 0.0);
-        return totalProfit / (elapsedMs / MS_PER_HOUR);
     }
 
     // ── Throttled display cache ───────────────────────────────────────────────
