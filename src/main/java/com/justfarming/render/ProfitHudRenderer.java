@@ -17,124 +17,58 @@ import java.text.NumberFormat;
 import java.util.List;
 import java.util.Locale;
 
-/**
- * Renders the Farming Profit HUD overlay.
- *
- * <p>Layout:
- * <pre>
- *  ┌─────────────────────────────────────────┐
- *  │  Cocoa Beans (20m)          [ ▲ ]       │  ← crop title + keystrokes (right)
- *  │  BPS: 368.0             [◀][▼][▶]       │  ← BPS + WASD keys (right)
- *  │                         [ L ][ R ]      │  ← LMB/RMB keys (right)
- *  ├─────────────────────────────────────────┤
- *  │  Farming                                │  ← sub-title (white)
- *  │  1,234 Cocoa Beans          +3,702      │  ← items (item scale, grey)
- *  │    567 Enchanted Cocoa B.  +272,160     │
- *  │  Other                          +12     │
- *  │  Total Farming Profit       +275,874    │  ← total (item scale, white)
- *  ├─────────────────────────────────────────┤
- *  │  Pests                                  │  ← sub-title (white, optional)
- *  │  120 Compost                   +480     │
- *  │  Total Pest Profit             +480     │
- *  ├─────────────────────────────────────────┤
- *  │  Stats                                  │  ← sub-title (white)
- *  │  Time Elapsed:              20m30s      │  ← active session time (item scale)
- *  │  Profit/Hour:          +276,354/h       │  ← combined farming+pest (item scale)
- *  │  Total Profit:         +276,354         │  ← combined farming+pest total (item scale)
- *  └─────────────────────────────────────────┘
- * </pre>
- */
 public class ProfitHudRenderer {
 
     // ── Layout constants ─────────────────────────────────────────────────────
 
-    /** Horizontal padding inside the panel. */
     private static final int PAD_X       = 6;
-    /** Vertical padding at the top and bottom of the panel. */
     private static final int PAD_Y       = 5;
-    /** Vertical spacing between full-scale rows. */
     private static final int LINE_H      = 10;
-    /** Extra vertical gap inserted after separator lines. */
     private static final int SECTION_GAP = 4;
-    /** Separator line height. */
     private static final int SEP_H       = 1;
-    /** Small gap inserted before a separator line (visual breathing room). */
     private static final int SEPARATOR_PRE_GAP = 2;
 
     // ── Colour palette ─────────────────────────────────────────────────────────
 
     // Dark mode colours
-    /** Semi-transparent dark blue panel background matching the config GUI (dark mode). */
     private static final int COL_BG_DARK     = 0xD2080C1A;
-    /** Cyan border/separator tint (dark mode). */
     private static final int COL_SEP_DARK    = 0x2800C8FF;
-    /** Cyan border outline (dark mode). */
     private static final int COL_BORDER_DARK = 0x6000C8FF;
-    /** Bright cyan accent stripe (dark mode). */
     private static final int COL_ACCENT_DARK = 0xA000C8FF;
-    /** Light lavender – sub-titles (dark mode). */
     private static final int COL_TITLE_DARK  = 0xFFEAF2FF;
-    /** Light grey – individual item rows (dark mode). */
     private static final int COL_ITEM_DARK   = 0xFFBBBBBB;
-    /** Green – positive profit values (dark mode). */
     private static final int COL_PROFIT_DARK = 0xFF55FF55;
-    /** "Other" row colour (dark mode, dimmer). */
     private static final int COL_OTHER_DARK  = 0xFF999999;
 
     // Light mode colours
-    /** Semi-transparent light panel background (light mode). */
     private static final int COL_BG_LIGHT     = 0xF0EEF4F8;
-    /** Separator tint (light mode). */
     private static final int COL_SEP_LIGHT    = 0x50304870;
-    /** Border outline (light mode). */
     private static final int COL_BORDER_LIGHT = 0x60203060;
-    /** Accent stripe (light mode). */
     private static final int COL_ACCENT_LIGHT = 0xA0203060;
-    /** Dark – sub-titles (light mode). */
     private static final int COL_TITLE_LIGHT  = 0xFF0F1E3C;
-    /** Medium dark – individual item rows (light mode). */
     private static final int COL_ITEM_LIGHT   = 0xFF304870;
-    /** Dark green – positive profit values (light mode). */
     private static final int COL_PROFIT_LIGHT = 0xFF1A8040;
-    /** Muted row colour (light mode). */
     private static final int COL_OTHER_LIGHT  = 0xFF607090;
 
-    /** Maximum individual item rows before collapsing the rest into "Other". */
     private static final int MAX_ITEMS = 4;
 
-    /**
-     * Scale applied to item rows (names, counts, profits, totals) so they
-     * appear smaller than the full-size sub-title lines.
-     */
     private static final float ITEM_SCALE = 0.85f;
 
-    /** Screen pixel size of the item icon rendered to the left of each profit row. */
     private static final int ICON_SIZE = 8;
-    /** Pixel gap between the item icon and the row's text content. */
     private static final int ICON_GAP  = 2;
-    /** Native pixel size of a Minecraft item icon (16×16). */
     private static final float MC_ITEM_ICON_SIZE = 16.0f;
 
     // ── Keystrokes constants (Canelex KeyStrokes Revamp style) ───────────────
 
-    /** Unscaled side length (px) of each WASD key square. */
     private static final int KS_KEY_SIZE = 11;
-    /** Unscaled gap (px) between adjacent keys. */
     private static final int KS_KEY_GAP  = 1;
-    /** Unscaled horizontal padding inside the keystrokes section. */
     private static final int KS_H_PAD    = 2;
-    /** Unscaled vertical padding above the first key row. */
     private static final int KS_V_PAD    = 3;
-    /** Unscaled height of the full keystrokes widget (3 rows + gaps + top padding). */
     private static final int KS_HEIGHT   = KS_V_PAD + 3 * KS_KEY_SIZE + 2 * KS_KEY_GAP;
-    /** Unscaled width of the keystrokes widget (3-key A/S/D row + horizontal padding). */
     private static final int KS_WIDTH    = 2 * KS_H_PAD + 3 * KS_KEY_SIZE + 2 * KS_KEY_GAP;
 
-    /** Minimum keystroke scale factor so keys remain legible at low HUD scales. */
     private static final float KS_MIN_SCALE = 0.25f;
-    /** Ratio of font scale to key pixel size for keystroke labels. */
     private static final float KS_FONT_RATIO = 0.075f;
-    /** Minimum font scale for keystroke labels. */
     private static final float KS_MIN_FONT = 0.3f;
 
     // Keystroke key arrow symbols (Canelex inverted-T layout)
@@ -208,7 +142,7 @@ public class ProfitHudRenderer {
         if (mc == null || mc.player == null) return;
 
         // Refresh the throttled display cache (no-op if updated <3s ago).
-        tracker.refreshDisplayCache(config.pestProfitEnabled);
+        tracker.refreshDisplayCache(config.pestProfitEnabled, config.selectedCrop);
 
         TextRenderer tr = mc.textRenderer;
         // Anchor the profit panel directly below the inventory HUD (and paper-doll

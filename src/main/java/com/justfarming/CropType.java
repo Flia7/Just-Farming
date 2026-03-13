@@ -1,12 +1,5 @@
 package com.justfarming;
 
-/**
- * Enum representing all farmable crop types in Hypixel Skyblock.
- *
- * <p>Each crop carries its recommended farming speed (BPS), default yaw
- * (horizontal rotation) and default pitch (vertical look angle) so the macro
- * can lock the camera to the correct position automatically.
- */
 public enum CropType {
     //                                        translationKey                         maxAge  yaw      pitch  speed  baseDrops
     WHEAT              ("crop.just-farming.wheat",              7,    0.00f,   2.8f, 308, 1.0),
@@ -30,22 +23,11 @@ public enum CropType {
     SUNFLOWER_S_SHAPE  ("crop.just-farming.sunflower_s_shape",  0, -135.00f,   0.0f, 328, 1.0),
     WILD_ROSE_S_SHAPE  ("crop.just-farming.wild_rose_s_shape",  0, -135.00f,   0.0f, 328, 1.0);
 
-    /** Translation key for display name */
     private final String translationKey;
-    /** The maximum age (growth stage) at which the crop is fully grown, 0 if not age-based */
     private final int maxAge;
-    /** Default yaw (horizontal rotation, degrees) while farming this crop. */
     private final float defaultYaw;
-    /** Default pitch (vertical look angle, degrees) while farming this crop. */
     private final float defaultPitch;
-    /** Recommended farming speed in BPS for this crop. */
     private final int recommendedSpeed;
-    /**
-     * Base crop drops per block break (before farming fortune is applied).
-     * Used in the formula: Average Drops = baseDrops × (1 + farmingFortune / 100).
-     * Values are sourced from the Hypixel SkyBlock farming fortune formula for
-     * Java Edition (not Bedrock).
-     */
     private final double baseDrops;
 
     CropType(String translationKey, int maxAge, float defaultYaw, float defaultPitch, int recommendedSpeed, double baseDrops) {
@@ -65,37 +47,22 @@ public enum CropType {
         return maxAge;
     }
 
-    /** Returns the default yaw angle (degrees) for locking the camera while farming this crop. */
     public float getDefaultYaw() {
         return defaultYaw;
     }
 
-    /** Returns the default pitch angle (degrees) for locking the camera while farming this crop. */
     public float getDefaultPitch() {
         return defaultPitch;
     }
 
-    /** Returns the recommended farming speed in BPS for this crop. */
     public int getRecommendedSpeed() {
         return recommendedSpeed;
     }
 
-    /**
-     * Returns the base crop drops per block break before farming fortune is applied.
-     * Use in the formula: {@code avgDrops = baseDrops × (1 + farmingFortune / 100)}.
-     */
     public double getBaseDrops() {
         return baseDrops;
     }
 
-    /**
-     * Returns the crop-specific fortune label used in the Hypixel SkyBlock tab list,
-     * e.g. {@code "carrot"} for Carrot/Carrot_S_Shape (matched against "{name} Fortune").
-     * The returned string is lower-cased and has the "_S_SHAPE" suffix stripped.
-     *
-     * <p>Special case: Hypixel SkyBlock displays "Cocoa Bean Fortune" (singular),
-     * not "Cocoa Beans Fortune", so {@code COCOA_BEANS} returns {@code "cocoa bean"}.
-     */
     public String getCropFortuneKey() {
         if (this == COCOA_BEANS) return "cocoa bean";
         return name().replace("_S_SHAPE", "").replace('_', ' ').toLowerCase();
@@ -124,15 +91,10 @@ public enum CropType {
         return this == MUSHROOM;
     }
 
-    /** Returns {@code true} for the Cactus crop, which uses a left-then-right strafe pattern. */
     public boolean isCactus() {
         return this == CACTUS;
     }
 
-    /**
-     * Returns the ARGB display colour associated with this crop type, used in
-     * the Profit HUD title to tint the crop name with its characteristic colour.
-     */
     public int getDisplayColor() {
         return switch (this) {
             case WHEAT, WHEAT_S_SHAPE                       -> 0xFFFFCC55; // golden yellow
@@ -148,6 +110,24 @@ public enum CropType {
             case MOONFLOWER_S_SHAPE                         -> 0xFFBBBBFF; // pale blue/white
             case SUNFLOWER_S_SHAPE                          -> 0xFFFFEE22; // yellow
             case WILD_ROSE_S_SHAPE                          -> 0xFFFF6699; // pink
+        };
+    }
+
+    public String getBaseNpcPriceKey() {
+        return switch (this) {
+            case WHEAT, WHEAT_S_SHAPE             -> "wheat";
+            case CARROT, CARROT_S_SHAPE           -> "carrot";
+            case POTATO, POTATO_S_SHAPE           -> "potato";
+            case PUMPKIN, PUMPKIN_S_SHAPE         -> "pumpkin";
+            case MELON, MELON_S_SHAPE             -> "melon slice";
+            case SUGAR_CANE, SUGAR_CANE_S_SHAPE   -> "sugar cane";
+            case CACTUS                           -> "cactus";
+            case MUSHROOM                         -> "red mushroom";
+            case COCOA_BEANS                      -> "cocoa beans";
+            case NETHER_WART, NETHER_WART_S_SHAPE -> "nether wart";
+            case MOONFLOWER_S_SHAPE               -> "moonflower";
+            case SUNFLOWER_S_SHAPE                -> "sunflower";
+            case WILD_ROSE_S_SHAPE                -> "wild rose";
         };
     }
 
