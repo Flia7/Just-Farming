@@ -26,22 +26,6 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * Tracks items collected and profit earned during farming and pest killing.
- *
- * <p>Item gains are detected by comparing the player's full inventory
- * (hotbar + main slots 0–35) each tick against the previous snapshot.
- * Gains recorded while the farming macro is active (but not the pest killer)
- * are attributed to <em>farming</em>; gains while the pest killer is active
- * are attributed to <em>pest killing</em>.
- *
- * <p>All prices are taken from {@link VisitorNpcPrices} so no external API
- * calls are ever made.  Item display names are stripped of colour codes and
- * lowercased before lookup so they match the price-table keys.
- *
- * <p>Call {@link #onTick} once per game tick (in {@code END_CLIENT_TICK}).
- * Call {@link #reset} to start a fresh session.
- */
 public class FarmingProfitTracker {
 
     // ── Accumulated item gains (lower-cased plain name → total count) ────────
@@ -55,89 +39,43 @@ public class FarmingProfitTracker {
     private long pestTotalMs           = 0;
 
     // ── Active-session elapsed time (only counts while a macro is running) ───
-    /** Accumulated milliseconds during which at least one macro was active. */
     private long sessionActiveTotalMs    = 0;
-    /** Wall-clock start of the current active segment; -1 when no macro is running. */
     private long sessionActiveStartMs    = -1;
-    /** Whether any macro was active in the previous tick. */
     private boolean wasAnyMacroActive    = false;
 
-    // ── BPS (blocks per second) tracking via a sliding-window buffer ─────────
-    /** Circular timestamp buffer for recent block breaks. */
-    private final long[] breakTimestamps = new long[1000];
-    private int  breakHead  = 0;  // next write index
-    private int  breakCount = 0;  // number of valid entries
-    /** Sliding window length for BPS calculation (milliseconds). */
-    private static final long BPS_WINDOW_MS = 5_000L;
-    /** Milliseconds in one hour, used for profit/hour calculations. */
-    private static final double MS_PER_HOUR = 3_600_000.0;
+    // ── BPS (blocks per second) tracking via per-second counting ─────────────
+    private int blocksBrokenThisSecond = 0;
+    private final List<Integer> blocksSpeedList = new ArrayList<>();
+    private long lastSpeedCheckMs = 0;
+    private int secondsStopped = 0;
+    private static final int SPEED_RESET_SECONDS = 5;
+    private static final int MAX_SPEED_HISTORY_SIZE = 20;
+    // AVERAGE_WINDOW_SIZE = 6: take last 6 per-second buckets, average the first 5
+    // (dropping the last/current-in-progress second), matching SkyHanni's getRecentBPS().
+    private static final int AVERAGE_WINDOW_SIZE = 6;
+    private static final double SECONDS_PER_HOUR = 3_600.0;
 
     // ── Farming fortune (read from the tab list) ──────────────────────────────
-    /**
-     * Total farming fortune detected from the player-list (tab) entries.
-     * Combines the general "Farming Fortune" stat and the crop-specific
-     * "{Crop} Fortune" stat so the formula uses the full effective value.
-     * Updated on each game tick via {@link #refreshFarmingFortune(MinecraftClient, CropType)}.
-     */
     private double farmingFortune = 0.0;
-    /**
-     * The crop-specific portion of {@link #farmingFortune} (e.g. "Carrot Fortune").
-     * Stored separately so the HUD can display the breakdown.
-     * {@code 0.0} when no crop-specific fortune has been detected.
-     */
     private double cropFortune = 0.0;
-    /** How often (ms) the tab-list farming fortune is re-read. */
     private static final long FORTUNE_REFRESH_MS = 2_000L;
-    /** Wall-clock time of the last fortune refresh, or {@code 0} if never. */
     private long lastFortuneRefreshMs = 0L;
 
-    /** Matches "Farming Fortune: 1,234" in stripped tab-list text. */
     private static final Pattern FARMING_FORTUNE_PATTERN =
             Pattern.compile("Farming\\s+Fortune:\\s*([\\d,]+)", Pattern.CASE_INSENSITIVE);
 
-    /**
-     * Matches "{word(s)} Fortune: 123" for crop-specific fortune entries.
-     * Requires at least one letter followed by " Fortune:" so it won't match
-     * "Farming Fortune" (which is handled separately by FARMING_FORTUNE_PATTERN).
-     */
     private static final Pattern CROP_FORTUNE_PATTERN =
             Pattern.compile("([A-Za-z][A-Za-z ]+?)\\s+Fortune:\\s*([\\d,]+)", Pattern.CASE_INSENSITIVE);
 
     // ── Pest cooldown: keep attributing gains to pest for a short time ────────
-    /** Timestamp of the last tick where the pest killer was active (-1 if never). */
     private long lastPestActiveMs = -1;
-    /** How long after pest activity ends to still attribute gains to pest killing. */
-
     // ── Cocoa beans formula tracking ─────────────────────────────────────────
-    /**
-     * Fractional accumulator for formula-calculated cocoa-bean drops.
-     * Each block break while farming COCOA_BEANS adds
-     * {@code baseDrops × (1 + farmingFortune / 100)} here; once the value
-     * reaches ≥ 1 the integer portion is flushed to {@link #farmingItems}.
-     */
     private double pendingCocoaDrops = 0.0;
-    /**
-     * Wall-clock timestamp (ms) of the most recent
-     * {@link #registerCropBlockBreak(CropType)} call for COCOA_BEANS.
-     * Used to detect whether the formula-tracking path is currently active so
-     * that inventory-diff and sack-message paths can suppress the "cocoa beans"
-     * key and avoid double-counting.
-     */
     private long cocoaFormulaLastCallMs = 0L;
-    /**
-     * How long (ms) after the last cocoa-bean block break before the formula
-     * tracking is considered inactive.  A 5-second window handles typical tick
-     * jitter and brief pauses (lane swaps, etc.) without falsely suppressing
-     * sack messages during a different crop session.
-     */
     private static final long COCOA_FORMULA_ACTIVE_WINDOW_MS = 5_000L;
     private static final long PEST_COOLDOWN_MS = 3_000L;
 
     // ── Vinyl name normalization set ─────────────────────────────────────────
-    /**
-     * All individual pest-vinyl item names that should be grouped under the
-     * "Pest Vinyl" display entry in the profit HUD.
-     */
     private static final Set<String> VINYL_NAMES = new HashSet<>(Arrays.asList(
             "pretty fly", "not just a pest", "cricket choir", "cicada symphony",
             "buzzin' beats", "dynamites", "wings of harmony", "rodent revolution",
@@ -146,78 +84,22 @@ public class FarmingProfitTracker {
     ));
 
     // ── Chat-message patterns for pest drop tracking ──────────────────────────
-    /**
-     * Matches Hypixel SkyBlock "You received" item-drop messages produced when
-     * a pest is killed and its loot goes directly to the player's collection
-     * (bypassing the inventory).
-     *
-     * <p>Example (stripped of colour codes):
-     * {@code "You received 163x Enchanted Nether Wart."}
-     * or
-     * {@code "You received 12 Nether Wart."}
-     * or
-     * {@code "You received 187x Enchanted Potato for killing a Locust!"}
-     *
-     * <p>The item name is captured until a period, " for " (e.g. "for killing"),
-     * or end-of-string – whichever comes first.
-     */
     private static final Pattern CHAT_ITEM_PATTERN =
             Pattern.compile("You received (\\d+)x?\\s+(.+?)(?:\\s+for\\s+|\\.|$)", Pattern.CASE_INSENSITIVE);
 
-    /**
-     * Matches the coin reward line sent when a pest is killed.
-     *
-     * <p>Example: {@code "You received 450 Coins."} or {@code "You received 1,200 Coins."}
-     */
     private static final Pattern CHAT_COIN_PATTERN =
             Pattern.compile("You received ([\\d,]+) Coins?\\.?", Pattern.CASE_INSENSITIVE);
 
-    /**
-     * Matches Hypixel SkyBlock rare-drop notifications.
-     *
-     * <p>Example (colour codes stripped):
-     * {@code "RARE DROP! Polished Pumpkin (+206)"}
-     *
-     * <p>The farming-fortune bonus {@code (+N)} is ignored; the item count is
-     * always 1.  The item name is captured up to the optional {@code (+N)} suffix.
-     */
     private static final Pattern RARE_DROP_PATTERN =
             Pattern.compile("RARE DROP! (.+?)(?:\\s*\\(\\+[\\d]+\\))?\\s*$", Pattern.CASE_INSENSITIVE);
 
-    /**
-     * Matches Hypixel SkyBlock pet-drop notifications from pest kills.
-     *
-     * <p>Example (colour codes stripped):
-     * {@code "PET DROP! Rat (+206)"}
-     * {@code "PET DROP! Slug (+206)"}
-     *
-     * <p>The farming-fortune bonus {@code (+N)} is ignored; the item count is
-     * always 1.  The pet name is captured up to the optional {@code (+N)} suffix.
-     */
     private static final Pattern PET_DROP_PATTERN =
             Pattern.compile("PET DROP! (.+?)(?:\\s*\\(\\+[\\d]+\\))?\\s*$", Pattern.CASE_INSENSITIVE);
 
-    /**
-     * Matches Hypixel SkyBlock sack-deposit notifications sent both as regular
-     * chat messages and as action-bar overlay entries when an item is collected
-     * and deposited into a sack rather than the player's inventory.
-     *
-     * <p>Examples (colour codes stripped):
-     * <ul>
-     *   <li>{@code "+1 Sugar Cane ➜ Sugar Cane Sack"}</li>
-     *   <li>{@code "+5 Red Mushroom → Red Mushroom Sack"}</li>
-     *   <li>{@code "+64 Cocoa Beans"}</li>
-     * </ul>
-     *
-     * <p>Group 1 = item count, Group 2 = item name (before any arrow / end-of-line).
-     * Used to count crop and mushroom drops that bypass the player's inventory.
-     * Arrow characters: U+279C (➜), U+2192 (→), and plain ASCII &gt; as fallback.
-     */
     private static final Pattern SACK_DEPOSIT_PATTERN =
             Pattern.compile("^\\+(\\d[\\d,]*)\\s+([A-Za-z][A-Za-z0-9 ]*)\\s*(?:[➜→>]|$)",
                     Pattern.CASE_INSENSITIVE);
 
-    /** Internal key used for coin entries in the pest items map. */
     private static final String COINS_KEY = "coins";
 
     // ── Previous inventory snapshot ──────────────────────────────────────────
@@ -228,21 +110,12 @@ public class FarmingProfitTracker {
     private boolean wasPestActive = false;
 
     // ── Cached display names (plain, for HUD rendering) ──────────────────────
-    /** Maps lower-cased plain name → prettified (original case) display name. */
     private final Map<String, String> displayNames = new HashMap<>();
 
     // ── Cached item icons (lower-cased plain name → Minecraft Item) ──────────
-    /** Maps lower-cased plain name → Minecraft Item for icon rendering in the HUD. */
     private final Map<String, Item> itemIcons = new HashMap<>();
 
     // ── Default item icons for known crops and drops ──────────────────────────
-    /**
-     * Well-known item name → Minecraft Item mappings that are pre-populated at
-     * construction time (and after each {@link #reset()}).  These ensure that
-     * every crop shows an icon in the Profit HUD even when the item has never
-     * physically appeared in the player's 36-slot inventory (e.g. items that
-     * went straight into a sack).
-     */
     private static final Map<String, Item> DEFAULT_ICONS = new HashMap<>();
     static {
         // ── Base crops ──────────────────────────────────────────────────────
@@ -309,21 +182,13 @@ public class FarmingProfitTracker {
     }
 
     // ── Display-data cache (refreshed every second) ───────────────────────────
-    /** How often (ms) the Profit HUD display data is refreshed. */
     public static final long DISPLAY_UPDATE_INTERVAL_MS = 1000L;
-    /** Wall-clock time of the last display-cache refresh, or {@code 0} if never. */
     private long lastDisplayUpdateMs = 0L;
-    /** Cached farming entry list for HUD rendering. */
     private List<ProfitEntry> displayFarmingEntries = List.of();
-    /** Cached pest entry list for HUD rendering. */
     private List<ProfitEntry> displayPestEntries = List.of();
-    /** Cached total farming profit for HUD rendering. */
     private double displayFarmingProfit = 0.0;
-    /** Cached total pest profit for HUD rendering. */
     private double displayPestProfit = 0.0;
-    /** Cached combined profit/hour for HUD rendering. */
     private double displayCombinedProfitPerHour = 0.0;
-    /** Whether pest profit was included in the last {@link #displayCombinedProfitPerHour} calculation. */
     private boolean displayIncludePest = false;
 
     // ── Number of farming/pest ticks tracked (for "is active" queries) ───────
@@ -335,20 +200,12 @@ public class FarmingProfitTracker {
         itemIcons.putAll(DEFAULT_ICONS);
     }
 
-    /**
-     * Must be called once per game tick.  Snapshots the player's inventory,
-     * detects item gains, and updates time counters.
-     *
-     * @param client          the current Minecraft client (may be {@code null}-safe)
-     * @param macroManager    the farming macro manager
-     * @param pestKillerManager the pest killer manager
-     * @param isVisitorActive whether the visitor routine is currently running
-     */
     public void onTick(MinecraftClient client,
                        MacroManager macroManager,
                        PestKillerManager pestKillerManager,
                        boolean isVisitorActive) {
         if (client == null || client.player == null) return;
+        checkSpeedPerSecond();
 
         boolean isPestActive = pestKillerManager != null && pestKillerManager.isActive();
         boolean isFarming    = !isPestActive
@@ -447,65 +304,62 @@ public class FarmingProfitTracker {
         return map;
     }
 
-    /** Lower-cased, colour-stripped item name used as map key. Vinyl names are normalised to "pest vinyl". */
     private static String plainKey(ItemStack stack) {
         String key = stripColor(stack.getName().getString()).toLowerCase().trim();
         return VINYL_NAMES.contains(key) ? "pest vinyl" : key;
     }
 
-    /**
-     * Best-effort "nice" version of the display name: colour codes stripped,
-     * original capitalisation kept as returned by the name component.
-     */
     private static String niceDisplayName(ItemStack stack) {
         return stripColor(stack.getName().getString()).trim();
     }
 
-    /** Removes Minecraft colour/formatting codes (§x) from a string. */
     public static String stripColor(String s) {
         if (s == null) return "";
         return COLOR_CODE_PATTERN.matcher(s).replaceAll("");
     }
 
-    /** Pre-compiled pattern for Minecraft colour/formatting codes. */
     private static final java.util.regex.Pattern COLOR_CODE_PATTERN =
             java.util.regex.Pattern.compile("§[0-9a-fA-Fk-oK-OrR]");
 
     // ── Public query API ──────────────────────────────────────────────────────
 
-    /** Returns {@code true} once any item gain has been recorded this session. */
     public boolean hasData() {
         return trackerHasData;
     }
 
-    /**
-     * Records a single block break event for BPS calculation.
-     * Should be called each time the macro actually attacks/breaks a block.
-     */
     public void registerBlockBreak() {
-        long now = System.currentTimeMillis();
-        breakTimestamps[breakHead] = now;
-        breakHead = (breakHead + 1) % breakTimestamps.length;
-        if (breakCount < breakTimestamps.length) breakCount++;
+        blocksBrokenThisSecond++;
     }
 
-    /**
-     * Records a block break for BPS tracking and, for Cocoa Beans, directly
-     * accumulates formula-calculated drops into {@link #farmingItems} so that
-     * the profit count works even when beans bypass the player's inventory and
-     * go straight to a sack.
-     *
-     * <p>Formula: {@code avgDrops = baseDrops × (1 + farmingFortune / 100)}.
-     * Drops are accumulated fractionally and flushed once the running total
-     * reaches 1 or more, preventing rounding errors from accumulating over a
-     * long session.
-     *
-     * <p>For all crops other than Cocoa Beans this method is equivalent to
-     * {@link #registerBlockBreak()} – item gains continue to be detected via
-     * the normal inventory-diff path in {@link #onTick}.
-     *
-     * @param crop the crop type currently being farmed (may be {@code null})
-     */
+    private void checkSpeedPerSecond() {
+        long now = System.currentTimeMillis();
+        if (lastSpeedCheckMs == 0) {
+            lastSpeedCheckMs = now;
+            return;
+        }
+        if (now - lastSpeedCheckMs < 1000L) return;
+        lastSpeedCheckMs += 1000L;
+        int broken = blocksBrokenThisSecond;
+        blocksBrokenThisSecond = 0;
+        if (broken == 0) {
+            if (blocksSpeedList.isEmpty()) return;
+            secondsStopped++;
+        } else {
+            if (secondsStopped >= SPEED_RESET_SECONDS) {
+                blocksSpeedList.clear();
+                secondsStopped = 0;
+            }
+            while (secondsStopped > 0) {
+                blocksSpeedList.add(0);
+                secondsStopped--;
+            }
+            blocksSpeedList.add(broken);
+            while (blocksSpeedList.size() > MAX_SPEED_HISTORY_SIZE) {
+                blocksSpeedList.remove(0);
+            }
+        }
+    }
+
     public void registerCropBlockBreak(CropType crop) {
         registerBlockBreak(); // Always register for BPS tracking
         if (crop != CropType.COCOA_BEANS) return;
@@ -526,104 +380,43 @@ public class FarmingProfitTracker {
         cocoaFormulaLastCallMs = System.currentTimeMillis();
     }
 
-    /**
-     * Returns {@code true} when cocoa-bean formula tracking is currently active
-     * (i.e. {@link #registerCropBlockBreak} was called with COCOA_BEANS within
-     * the last {@value #COCOA_FORMULA_ACTIVE_WINDOW_MS} ms).  Used to suppress
-     * inventory-diff and sack-message tracking for "cocoa beans" to prevent
-     * double-counting.
-     */
     private boolean isCocoaFormulaActive() {
         return cocoaFormulaLastCallMs > 0
                 && System.currentTimeMillis() - cocoaFormulaLastCallMs < COCOA_FORMULA_ACTIVE_WINDOW_MS;
     }
 
-    /**
-     * Returns the average blocks-per-second broken over the recent sliding
-     * window ({@value #BPS_WINDOW_MS} ms).
-     *
-     * <p>BPS is derived from the actual time span between the oldest and newest
-     * break events observed in the window, giving continuous precision instead
-     * of the coarse {@code 1 / windowSeconds} steps produced by a fixed-window
-     * count.  The formula {@code (N-1) / span} counts the N-1 inter-break
-     * intervals covered by N events, which is the correct unbiased estimator
-     * for a periodic process.
-     */
     public double getAverageBps() {
-        if (breakCount == 0) return 0.0;
-        long now = System.currentTimeMillis();
-        long windowStart = now - BPS_WINDOW_MS;
-
-        int recent = 0;
-        long newestTs = 0;
-        long oldestTs = 0;
-
-        for (int i = 0; i < breakCount; i++) {
-            int idx = ((breakHead - 1 - i) + breakTimestamps.length) % breakTimestamps.length;
-            long ts = breakTimestamps[idx];
-            if (ts >= windowStart) {
-                recent++;
-                if (recent == 1) newestTs = ts;  // first iteration = newest
-                oldestTs = ts;
-            } else {
-                break;
-            }
-        }
-
-        if (recent < 2) return 0.0;
-        long spanMs = newestTs - oldestTs;
-        if (spanMs <= 0) return 0.0;
-        return (recent - 1) * 1000.0 / spanMs;
+        int size = blocksSpeedList.size();
+        if (size < 2) return 0.0;
+        int startIndex = Math.max(0, size - AVERAGE_WINDOW_SIZE);
+        List<Integer> recent = blocksSpeedList.subList(startIndex, size);
+        if (recent.size() < 2) return 0.0;
+        List<Integer> forAvg = recent.subList(0, recent.size() - 1);
+        return forAvg.stream().mapToInt(Integer::intValue).average().orElse(0.0);
     }
 
-    /**
-     * Calculates the estimated crops harvested per second using the full
-     * Hypixel SkyBlock farming fortune formula:
-     * <pre>
-     *   Crops/s = baseDrops × (1 + farmingFortune / 100) × BPS
-     * </pre>
-     * Returns {@code 0.0} when the BPS counter is zero (macro not running).
-     *
-     * @param crop the currently selected crop (provides baseDrops)
-     */
     public double calculateCropsPerSecond(CropType crop) {
         double bps = getAverageBps();
         if (bps <= 0 || crop == null) return 0.0;
         return crop.getBaseDrops() * (1.0 + farmingFortune / 100.0) * bps;
     }
 
-    /**
-     * Returns the last detected total farming fortune (general + crop-specific),
-     * as read from the player-list (tab) entries.  Returns {@code 0.0} if the
-     * fortune has not yet been detected or if the value could not be parsed.
-     */
+    public double getProjectedProfitPerHour(CropType selectedCrop) {
+        if (selectedCrop == null) return 0.0;
+        double cps = calculateCropsPerSecond(selectedCrop);
+        if (cps <= 0) return 0.0;
+        double npcPrice = VisitorNpcPrices.getPrice(selectedCrop.getBaseNpcPriceKey());
+        return cps * npcPrice * SECONDS_PER_HOUR;
+    }
+
     public double getFarmingFortune() {
         return farmingFortune;
     }
 
-    /**
-     * Returns the last detected crop-specific fortune (e.g. "Carrot Fortune"),
-     * as read from the player-list (tab) entries.  Returns {@code 0.0} if no
-     * crop-specific fortune has been detected for the currently selected crop.
-     * This value is already included in {@link #getFarmingFortune()}.
-     */
     public double getCropFortune() {
         return cropFortune;
     }
 
-    /**
-     * Reads the player-list (tab list) entries to detect the current farming
-     * fortune.  Combines both the general {@code "Farming Fortune: N"} entry and
-     * any crop-specific {@code "{Crop} Fortune: N"} entry so the full effective
-     * fortune is available for the crops-per-second formula.
-     *
-     * <p>Refreshes at most every {@value #FORTUNE_REFRESH_MS} ms.  Crop-specific
-     * fortune uses the name of the currently selected crop (e.g. "Carrot Fortune"
-     * when the selected crop is CARROT).
-     *
-     * @param client      the Minecraft client (must not be null)
-     * @param selectedCrop the currently configured crop (used to find crop-specific fortune)
-     */
     public void refreshFarmingFortune(MinecraftClient client, CropType selectedCrop) {
         long now = System.currentTimeMillis();
         if (lastFortuneRefreshMs > 0 && now - lastFortuneRefreshMs < FORTUNE_REFRESH_MS) return;
@@ -672,13 +465,6 @@ public class FarmingProfitTracker {
         farmingFortune    = baseFortune + cropFortune;
     }
 
-    /**
-     * Returns the total elapsed milliseconds during which at least one macro
-     * (farming, pest killer, or visitor) was running this session.
-     * Pauses automatically when no macro is active, so the timer only advances
-     * while farming, killing pests, or running the visitor routine.
-     * Returns {@code 0} before any activity.
-     */
     public long getSessionElapsedMs() {
         long total = sessionActiveTotalMs;
         if (wasAnyMacroActive && sessionActiveStartMs >= 0) {
@@ -687,18 +473,10 @@ public class FarmingProfitTracker {
         return total;
     }
 
-    /**
-     * Returns a snapshot list of {@link ProfitEntry} for farming items,
-     * sorted by profit descending.
-     */
     public List<ProfitEntry> getFarmingEntries() {
         return toEntries(farmingItems);
     }
 
-    /**
-     * Returns a snapshot list of {@link ProfitEntry} for pest-kill items,
-     * sorted by profit descending.
-     */
     public List<ProfitEntry> getPestEntries() {
         return toEntries(pestItems);
     }
@@ -725,68 +503,21 @@ public class FarmingProfitTracker {
         return list;
     }
 
-    /** Total farming NPC profit accumulated this session. */
     public double getFarmingProfit() {
         return farmingItems.entrySet().stream()
                 .mapToDouble(e -> e.getValue() * VisitorNpcPrices.getPrice(e.getKey()))
                 .sum();
     }
 
-    /** Total pest-kill NPC profit accumulated this session. */
     public double getPestProfit() {
         return pestItems.entrySet().stream()
                 .mapToDouble(e -> e.getValue() * VisitorNpcPrices.getPrice(e.getKey()))
                 .sum();
     }
 
-    /** Farming profit per hour (coins/hour) based on total farming time. */
-    public double getFarmingProfitPerHour() {
-        long totalMs = farmingTotalMs;
-        if (wasFarming && farmingSessionStartMs >= 0) {
-            totalMs += System.currentTimeMillis() - farmingSessionStartMs;
-        }
-        if (totalMs <= 0) return 0.0;
-        return getFarmingProfit() / (totalMs / MS_PER_HOUR);
-    }
-
-    /** Pest-kill profit per hour (coins/hour) based on total pest-killing time. */
-    public double getPestProfitPerHour() {
-        long totalMs = pestTotalMs;
-        if (wasPestActive && pestSessionStartMs >= 0) {
-            totalMs += System.currentTimeMillis() - pestSessionStartMs;
-        }
-        if (totalMs <= 0) return 0.0;
-        return getPestProfit() / (totalMs / MS_PER_HOUR);
-    }
-
-    /**
-     * Combined (farming + pest) profit per hour based on total active session
-     * elapsed time.
-     *
-     * <p>Calculated as:
-     * (total farming profit + total pest profit) ÷ session elapsed seconds × 3600.
-     *
-     * @param includePest whether to include pest profit in the total
-     */
-    public double getCombinedProfitPerHour(boolean includePest) {
-        long elapsedMs = getSessionElapsedMs();
-        if (elapsedMs <= 0) return 0.0;
-        double totalProfit = getFarmingProfit() + (includePest ? getPestProfit() : 0.0);
-        return totalProfit / (elapsedMs / MS_PER_HOUR);
-    }
-
     // ── Throttled display cache ───────────────────────────────────────────────
 
-    /**
-     * Refreshes the cached display data if {@link #DISPLAY_UPDATE_INTERVAL_MS}
-     * milliseconds have elapsed since the last refresh.  Cheap no-op otherwise.
-     * Call this once per HUD render frame, then read values via the
-     * {@code getDisplay*} accessors to get smoothly throttled, flicker-free
-     * profit data.
-     *
-     * @param includePest whether pest profit is included in the combined P/h
-     */
-    public void refreshDisplayCache(boolean includePest) {
+    public void refreshDisplayCache(boolean includePest, CropType selectedCrop) {
         long now = System.currentTimeMillis();
         if (lastDisplayUpdateMs > 0 && now - lastDisplayUpdateMs < DISPLAY_UPDATE_INTERVAL_MS) return;
         lastDisplayUpdateMs        = now;
@@ -795,60 +526,23 @@ public class FarmingProfitTracker {
         displayFarmingProfit       = getFarmingProfit();
         displayPestProfit          = getPestProfit();
         displayIncludePest         = includePest;
-        displayCombinedProfitPerHour = getCombinedProfitPerHour(includePest);
+        displayCombinedProfitPerHour = getProjectedProfitPerHour(selectedCrop);
     }
 
-    /**
-     * Returns the throttled farming entry list.
-     * Call {@link #refreshDisplayCache} once per render frame before using this.
-     */
     public List<ProfitEntry> getDisplayFarmingEntries() { return displayFarmingEntries; }
 
-    /**
-     * Returns the throttled pest entry list.
-     * Call {@link #refreshDisplayCache} once per render frame before using this.
-     */
     public List<ProfitEntry> getDisplayPestEntries() { return displayPestEntries; }
 
-    /** Returns the throttled total farming profit. */
     public double getDisplayFarmingProfit() { return displayFarmingProfit; }
 
-    /** Returns the throttled total pest profit. */
     public double getDisplayPestProfit() { return displayPestProfit; }
 
-    /**
-     * Returns the throttled combined profit/hour.
-     * Includes pest profit only if {@code includePest} was {@code true} in the
-     * most recent {@link #refreshDisplayCache} call.
-     */
     public double getDisplayCombinedProfitPerHour() { return displayCombinedProfitPerHour; }
 
-    /**
-     * Returns the total display profit (farming + optional pest) using the
-     * throttled cached values.
-     */
     public double getDisplayTotalProfit() {
         return displayFarmingProfit + (displayIncludePest ? displayPestProfit : 0.0);
     }
 
-    /**
-     * Parses one game chat message and attributes item/coin gains to the pest
-     * profit section when the pest killer is active (or within its cooldown
-     * window), or to the farming profit section when the farming macro is active.
-     *
-     * <p>Hypixel SkyBlock sends a "You received Nx Item" message when a pest is
-     * killed and its loot is teleported directly to the player's collection
-     * storage, so it never passes through the inventory.  This method ensures
-     * those gains are still captured by the profit tracker.
-     *
-     * <p>Also handles "RARE DROP! Item (+N)" and "PET DROP! Item (+N)" messages
-     * produced when a rare item or pet drops from a pest kill.
-     *
-     * @param rawMessage        the plain-text chat line (colour codes already stripped
-     *                          by {@link net.minecraft.text.Text#getString()})
-     * @param pestKillerManager the pest killer manager used to determine context
-     * @param macroManager      the farming macro manager used to determine farming context
-     */
     public void onChatMessage(String rawMessage, PestKillerManager pestKillerManager, MacroManager macroManager) {
         if (rawMessage == null || rawMessage.isBlank()) return;
 
@@ -950,16 +644,6 @@ public class FarmingProfitTracker {
         }
     }
 
-    /**
-     * Called for every action-bar (overlay) message received while the farming
-     * macro is running.  Parses Hypixel SkyBlock sack-deposit notifications in
-     * the form {@code "+N ItemName"} and attributes them to the farming profit
-     * so that drops going directly to sacks (e.g. mooshroom-cow mushroom drops)
-     * are counted even though they never appear in the player's inventory.
-     *
-     * @param rawMessage    the raw action-bar text (may contain colour codes)
-     * @param macroManager  the farming macro manager used to determine context
-     */
     public void onActionBarMessage(String rawMessage, MacroManager macroManager) {
         if (rawMessage == null || rawMessage.isBlank()) return;
 
@@ -991,30 +675,15 @@ public class FarmingProfitTracker {
         }
     }
 
-    /**
-     * Normalizes a raw item name from the chat message to the same lower-cased,
-     * vinyl-grouped key format used for inventory-tracked items.
-     */
     private static String normalizeItemName(String rawName) {
         String key = rawName.toLowerCase().trim();
         return VINYL_NAMES.contains(key) ? "pest vinyl" : key;
     }
 
-    /**
-     * Normalizes a raw pet name from a "PET DROP!" chat message to the
-     * price-table key used in {@link VisitorNpcPrices}.
-     *
-     * <p>Hypixel reports the pet name without the "Pet" suffix, e.g. "Rat" or
-     * "Slug".  This method appends " pet" so the key matches the price table.
-     */
     private static String normalizePetName(String rawName) {
         return rawName.toLowerCase().trim() + " pet";
     }
 
-    /**
-     * Resets all accumulated data and time counters, ready for a fresh
-     * tracking session.
-     */
     public void reset() {
         farmingItems.clear();
         pestItems.clear();
@@ -1033,8 +702,10 @@ public class FarmingProfitTracker {
         wasFarming    = false;
         wasPestActive = false;
         trackerHasData = false;
-        breakHead  = 0;
-        breakCount = 0;
+        blocksSpeedList.clear();
+        lastSpeedCheckMs = 0;
+        secondsStopped = 0;
+        blocksBrokenThisSecond = 0;
         farmingFortune        = 0.0;
         cropFortune           = 0.0;
         lastFortuneRefreshMs  = 0L;

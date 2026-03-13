@@ -33,6 +33,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
 import java.util.Map;
+import java.util.HashMap;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -657,6 +658,9 @@ public class VisitorManager {
      * after their offer was completed (they take a moment to despawn on Hypixel).
      */
     private final Set<Integer> completedVisitorIds = new HashSet<>();
+    private static final Set<String> STATIC_VISITOR_NAMES = Set.of("Jacob", "Anita", "Sam", "Phillip", "Pamela");
+    private static final double PERMANENT_NPC_EXCLUDE_RADIUS = 5.0;
+    private final Map<String, Vec3d> permanentNpcLocations = new HashMap<>();
     /**
      * {@code true} once the end-of-queue rescan has been performed this run.
      * Prevents a second scan if the queue runs out immediately after the first
@@ -816,30 +820,6 @@ public class VisitorManager {
             "Tom", "Tomioka", "Trevor", "Trinity", "Tyashoi Alchemist", "Tyzzo",
             "Vargul", "Vex", "Vincent", "Vinyl Collector", "Weaponsmith", "Wizard",
             "Xalx", "Zog"
-    );
-
-    /**
-     * Maps names of NPCs that are permanently present in the Hypixel SkyBlock
-     * Garden barn area <em>and</em> can also appear as visitors, to the raw
-     * colour-code prefix that identifies them as being in visitor mode.
-     *
-     * <p>Most visitor NPCs display their name in plain gold ({@code §6Name}).
-     * Jacob is an exception: his visitor instance uses light green ({@code §a}),
-     * while the permanent contest NPC uses gold ({@code §6}).  Checking the raw
-     * prefix prevents the macro from navigating to, and attempting to trade with,
-     * these resident NPCs when they are not in visitor mode.
-     *
-     * <p>If you observe that a legitimate visitor is being skipped, enable DEBUG
-     * logging and look for the log line
-     * {@code "Skipping garden-resident NPC … raw='…'"} to verify the raw name
-     * format and adjust this check accordingly.
-     */
-    private static final Map<String, String> GARDEN_RESIDENT_VISITOR_PREFIXES = Map.of(
-            "Sam",    "§6",
-            "Jacob",  "§a",
-            "Anita",  "§6",
-            "Phillip", "§6",
-            "Pamela", "§6"
     );
 
     // ── Constructor ──────────────────────────────────────────────────────────
@@ -1364,7 +1344,17 @@ public class VisitorManager {
                             skipCurrentVisitorDueToBlacklist = true;
                             declining = true;
                         } else {
-                            parseVisitorMenu(screen);
+                            boolean hasAcceptOffer = parseVisitorMenu(screen);
+                            if (!hasAcceptOffer && currentVisitor != null) {
+                                String name = currentVisitor.getCustomName() != null
+                                        ? stripFormatting(currentVisitor.getCustomName().getString()) : "";
+                                if (STATIC_VISITOR_NAMES.contains(name)) {
+                                    permanentNpcLocations.put(name, new Vec3d(
+                                            currentVisitor.getX(), currentVisitor.getY(), currentVisitor.getZ()));
+                                    LOGGER.info("[Just Farming-Visitors] Saved permanent NPC location for '{}'. Will exclude on next scan.", name);
+                                    completedVisitorIds.add(currentVisitor.getId());
+                                }
+                            }
                             if (skipCurrentVisitorDueToPrice) {
                                 // Price limit exceeded – click "Decline Offer" in the GUI
                                 // before closing the menu so the server records the decline.
@@ -1696,6 +1686,20 @@ public class VisitorManager {
                         })
                 .forEach(pendingVisitors::add);
 
+        // For static visitor names, exclude entities near saved permanent NPC positions.
+        // Uses squared XZ-plane distance (avoids sqrt) compared against radius².
+        if (!permanentNpcLocations.isEmpty()) {
+            pendingVisitors.removeIf(e -> {
+                if (e.getCustomName() == null) return false;
+                String name = stripFormatting(e.getCustomName().getString());
+                Vec3d savedPos = permanentNpcLocations.get(name);
+                if (savedPos == null) return false;
+                double dx = e.getX() - savedPos.x;
+                double dz = e.getZ() - savedPos.z;
+                return (dx * dx + dz * dz) < PERMANENT_NPC_EXCLUDE_RADIUS * PERMANENT_NPC_EXCLUDE_RADIUS;
+            });
+        }
+
         double px = player.getX(), py = player.getY(), pz = player.getZ();
 
         if (pendingVisitors.size() >= 2) {
@@ -1709,55 +1713,10 @@ public class VisitorManager {
         // Single visitor: no reordering needed.
     }
 
-    /**
-     * Returns {@code true} when {@code entity} should be treated as an active
-     * visitor NPC for the purposes of pathfinding and NPC-avoidance logic.
-     *
-     * <p>For most visitor names the check is a simple membership test in
-     * {@link #KNOWN_VISITOR_NAMES}.  For the small subset of names listed in
-     * {@link #GARDEN_RESIDENT_VISITOR_PREFIXES} an additional raw-name format
-     * check is applied: the custom name must start with the name's registered
-     * visitor colour prefix (but not that prefix followed by {@code §l} for bold),
-     * because permanent resident NPCs use a different colour or bold formatting
-     * while active visitor instances use the registered prefix.
-     *
-     * <p>For example, Jacob the visitor uses light green ({@code §a}), while the
-     * permanent contest NPC Jacob uses gold ({@code §6}).  Most other resident
-     * NPCs (Sam, Anita, Phillip, Pamela) use plain gold ({@code §6}) when acting
-     * as visitors.
-     *
-     * <p>If you observe that a legitimate visitor is being skipped, enable DEBUG
-     * logging and look for the log line
-     * {@code "Skipping garden-resident NPC … raw='…'"} to verify the raw name
-     * format and adjust this check accordingly.
-     *
-     * @param entity a living entity with a non-null custom name
-     * @return {@code true} if the entity should be treated as an active visitor
-     */
     private static boolean isKnownVisitorEntity(LivingEntity entity) {
         if (entity.getCustomName() == null) return false;
-        String rawName = entity.getCustomName().getString();
-        String name    = stripFormatting(rawName);
-        if (!KNOWN_VISITOR_NAMES.contains(name)) return false;
-        String visitorPrefix = GARDEN_RESIDENT_VISITOR_PREFIXES.get(name);
-        if (visitorPrefix != null) {
-            // Strip any leading §r reset codes before checking the colour prefix –
-            // Hypixel sometimes prepends §r to entity names.
-            int startIdx = 0;
-            while (startIdx + 1 < rawName.length()
-                    && rawName.charAt(startIdx) == '§' && rawName.charAt(startIdx + 1) == 'r') {
-                startIdx += 2;
-            }
-            String normalizedRaw = startIdx > 0 ? rawName.substring(startIdx) : rawName;
-            boolean visitorMode = normalizedRaw.startsWith(visitorPrefix)
-                    && !normalizedRaw.startsWith(visitorPrefix + "§l");
-            if (!visitorMode) {
-                LOGGER.debug("[Just Farming-Visitors] Skipping garden-resident NPC '{}' "
-                        + "(not in visitor mode, raw='{}')", name, rawName);
-            }
-            return visitorMode;
-        }
-        return true;
+        String name = stripFormatting(entity.getCustomName().getString());
+        return KNOWN_VISITOR_NAMES.contains(name);
     }
 
     /**
@@ -2560,10 +2519,10 @@ public class VisitorManager {
      * to scanning just the item's display name (never lore lines), which avoids
      * accidentally treating reward items as requirements.
      */
-    private void parseVisitorMenu(HandledScreen<?> screen) {
+    private boolean parseVisitorMenu(HandledScreen<?> screen) {
         pendingRequirements.clear();
         if (!(client.player.currentScreenHandler instanceof GenericContainerScreenHandler handler)) {
-            return;
+            return false;
         }
         int slotCount = handler.getRows() * 9;
 
@@ -2626,6 +2585,7 @@ public class VisitorManager {
         } else {
             LOGGER.info("[Just Farming-Visitors] Could not parse any requirements from visitor menu.");
         }
+        return acceptOfferStack != null;
     }
 
     /**
