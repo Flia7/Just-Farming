@@ -1687,6 +1687,7 @@ public class VisitorManager {
                 .forEach(pendingVisitors::add);
 
         // For static visitor names, exclude entities near saved permanent NPC positions.
+        // Uses XZ-plane distance only; Y is stored in Vec3d for completeness but not used here.
         if (!permanentNpcLocations.isEmpty()) {
             pendingVisitors.removeIf(e -> {
                 if (e.getCustomName() == null) return false;
