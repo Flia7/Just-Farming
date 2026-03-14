@@ -217,15 +217,15 @@ public class VisitorManager {
      * Minimum landing radius (blocks) from V5 used when randomising the
      * AOTV/AOTE teleport landing position.
      */
-    private static final double AOTV_LANDING_MIN_RADIUS = 1.0;
+    private static final double AOTV_LANDING_MIN_RADIUS = 1.5;
 
     /**
      * Random range (blocks) added on top of {@link #AOTV_LANDING_MIN_RADIUS}
      * when choosing the AOTV landing offset, giving a total radius of
      * {@code AOTV_LANDING_MIN_RADIUS} to
-     * {@code AOTV_LANDING_MIN_RADIUS + AOTV_LANDING_RADIUS_RANGE} (1–3 blocks).
+     * {@code AOTV_LANDING_MIN_RADIUS + AOTV_LANDING_RADIUS_RANGE} (1.5–4.5 blocks).
      */
-    private static final double AOTV_LANDING_RADIUS_RANGE = 2.0;
+    private static final double AOTV_LANDING_RADIUS_RANGE = 3.0;
 
     /**
      * Steer-angle offsets (degrees) tried in order when the direct path is blocked by a wall.
@@ -600,6 +600,15 @@ public class VisitorManager {
      */
     private boolean fastRotateActive = false;
 
+    /**
+     * Camera rotation speed (degrees/second) currently passed to
+     * {@link #smoothRotateCamera} by {@link #onRenderTick()}.
+     * Updated by tick-thread handlers ({@link #walkToward}, {@link #lookAt})
+     * so the render thread always applies the correct speed without needing
+     * a direct {@code smoothRotateCamera} call on the tick thread.
+     */
+    private float currentCameraSpeed = SMOOTH_LOOK_DEGREES_PER_SECOND;
+
     /** Wall-clock time (ms) when the disable-flight sequence started; 0 = not active. */
     private long disableFlightStartTime = 0;
 
@@ -876,6 +885,7 @@ public class VisitorManager {
         walkRecoveryEndTime = 0;
         walkLastJumpTime = 0;
         fastRotateActive = false;
+        currentCameraSpeed = SMOOTH_LOOK_DEGREES_PER_SECOND;
         disableFlightStartTime = 0;
         useAotv = false;
         aotvTeleportFired = false;
@@ -926,6 +936,7 @@ public class VisitorManager {
         lastSmoothLookTime = 0;
         initialAngularDist = 0f;
         fastRotateActive  = false;
+        currentCameraSpeed = SMOOTH_LOOK_DEGREES_PER_SECOND;
         disableFlightStartTime = 0;
         returnWarpDelay   = 0;
         returnWarpSentAt  = 0;
@@ -973,7 +984,7 @@ public class VisitorManager {
                 && state != State.USING_AOTV && state != State.INTERACTING) return;
         ClientPlayerEntity player = client.player;
         if (player == null) return;
-        float speed = fastRotateActive ? FAST_LOOK_DEGREES_PER_SECOND : SMOOTH_LOOK_DEGREES_PER_SECOND;
+        float speed = fastRotateActive ? FAST_LOOK_DEGREES_PER_SECOND : currentCameraSpeed;
         smoothRotateCamera(player, speed);
     }
 
@@ -1223,6 +1234,7 @@ public class VisitorManager {
                     targetYaw   = aotvTeleportYaw;
                     targetPitch = aotvTeleportPitch;
                     fastRotateActive = true;
+                    currentCameraSpeed = FAST_LOOK_DEGREES_PER_SECOND;
                     releaseMovementKeys();
                     // Keep sneak released to avoid triggering etherwarp on the upcoming click.
                     if (client.options != null) {
@@ -1233,7 +1245,9 @@ public class VisitorManager {
 
                 // Phase 2: Fire the right-click once the camera has smoothly reached
                 // the target direction.  Continue rotating at the fast rate until the
-                // aim is within the threshold, then snap for precision and fire.
+                // aim is within the threshold, then fire with the naturally-aimed direction.
+                // No hard camera snap is performed – the target already includes a random
+                // offset set during scanning, so the final aim varies naturally between runs.
                 // A hard timeout (2× aim delay) ensures the click always fires even
                 // if tremor keeps the camera marginally off-target.
                 if (!aotvTeleportFired) {
@@ -1245,20 +1259,19 @@ public class VisitorManager {
                     boolean aimed = Math.abs(yawErr) <= INTERACT_AIM_THRESHOLD_DEGREES
                             && Math.abs(pitchErr) <= INTERACT_AIM_THRESHOLD_DEGREES;
                     if (!aimed && elapsed < AOTV_AIM_DELAY_MS * 2) {
-                        // Camera not yet on target – keep rotating smoothly.
+                        // Camera not yet on target – keep rotating smoothly (delta-based via onRenderTick).
                         targetYaw        = aotvTeleportYaw;
                         targetPitch      = aotvTeleportPitch;
                         fastRotateActive = true;
+                        currentCameraSpeed = FAST_LOOK_DEGREES_PER_SECOND;
                         return;
                     }
                     fastRotateActive = false;
+                    currentCameraSpeed = SMOOTH_LOOK_DEGREES_PER_SECOND;
 
-                    // Add small random offsets to the final yaw/pitch snap to vary the
-                    // landing position slightly between runs (more human-like behaviour).
-                    float randomizedSnapYaw   = aotvTeleportYaw   + (random.nextFloat() * 2f - 1f) * 3.0f;
-                    float randomizedSnapPitch = aotvTeleportPitch + (random.nextFloat() * 2f - 1f) * 2.0f;
-                    player.setYaw(randomizedSnapYaw);
-                    player.setPitch(randomizedSnapPitch);
+                    // Fire with the current naturally-aimed camera direction (no hard snap).
+                    // The aim target already has a random offset applied at detection time,
+                    // producing varied landing positions across runs without a visible snap.
                     player.getInventory().setSelectedSlot(aotvSlot);
                     if (client.options != null) {
                         // Release sneak before firing to prevent etherwarp (shift+right-click).
@@ -1267,7 +1280,7 @@ public class VisitorManager {
                     }
                     aotvTeleportFired = true;
                     LOGGER.info("[Just Farming-Visitors] AOTV right-click fired (yaw={}, pitch={}).",
-                            (int) randomizedSnapYaw, (int) randomizedSnapPitch);
+                            (int) player.getYaw(), (int) player.getPitch());
                     return;
                 }
 
@@ -1583,6 +1596,20 @@ public class VisitorManager {
                             player.closeHandledScreen();
                             nextVisitor();
                         } else {
+                            // After accepting an offer from a visitor whose name is shared
+                            // with a permanent barn NPC (e.g. "Jacob"), remove any remaining
+                            // entity with the same name from the pending queue.  The visitor
+                            // has just traded and will despawn; any duplicate with that name
+                            // is the permanent NPC, and navigating to it would get the player
+                            // stuck (the NPC's menu has no "Accept Offer" button).
+                            if (currentVisitor != null && currentVisitor.getCustomName() != null) {
+                                String tradedName = stripFormatting(currentVisitor.getCustomName().getString());
+                                if (STATIC_VISITOR_NAMES.contains(tradedName)) {
+                                    pendingVisitors.removeIf(e -> e.getCustomName() != null
+                                            && stripFormatting(e.getCustomName().getString()).equals(tradedName));
+                                    LOGGER.info("[Just Farming-Visitors] Removed permanent barn NPC '{}' duplicate from queue after trade.", tradedName);
+                                }
+                            }
                             // Do NOT close the screen: the server auto-closes the visitor
                             // menu after "Accept Offer" is processed, just like "Refuse Offer".
                             // Sending a close packet immediately after the click can cause the
@@ -1638,6 +1665,7 @@ public class VisitorManager {
             // that would cause a visible camera snap.
             lastSmoothLookTime = 0;
             initialAngularDist = 0f;
+            currentCameraSpeed = SMOOTH_LOOK_DEGREES_PER_SECOND;
         }
         if (next == State.NAVIGATING) {
             // navAimAsideBlocks is no longer used; walk directly toward visitors.
@@ -1763,8 +1791,10 @@ public class VisitorManager {
         aotvTeleportDistance = parseAotvDistance(player.getInventory().getStack(foundSlot));
         useAotv              = true;
         // Pre-compute the aim direction toward V5 so USING_AOTV can start rotating
-        // immediately without any approach-walk phase.
-        aotvTeleportYaw      = computeAotvV5Yaw(player);
+        // immediately without any approach-walk phase.  A random ±6° yaw offset is
+        // baked in at detection time so the final landing position varies naturally
+        // across runs without any hard camera snap at fire time.
+        aotvTeleportYaw      = computeAotvV5Yaw(player) + (random.nextFloat() * 2f - 1f) * 6.0f;
         aotvTeleportPitch    = AOTV_SAFE_PITCH;
 
         String itemName = PestKillerManager.getCleanItemName(player.getInventory().getStack(foundSlot));
@@ -1992,12 +2022,6 @@ public class VisitorManager {
 
         long now = System.currentTimeMillis();
 
-        // Periodically re-randomise walk-direction jitter for humanlike path variation.
-        if (now >= walkJitterNextUpdate) {
-            walkJitter = (random.nextFloat() * 2f - 1f) * WALK_JITTER_MAX_DEGREES;
-            walkJitterNextUpdate = now + WALK_JITTER_INTERVAL_MS;
-        }
-
         // Direction from eye to target; compute proper yaw and pitch toward the target
         // so the camera aims naturally (including slight up/down tilt) as in the pest
         // killer's flyToward.  target is already the entity centre height; no offset needed.
@@ -2046,7 +2070,8 @@ public class VisitorManager {
         // Phase 1 of crash-recovery: back up to detach from the wall.
         if (now < walkRecoveryBackupEndTime) {
             targetYaw = baseTargetYaw;
-            smoothRotateCamera(player, SMOOTH_LOOK_DEGREES_PER_SECOND * (float) Math.max(1.0, speedMult));
+            // Let onRenderTick drive the camera rotation (delta-based, render-frame rate).
+            currentCameraSpeed = SMOOTH_LOOK_DEGREES_PER_SECOND * (float) Math.max(1.0, speedMult);
             client.options.forwardKey.setPressed(false);
             client.options.backKey.setPressed(true);
             client.options.leftKey.setPressed(false);
@@ -2063,23 +2088,23 @@ public class VisitorManager {
         double probeStep      = Math.min(PROBE_STEP * speedMult, 5.0);
         double steerProbeStep = PROBE_STEP;
 
-        // Suppress walk jitter on stair/slab surfaces to avoid unnecessary rotations.
-        boolean onStepSurface = isStepBlock(client.world.getBlockState(playerFeetBlockPos(player)));
-
         // ── Path selection ────────────────────────────────────────────────────
+        // Always walk in the straightest possible path toward the target.
+        // No random angular jitter is applied: the direct yaw is used whenever
+        // the path is clear, with progressive steer angles only for actual obstacles.
         boolean shouldWalk = false;
         float   chosenYaw  = baseTargetYaw;
 
         if (isPathClear(player, baseTargetYaw, probeStep)) {
-            // Far path is clear – walk with humanlike jitter (suppressed on stairs).
+            // Far path is clear – go straight toward target.
             shouldWalk = true;
-            chosenYaw  = onStepSurface ? baseTargetYaw : baseTargetYaw + walkJitter;
+            chosenYaw  = baseTargetYaw;
         } else if (isPathClear(player, baseTargetYaw, steerProbeStep)) {
             // Far probe blocked but the immediate path is still open – the obstacle
             // is not yet close enough to steer around.  Continue straight; crash
             // recovery handles the case where it is a genuine imminent wall.
             shouldWalk = true;
-            chosenYaw  = onStepSurface ? baseTargetYaw : baseTargetYaw + walkJitter;
+            chosenYaw  = baseTargetYaw;
         } else {
             // Immediate path blocked – before trying steer angles, check whether
             // the obstacle is a 1-block-tall wall that can be jumped straight over.
@@ -2106,11 +2131,11 @@ public class VisitorManager {
             }
         }
 
-        // ── Smooth camera rotation ────────────────────────────────────────────
-        // Scale rotation speed by the movement multiplier so the camera always
-        // keeps up with the player's momentum at any SkyBlock speed level.
+        // ── Camera rotation target ────────────────────────────────────────────
+        // Only update the target and speed here; all actual camera rotation happens
+        // via onRenderTick() at render-frame rate (delta-based, frame-rate-independent).
         targetYaw = chosenYaw;
-        smoothRotateCamera(player, SMOOTH_LOOK_DEGREES_PER_SECOND * (float) Math.max(1.0, speedMult));
+        currentCameraSpeed = SMOOTH_LOOK_DEGREES_PER_SECOND * (float) Math.max(1.0, speedMult);
 
         // ── Speed-aware pulsed walking near the target ────────────────────────
         // At SkyBlock Speed X+ the player covers multiple blocks per tick.  Pulse
@@ -2373,6 +2398,10 @@ public class VisitorManager {
      *
      * <p>{@code target} should already point to the desired aim position
      * (e.g. the entity hitbox centre); no vertical offset is added internally.
+     *
+     * <p>This method only updates the rotation target and speed; the actual
+     * camera rotation is applied by {@link #onRenderTick()} at render-frame
+     * rate (delta-based, frame-rate-independent).
      */
     private void lookAt(ClientPlayerEntity player, Vec3d target, float degreesPerSecond) {
         Vec3d eye = player.getEyePos();
@@ -2382,7 +2411,7 @@ public class VisitorManager {
         double distXZ = Math.sqrt(dx * dx + dz * dz);
         targetYaw   = (float) Math.toDegrees(Math.atan2(-dx, dz));
         targetPitch = (float) -Math.toDegrees(Math.atan2(dy, distXZ));
-        smoothRotateCamera(player, degreesPerSecond);
+        currentCameraSpeed = degreesPerSecond; // onRenderTick applies the rotation at render-frame rate
     }
 
     /**
