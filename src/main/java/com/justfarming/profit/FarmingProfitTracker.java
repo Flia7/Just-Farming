@@ -57,7 +57,10 @@ public class FarmingProfitTracker {
 
     // ── Farming fortune (read from the tab list) ──────────────────────────────
     private double farmingFortune = 0.0;
-    private double cropFortune = 0.0;
+    /** Base (non-crop-specific) farming fortune, stored separately so partial
+     *  updates leave the other component unchanged. */
+    private double baseFortune    = 0.0;
+    private double cropFortune    = 0.0;
     private static final long FORTUNE_REFRESH_MS = 2_000L;
     private long lastFortuneRefreshMs = 0L;
 
@@ -433,6 +436,12 @@ public class FarmingProfitTracker {
 
         double baseFortune = 0.0;
         double cropFortune = 0.0;
+        // Tracks whether each fortune component was found in this refresh cycle.
+        // Used to distinguish "fortune explicitly reported as 0" from
+        // "tab list temporarily has no fortune rows" so that previously
+        // detected values are preserved when the tab list omits fortune entries.
+        boolean foundBase = false;
+        boolean foundCrop = false;
 
         for (PlayerListEntry entry : entries) {
             Text displayName = entry.getDisplayName();
@@ -444,6 +453,7 @@ public class FarmingProfitTracker {
             if (fm.find()) {
                 try {
                     baseFortune = Double.parseDouble(fm.group(1).replace(",", ""));
+                    foundBase = true;
                 } catch (NumberFormatException ignored) {}
                 continue; // don't also check the crop pattern on the same entry
             }
@@ -456,13 +466,26 @@ public class FarmingProfitTracker {
                     if (label.equals(cropKey)) {
                         try {
                             cropFortune = Double.parseDouble(cm.group(2).replace(",", ""));
+                            foundCrop = true;
                         } catch (NumberFormatException ignored) {}
                     }
                 }
             }
         }
-        this.cropFortune  = cropFortune;
-        farmingFortune    = baseFortune + cropFortune;
+        // Only overwrite each fortune component that was actually observed this
+        // cycle.  If a component was not found (e.g. the tab list temporarily
+        // omits the fortune rows), retain the previously stored value so that
+        // the profit/hour formula keeps the last known fortune multiplier
+        // rather than silently resetting to zero.
+        if (foundBase) {
+            this.baseFortune = baseFortune;
+        }
+        if (foundCrop) {
+            this.cropFortune = cropFortune;
+        }
+        if (foundBase || foundCrop) {
+            farmingFortune = this.baseFortune + this.cropFortune;
+        }
     }
 
     public long getSessionElapsedMs() {
@@ -707,6 +730,7 @@ public class FarmingProfitTracker {
         secondsStopped = 0;
         blocksBrokenThisSecond = 0;
         farmingFortune        = 0.0;
+        baseFortune           = 0.0;
         cropFortune           = 0.0;
         lastFortuneRefreshMs  = 0L;
         pendingCocoaDrops     = 0.0;

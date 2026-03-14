@@ -813,7 +813,7 @@ public class VisitorManager {
             "Pamela", "Pearl Dealer", "Pest Wrangler", "Pest Wrangler?", "Pete",
             "Phillip", "Plumber Joe", "Puzzler", "Queen Mismyla", "Queen Nyx",
             "Ravenous Rhino", "Resident Neighbor", "Resident Snooty", "Rhys", "Romero",
-            "Royal Resident", "Rusty", "Ryan", "Ryu", "Sam", "Sargwyn",
+            "Royal Resident", "Rusty", "Ryan", "Ryu", "Sargwyn",
             "Scout Scardius", "Seymour", "Shaggy",
             "Sherry", "Shifty", "Sirius", "Spaceman", "Spider Tamer", "St. Jerry",
             "Stella", "Tammy", "Tarwen", "Terry", "The Trapper", "Tia the Fairy",
