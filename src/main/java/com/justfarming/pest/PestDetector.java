@@ -149,6 +149,17 @@ public class PestDetector {
         return Collections.unmodifiableSet(pestPlots);
     }
 
+    /**
+     * Returns {@code true} when the scoreboard currently reports at least one
+     * pest on the named plot.  More efficient than {@link #getPestPlots()}.contains()
+     * because it queries the underlying set directly without creating a wrapper.
+     *
+     * @param plotName plot name to check (e.g. {@code "4"})
+     */
+    public boolean hasPlotPests(String plotName) {
+        return plotName != null && pestPlots.contains(plotName);
+    }
+
     /** Returns the per-plot pest counts reported by the scoreboard this tick. */
     public Map<String, Integer> getPestCounts() {
         return Collections.unmodifiableMap(pestCounts);

@@ -846,6 +846,13 @@ public class PestKillerManager {
     private final MinecraftClient client;
     private FarmingConfig config;
     private final PestEntityDetector pestEntityDetector;
+    /**
+     * Scoreboard-based pest detector injected via {@link #setPestDetector(PestDetector)}.
+     * When non-null, its per-plot data is used in {@link State#SCANNING} to detect
+     * an empty plot immediately (within one scoreboard update tick) instead of
+     * waiting for the full {@link #SCAN_TIMEOUT_MS} or {@link #SCAN_TIMEOUT_AFTER_KILL_MS}.
+     */
+    private PestDetector pestDetector = null;
     private final Random random = new Random();
 
     // ── Constructor ──────────────────────────────────────────────────────────
@@ -860,6 +867,16 @@ public class PestKillerManager {
     /** Update the config reference (called after GUI saves). */
     public void setConfig(FarmingConfig config) {
         this.config = config;
+    }
+
+    /**
+     * Injects the scoreboard-based {@link PestDetector} so the SCANNING state
+     * can use live scoreboard data for immediate empty-plot detection.
+     *
+     * @param detector the active {@link PestDetector} instance, or {@code null} to disable
+     */
+    public void setPestDetector(PestDetector detector) {
+        this.pestDetector = detector;
     }
 
     /**
@@ -1377,9 +1394,20 @@ public class PestKillerManager {
                     if (!timedOut) return;
                     // Fall through to the move-on logic below.
                 } else {
-                    // No pests at all – check timeout before firing vacuum shot / advancing.
-                    boolean timedOut = now - stateEnteredAt >= (atLeastOnePestKilledThisPlot
-                            ? SCAN_TIMEOUT_AFTER_KILL_MS : SCAN_TIMEOUT_MS);
+                    // No entity pests detected.  Use scoreboard data from PestDetector to detect
+                    // an empty plot immediately (within one scoreboard update) instead of waiting
+                    // for the full scan timeout.  The scoreboard is updated every game tick so
+                    // this gives near-instant responsiveness once the server clears the plot.
+                    boolean scoreboardConfirmsEmpty = pestDetector != null
+                            && currentPlotName != null
+                            && !pestDetector.hasPlotPests(currentPlotName);
+                    boolean timedOut = scoreboardConfirmsEmpty
+                            || now - stateEnteredAt >= (atLeastOnePestKilledThisPlot
+                                    ? SCAN_TIMEOUT_AFTER_KILL_MS : SCAN_TIMEOUT_MS);
+                    if (scoreboardConfirmsEmpty) {
+                        LOGGER.info("[Just Farming-PestKiller] Scoreboard confirms plot {} is now pest-free; "
+                                + "skipping scan timeout.", currentPlotName);
+                    }
                     if (!timedOut) return;
                 }
                 // No pests found (or only un-targetable ghost entities) and timeout elapsed.
