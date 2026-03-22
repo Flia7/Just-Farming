@@ -89,6 +89,7 @@ public class JustFarming implements ClientModInitializer {
                 net.minecraft.client.MinecraftClient.getInstance(), config, pestEntityDetector);
         macroManager.setVisitorManager(visitorManager);
         macroManager.setPestKillerManager(pestKillerManager, pestDetector);
+        pestKillerManager.setPestDetector(pestDetector);
 
         // Create inventory HUD renderer and paper-doll renderer
         inventoryHudRenderer = new InventoryHudRenderer(config);
@@ -388,6 +389,14 @@ public class JustFarming implements ClientModInitializer {
                 return;
             }
             profitTracker.onChatMessage(text, pestKillerManager, macroManager);
+            // Detect Booster Cookie inactive message during the visitor routine.
+            // The server sends this when the player issues /bazaar without having
+            // the Cookie Buff active.  Stop the visitor macro and return to farming.
+            if (text.contains("You need the Cookie Buff to use this feature!")
+                    && visitorManager.isActive()) {
+                visitorManager.notifyCookieBuffInactive();
+                LOGGER.warn("[Just Farming] Booster Cookie inactive message detected – notifying visitor manager.");
+            }
             // When the server confirms a /setspawn command, save the player's current
             // position as the spawn highlight block (without sending any command ourselves).
             if (text.contains("Your spawn location has been set")) {
