@@ -118,6 +118,14 @@ public class VisitorManager {
     /** Pause after {@code /warp garden} to allow the command to register (ms). */
     private static final long WARP_COMMAND_WAIT_MS = 3000;
 
+    // ── Cookie Buff title timing (ticks) ────────────────────────────────────
+    /** Fade-in duration (ticks) for the Booster Cookie inactive screen title. */
+    private static final int COOKIE_TITLE_FADE_IN_TICKS  = 10;
+    /** Stay duration (ticks) for the Booster Cookie inactive screen title. */
+    private static final int COOKIE_TITLE_STAY_TICKS     = 80;
+    /** Fade-out duration (ticks) for the Booster Cookie inactive screen title. */
+    private static final int COOKIE_TITLE_FADE_OUT_TICKS = 20;
+
     /**
      * Minimum pause (ms) after the bazaar GUI closes before the player starts
      * walking toward the visitor.  Prevents the abrupt camera snap that occurs
@@ -277,35 +285,12 @@ public class VisitorManager {
     private static final double NPC_AVOIDANCE_DIST = 2.5;
 
     /**
-     * Amplitude (degrees) of the random tremor added to each camera rotation step
-     * in {@link #smoothRotateCamera}, replicating the micro-vibration of a real
-     * mouse player.  Small enough to be imperceptible to a human observer.
-     */
-    private static final float SMOOTH_LOOK_TREMOR_AMPLITUDE = 0.12f;
-
-    /**
-     * Scale factor applied to the pitch component of the camera tremor.
-     * Humans produce less vertical hand-shake than horizontal, so pitch
-     * tremor is intentionally smaller than yaw tremor.
-     */
-    private static final float SMOOTH_LOOK_TREMOR_PITCH_SCALE = 0.5f;
-
-    /**
      * Angular threshold (degrees) within which the camera is considered "on
-     * target" and only micro-rotation corrections are applied.  When both yaw
-     * and pitch errors are smaller than this value the camera makes tiny
-     * random adjustments rather than full rotations, simulating natural hand
-     * micro-tremor when a player holds their mouse still while aiming at a target.
+     * target" and no further rotation is applied.  When both yaw and pitch
+     * errors are smaller than this value the camera stays put, avoiding
+     * micro-oscillations around the exact aim point.
      */
     private static final float MICRO_ROTATION_THRESHOLD_DEGREES = 2.0f;
-
-    /**
-     * Amplitude (degrees) of the micro-rotation corrections applied when the
-     * camera is already within {@link #MICRO_ROTATION_THRESHOLD_DEGREES} of
-     * the target.  Smaller than {@link #SMOOTH_LOOK_TREMOR_AMPLITUDE} to
-     * produce very subtle movements that keep the aim alive without drifting.
-     */
-    private static final float MICRO_ROTATION_AMPLITUDE = 0.08f;
 
     /**
      * How far ahead (blocks) to probe the terrain when navigating.
@@ -577,6 +562,14 @@ public class VisitorManager {
     /** Timestamp (ms) when /warp garden was sent in WARPING_TO_GARDEN; 0 = not yet sent. */
     private long  warpToGardenSentAt = 0;
 
+    /**
+     * Set to {@code true} by {@link #notifyCookieBuffInactive()} when the server
+     * sends "You need the Cookie Buff to use this feature!" in response to a
+     * {@code /bazaar} command.  Checked at the start of every {@link #onTick()}
+     * so the visitor routine is stopped cleanly on the game thread.
+     */
+    private volatile boolean cookieBuffDetectedFlag = false;
+
     private final MinecraftClient client;
     private FarmingConfig config;
     private final Random random = new Random();
@@ -588,11 +581,6 @@ public class VisitorManager {
     private long  lastSmoothLookTime = 0;
     /** Combined angular distance at rotation start; used for exponential acceleration. */
     private float initialAngularDist = 0f;
-    /**
-     * Counter used to skip camera tremor 5 out of every 6 calls, reducing the
-     * visible shake frequency by 6× without changing the per-tremor amplitude.
-     */
-    private int   tremorSkipCount = 0;
     /**
      * When {@code true}, {@link #onRenderTick()} rotates the camera at
      * {@link #FAST_LOOK_DEGREES_PER_SECOND} rather than the normal rate.
@@ -872,6 +860,7 @@ public class VisitorManager {
         postPurchase = false;
         skipCurrentVisitorDueToPrice = false;
         skipCurrentVisitorDueToBlacklist = false;
+        cookieBuffDetectedFlag = false;
         returnWarpDelay = 0;
         returnWarpSentAt = 0;
         warpToGardenSentAt = 0;
@@ -898,6 +887,18 @@ public class VisitorManager {
         enterState(State.IDLE);
     }
 
+    /**
+     * Called from the chat-message handler (possibly off the game thread) when
+     * the server sends "You need the Cookie Buff to use this feature!" in
+     * response to a {@code /bazaar} command during the visitor routine.
+     *
+     * <p>Sets a flag that is checked on the next game tick so the routine is
+     * stopped cleanly on the game thread (releases keys, warps back to garden,
+     * shows a screen title warning the player).
+     */
+    public void notifyCookieBuffInactive() {
+        cookieBuffDetectedFlag = true;
+    }
 
     public void start() {
         LOGGER.info("[Just Farming-Visitors] Starting visitor routine.");
@@ -930,6 +931,7 @@ public class VisitorManager {
         postPurchase      = false;
         skipCurrentVisitorDueToPrice = false;
         skipCurrentVisitorDueToBlacklist = false;
+        cookieBuffDetectedFlag = false;
         walkJitter        = 0f;
         walkJitterNextUpdate = 0;
         navAimAsideBlocks = 0f;
@@ -996,6 +998,29 @@ public class VisitorManager {
         if (player == null || client.world == null) return;
 
         long now = System.currentTimeMillis();
+
+        // ── Booster Cookie inactive guard ────────────────────────────────────────
+        // If the server rejected a /bazaar command because the player lacks the
+        // Cookie Buff, stop the visitor routine, warp back to the garden (so the
+        // farming macro can resume), and display a prominent screen title.
+        if (cookieBuffDetectedFlag) {
+            cookieBuffDetectedFlag = false;
+            LOGGER.warn("[Just Farming-Visitors] Booster Cookie inactive – stopping visitor routine.");
+            releaseMovementKeys();
+            player.sendMessage(
+                    net.minecraft.text.Text.literal("§c[Just Farming] Booster Cookie inactive – visitor's macro disabled."),
+                    false);
+            if (client.inGameHud != null) {
+                client.inGameHud.setTitleTicks(COOKIE_TITLE_FADE_IN_TICKS,
+                        COOKIE_TITLE_STAY_TICKS, COOKIE_TITLE_FADE_OUT_TICKS);
+                client.inGameHud.setTitle(
+                        net.minecraft.text.Text.literal("§c§l⚠ Booster Cookie Inactive"));
+                client.inGameHud.setSubtitle(
+                        net.minecraft.text.Text.literal("§eVisitor's Macro Disabled"));
+            }
+            returnToFarm();
+            return;
+        }
 
         switch (state) {
 
@@ -2463,20 +2488,10 @@ public class VisitorManager {
 
         float pitchDiff = targetPitch - currentPitch;
 
-        // When already close to the target, apply micro-rotation corrections to
-        // simulate the natural micro-tremor of a player holding their mouse still
-        // while aiming.  This makes the aim look alive rather than completely frozen.
-        // Tremor is applied only every 6th call to reduce visible shake frequency.
-        tremorSkipCount++;
-        boolean applyTremor = tremorSkipCount >= 6;
-        if (applyTremor) tremorSkipCount = 0;
-
+        // When already within the dead-zone, the camera is considered on target.
+        // Return immediately to keep the rotation perfectly still (no shake).
         if (Math.abs(yawDiff) < MICRO_ROTATION_THRESHOLD_DEGREES
                 && Math.abs(pitchDiff) < MICRO_ROTATION_THRESHOLD_DEGREES) {
-            float microYaw   = applyTremor ? generateTremor(MICRO_ROTATION_AMPLITUDE) : 0f;
-            float microPitch = applyTremor ? generateTremor(MICRO_ROTATION_AMPLITUDE * SMOOTH_LOOK_TREMOR_PITCH_SCALE) : 0f;
-            player.setYaw(currentYaw + microYaw);
-            player.setPitch(Math.max(-90f, Math.min(90f, currentPitch + microPitch)));
             return;
         }
 
@@ -2490,27 +2505,14 @@ public class VisitorManager {
         // Maximum angular delta this step, proportional to actual elapsed time.
         float step = degreesPerSecond * speedMult * deltaMs / 1000.0f;
 
-        // Compute rotation deltas: clamp each axis to at most one step, then add
-        // a tiny tremor (only every 6th frame) that mimics the natural micro-vibration
-        // of a real mouse.  Both components are pure deltas applied to the current
-        // rotation – no absolute Vec3d target is used.
-        float deltaYaw   = Math.max(-step, Math.min(step, yawDiff))
-                         + (applyTremor ? generateTremor(SMOOTH_LOOK_TREMOR_AMPLITUDE) : 0f);
-        float deltaPitch = Math.max(-step, Math.min(step, pitchDiff))
-                         + (applyTremor ? generateTremor(SMOOTH_LOOK_TREMOR_AMPLITUDE * SMOOTH_LOOK_TREMOR_PITCH_SCALE) : 0f);
+        // Compute smooth rotation deltas clamped to at most one step per axis.
+        // No random tremor is applied – the camera moves cleanly toward the target.
+        float deltaYaw   = Math.max(-step, Math.min(step, yawDiff));
+        float deltaPitch = Math.max(-step, Math.min(step, pitchDiff));
 
-        // Apply deltas to the current rotation.  Pitch is clamped after applying
-        // the tremor so it never escapes the valid [-90, 90] range.
+        // Apply deltas to the current rotation.  Pitch is clamped to [-90, 90].
         player.setYaw(currentYaw + deltaYaw);
         player.setPitch(Math.max(-90f, Math.min(90f, currentPitch + deltaPitch)));
-    }
-
-    /**
-     * Returns a random tremor value in {@code [-amplitude, amplitude]} to simulate
-     * the micro-vibration of a real mouse player.
-     */
-    private float generateTremor(float amplitude) {
-        return (random.nextFloat() * 2f - 1f) * amplitude;
     }
 
     private void releaseMovementKeys() {
