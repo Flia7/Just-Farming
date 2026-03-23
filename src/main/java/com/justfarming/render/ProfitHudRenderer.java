@@ -142,7 +142,7 @@ public class ProfitHudRenderer {
         if (mc == null || mc.player == null) return;
 
         // Refresh the throttled display cache (no-op if updated <3s ago).
-        tracker.refreshDisplayCache(config.pestProfitEnabled, config.selectedCrop);
+        tracker.refreshDisplayCache(config.pestProfitEnabled);
 
         TextRenderer tr = mc.textRenderer;
         // Anchor the profit panel directly below the inventory HUD (and paper-doll
@@ -228,28 +228,15 @@ public class ProfitHudRenderer {
         drawScaledText(context, tr, x + PAD_X, curY, timeElapsed, COL_ITEM());
         curY += scaledLineH();
 
-        // Combined Profit/Hour (farming + pests) at item scale – throttled to 3s.
-        double combinedPh = tracker.getDisplayCombinedProfitPerHour();
-        String phLabel = "Profit/Hour:";
-        String phValue = "+" + formatCoins(combinedPh) + "/h";
+        // Total Profit (farming + pests) at item scale – throttled to 3s.
+        double totalProfit = tracker.getDisplayTotalProfit();
+        String tpLabel = "Total Profit:";
+        String tpValue = "+" + formatCoins(totalProfit);
         var matrices = context.getMatrices();
         matrices.pushMatrix();
         matrices.translate(x + PAD_X, curY);
         matrices.scale(ITEM_SCALE, ITEM_SCALE);
         int unscaledW = Math.round((panelW() - PAD_X * 2) / ITEM_SCALE);
-        int phRightX  = unscaledW - tr.getWidth(phValue);
-        context.drawTextWithShadow(tr, phLabel, 0, 0, COL_TITLE());
-        context.drawTextWithShadow(tr, phValue, phRightX, 0, COL_PROFIT());
-        matrices.popMatrix();
-        curY += scaledLineH();
-
-        // Total Profit (farming + pests) at item scale – throttled to 3s.
-        double totalProfit = tracker.getDisplayTotalProfit();
-        String tpLabel = "Total Profit:";
-        String tpValue = "+" + formatCoins(totalProfit);
-        matrices.pushMatrix();
-        matrices.translate(x + PAD_X, curY);
-        matrices.scale(ITEM_SCALE, ITEM_SCALE);
         int tpRightX = unscaledW - tr.getWidth(tpValue);
         context.drawTextWithShadow(tr, tpLabel, 0, 0, COL_TITLE());
         context.drawTextWithShadow(tr, tpValue, tpRightX, 0, COL_PROFIT());
@@ -403,11 +390,10 @@ public class ProfitHudRenderer {
             h += sectionItemsH(tracker.getDisplayPestEntries());
         }
 
-        // Separator + Stats + time elapsed + profit/hour + total profit rows
+        // Separator + Stats + time elapsed + total profit rows
         h += separatorH();
         h += LINE_H;            // "Stats" label
         h += scaledLineH();     // Time Elapsed row
-        h += scaledLineH();     // Profit/Hour row
         h += scaledLineH();     // Total Profit row
 
         return h;
@@ -456,8 +442,8 @@ public class ProfitHudRenderer {
         if (pestProfitEnabled) {
             h += separatorH() + LINE_H + 2 * scaledLineH();
         }
-        // Stats section (separator + label + time elapsed + profit/hour + total profit)
-        h += separatorH() + LINE_H + 3 * scaledLineH();
+        // Stats section (separator + label + time elapsed + total profit)
+        h += separatorH() + LINE_H + 2 * scaledLineH();
         return h;
     }
 

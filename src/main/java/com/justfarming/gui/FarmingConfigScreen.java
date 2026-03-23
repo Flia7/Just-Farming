@@ -21,7 +21,7 @@ import net.minecraft.text.Text;
  *   <li><b>Farming</b>  – crop selection, rewarp, start/stop macro, farming tool slot</li>
  *   <li><b>Pests</b>    – pest highlight, labels, ESP, tracer; auto pest killer settings</li>
  *   <li><b>Visitors</b> – visitor macro settings and filters</li>
- *   <li><b>Hud's</b>    – inventory overlay, paper doll, profit tracker</li>
+ *   <li><b>Hud's</b>    – inventory overlay, paper doll</li>
  *   <li><b>Misc</b>     – freelook, unlocked mouse, garden-only, macro-in-GUI</li>
  *   <li><b>Delays</b>   – all timing/delay sliders</li>
  * </ul>
@@ -109,9 +109,6 @@ public class FarmingConfigScreen extends Screen {
     private FlatBoolToggleWidget  inventoryOverlayButton;
     private FlatBoolToggleWidget  paperDollButton;
     private FlatButtonWidget                  editHudButton;
-    private FlatBoolToggleWidget  profitTrackerButton;
-    private FlatBoolToggleWidget  pestProfitButton;
-    private FlatButtonWidget      profitResetButton;
     private FlatBoolToggleWidget  customScoreboardButton;
     private FlatBoolToggleWidget  hideHudsOnTabF3Button;
 
@@ -157,7 +154,7 @@ public class FarmingConfigScreen extends Screen {
     private int sectionCropY, actionSeparatorY;
     private int sectionPestsY, sectionPestKillerY, sectionWardrobeY, pestKillerStatusY;
     // HUD tab (tab 3 in TAB_NAMES array)
-    private int sectionHudInvY, sectionHudProfitY, sectionHudDisplayY;
+    private int sectionHudInvY, sectionHudDisplayY;
     // Settings tab (tab 4 in TAB_NAMES array)
     private int sectionSettingsCameraY, sectionSettingsMacroY, settingsCameraSeparatorY;
     // Delays tab (tab 4)
@@ -400,33 +397,6 @@ public class FarmingConfigScreen extends Screen {
         this.addDrawableChild(paperDollButton);
         paperDollButton.setTooltip(Tooltip.of(Text.literal(
                 "Show a player model with WASD keystrokes and CPS counter\nnext to the Inventory HUD. Requires Inventory HUD to be on.")));
-        y += bh + pad + gap;
-
-        sectionHudProfitY = y;
-        y += sLH;
-
-        profitTrackerButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
-                        Text.literal("Show Profit HUD"),
-                        config.profitTrackerEnabled);
-        this.addDrawableChild(profitTrackerButton);
-        profitTrackerButton.setTooltip(Tooltip.of(Text.literal(
-                "Display a profit tracking overlay showing items collected\nand NPC profit earned during the current session.")));
-        y += bh + pad;
-
-        pestProfitButton = new FlatBoolToggleWidget(widgetX, y, bw, bh,
-                        Text.literal("Show Pest Profits"),
-                        config.pestProfitEnabled);
-        this.addDrawableChild(pestProfitButton);
-        pestProfitButton.setTooltip(Tooltip.of(Text.literal(
-                "Show the Pest Profit section inside the Profit HUD,\ntracking items gained while the pest killer is active.")));
-        y += bh + pad;
-
-        profitResetButton = new FlatButtonWidget(widgetX, y, bw, bh,
-                        Text.literal("Reset Session"),
-                        btn -> com.justfarming.JustFarming.getProfitTracker().reset());
-        this.addDrawableChild(profitResetButton);
-        profitResetButton.setTooltip(Tooltip.of(Text.literal(
-                "Clear all accumulated profit data and restart the session.")));
         y += bh + pad + gap;
 
         sectionHudDisplayY = y;
@@ -727,9 +697,6 @@ public class FarmingConfigScreen extends Screen {
         boolean t3 = activeTab == 3;
         inventoryOverlayButton.visible      = t3 && inContentBounds(inventoryOverlayButton);
         paperDollButton.visible             = t3 && inContentBounds(paperDollButton);
-        profitTrackerButton.visible         = t3 && inContentBounds(profitTrackerButton);
-        pestProfitButton.visible            = t3 && inContentBounds(pestProfitButton);
-        profitResetButton.visible           = t3 && inContentBounds(profitResetButton);
         customScoreboardButton.visible      = t3 && inContentBounds(customScoreboardButton);
         hideHudsOnTabF3Button.visible       = t3 && inContentBounds(hideHudsOnTabF3Button);
 
@@ -841,8 +808,6 @@ public class FarmingConfigScreen extends Screen {
         } else if (activeTab == 3) {
             if (yInContentBounds(sectionHudInvY))
                 drawSectionLabel(context, "Inventory HUD", sectionHudInvY);
-            if (yInContentBounds(sectionHudProfitY))
-                drawSectionLabel(context, "Profit HUD", sectionHudProfitY);
             if (yInContentBounds(sectionHudDisplayY))
                 drawSectionLabel(context, "Display", sectionHudDisplayY);
         } else if (activeTab == 4) {
@@ -950,8 +915,6 @@ public class FarmingConfigScreen extends Screen {
         config.squeakyMousematEnabled = squeakyMousematButton.getValue();
         config.inventoryOverlayEnabled = inventoryOverlayButton.getValue();
         config.paperDollEnabled     = paperDollButton.getValue();
-        config.profitTrackerEnabled = profitTrackerButton.getValue();
-        config.pestProfitEnabled    = pestProfitButton.getValue();
         config.visitorsEnabled          = visitorsEnabledButton.getValue();
         config.visitorsBuyFromBazaar    = visitorsBuyFromBazaarButton.getValue();
         config.visitorsInstaSell        = visitorsInstaSellButton.getValue();

@@ -76,7 +76,7 @@ public class FarmingConfig {
      * the player list (Tab).  Useful for taking screenshots or checking vanilla info
      * without manually disabling each overlay.
      */
-    public boolean hideHudsOnTabF3 = false;
+    public boolean hideHudsOnTabF3 = true;
 
     /**
      * When {@code true}, replaces Minecraft's default scoreboard sidebar with a
@@ -99,26 +99,26 @@ public class FarmingConfig {
      * the hotbar) directly on the HUD so items can be monitored without opening
      * a screen.
      */
-    public boolean inventoryOverlayEnabled = false;
+    public boolean inventoryOverlayEnabled = true;
 
     /**
      * Horizontal pixel offset of the inventory overlay's top-left corner
      * from the left edge of the screen.  0 = screen left edge.
      */
-    public int inventoryOverlayX = 0;
+    public int inventoryOverlayX = 11;
 
     /**
      * Vertical pixel offset of the inventory overlay's top-left corner
      * from the top edge of the screen.  0 = screen top edge.
      */
-    public int inventoryOverlayY = 60;
+    public int inventoryOverlayY = 0;
 
     /**
      * Scale multiplier for the inventory HUD overlay.
      * 1.0 = native pixel size (16 px per slot icon).
      * Range: 0.5–3.0.
      */
-    public float inventoryOverlayScale = 1.0f;
+    public float inventoryOverlayScale = 0.7f;
 
     /**
      * When {@code true}, renders a paper-doll player model to the right of the
@@ -126,13 +126,13 @@ public class FarmingConfig {
      * below the model.  Only visible while {@link #inventoryOverlayEnabled} is
      * also {@code true}.
      */
-    public boolean paperDollEnabled = false;
+    public boolean paperDollEnabled = true;
 
     // --- Profit Tracker HUD ---
 
     /**
      * When {@code true}, the Farming Profit HUD overlay is shown, displaying
-     * items collected, NPC profit, and profit per hour for the current session.
+     * items collected and NPC profit earned during the current session.
      * All prices are stored in the mod and require no external API calls.
      */
     public boolean profitTrackerEnabled = true;
@@ -140,8 +140,7 @@ public class FarmingConfig {
     /**
      * When {@code true}, the Pest Profit section is shown inside the Farming
      * Profit HUD, tracking items and coins gained while the pest killer is
-     * active.  When {@code false}, only farming profit (and its profit/hour)
-     * is shown.
+     * active.  When {@code false}, only farming profit is shown.
      */
     public boolean pestProfitEnabled = true;
 
@@ -149,13 +148,13 @@ public class FarmingConfig {
      * Horizontal pixel position of the top-left corner of the Profit HUD
      * panel, measured from the left edge of the screen.
      */
-    public int profitHudX = 10;
+    public int profitHudX = 21;
 
     /**
      * Vertical pixel position of the top-left corner of the Profit HUD
      * panel, measured from the top edge of the screen.
      */
-    public int profitHudY = 10;
+    public int profitHudY = 0;
 
     /**
      * When {@code true}, the macro will only start (and will auto-stop) when
