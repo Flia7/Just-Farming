@@ -105,20 +105,20 @@ public class FarmingConfig {
      * Horizontal pixel offset of the inventory overlay's top-left corner
      * from the left edge of the screen.  0 = screen left edge.
      */
-    public int inventoryOverlayX = 11;
+    public int inventoryOverlayX = 17;
 
     /**
      * Vertical pixel offset of the inventory overlay's top-left corner
      * from the top edge of the screen.  0 = screen top edge.
      */
-    public int inventoryOverlayY = 0;
+    public int inventoryOverlayY = 2;
 
     /**
      * Scale multiplier for the inventory HUD overlay.
      * 1.0 = native pixel size (16 px per slot icon).
      * Range: 0.5–3.0.
      */
-    public float inventoryOverlayScale = 0.7f;
+    public float inventoryOverlayScale = 1.0f;
 
     /**
      * When {@code true}, renders a paper-doll player model to the right of the
@@ -148,7 +148,7 @@ public class FarmingConfig {
      * Horizontal pixel position of the top-left corner of the Profit HUD
      * panel, measured from the left edge of the screen.
      */
-    public int profitHudX = 21;
+    public int profitHudX = 27;
 
     /**
      * Vertical pixel position of the top-left corner of the Profit HUD
@@ -168,13 +168,13 @@ public class FarmingConfig {
      * so Hypixel Skyblock's item ability fires), instead of relying on the
      * player's rotation being snapped by the server.
      */
-    public boolean squeakyMousematEnabled = false;
+    public boolean squeakyMousematEnabled = true;
 
     /**
      * Delay in milliseconds before switching to the Squeaky Mousemat hotbar slot.
      * Only applies when the player is not already holding the mousemat.
      */
-    public int mousematSwapToDelay = 0;
+    public int mousematSwapToDelay = 300;
 
     /**
      * Delay in milliseconds between switching to the Squeaky Mousemat
@@ -192,7 +192,7 @@ public class FarmingConfig {
      * Delay in milliseconds between restoring the farming tool slot and
      * resuming farming (entering the DETECTING state).
      */
-    public int mousematResumeDelay = 0;
+    public int mousematResumeDelay = 400;
 
     // --- Spawn position (/setspawn / /warp garden highlight) ---
 
@@ -211,16 +211,16 @@ public class FarmingConfig {
     // --- Rewarp trigger position ---
 
     /** Whether a rewarp position has been set. */
-    public boolean rewarpSet = false;
+    public boolean rewarpSet = true;
 
     /** Rewarp trigger X coordinate. */
-    public double rewarpX = 0.0;
+    public double rewarpX = -239.5;
 
     /** Rewarp trigger Y coordinate. */
-    public double rewarpY = 0.0;
+    public double rewarpY = 72.0;
 
     /** Rewarp trigger Z coordinate. */
-    public double rewarpZ = 0.0;
+    public double rewarpZ = -206.5;
 
     /** Radius (in blocks) around the rewarp point that triggers the warp. */
     public double rewarpRange = 3.0;
@@ -229,13 +229,13 @@ public class FarmingConfig {
      * Minimum delay in milliseconds between reaching the rewarp trigger and
      * actually sending {@code /warp garden} (i.e. the lane-swap delay).
      */
-    public int rewarpDelayMin = 100;
+    public int rewarpDelayMin = 800;
 
     /**
      * Extra random milliseconds added on top of {@link #rewarpDelayMin}.
      * The actual delay will be {@code rewarpDelayMin + random(0, rewarpDelayRandom)}.
      */
-    public int rewarpDelayRandom = 0;
+    public int rewarpDelayRandom = 1000;
 
     /**
      * Upper bound (exclusive) of the global random jitter (in milliseconds)
@@ -248,13 +248,13 @@ public class FarmingConfig {
      * Minimum delay in milliseconds between detecting the end of a farming row
      * and actually flipping direction (i.e. the lane-swap delay).
      */
-    public int laneSwapDelayMin = 0;
+    public int laneSwapDelayMin = 250;
 
     /**
      * Extra random milliseconds added on top of {@link #laneSwapDelayMin}.
      * The actual delay will be {@code laneSwapDelayMin + random(0, laneSwapDelayRandom)}.
      */
-    public int laneSwapDelayRandom = 0;
+    public int laneSwapDelayRandom = 450;
 
     // --- Visitor Settings ---
 
@@ -263,7 +263,7 @@ public class FarmingConfig {
      * at the rewarp trigger, interact with garden visitors, and optionally buy
      * required items from the Bazaar before accepting each visitor's offer.
      */
-    public boolean visitorsEnabled = false;
+    public boolean visitorsEnabled = true;
 
     /**
      * When {@code true} (and {@link #visitorsEnabled} is also {@code true}), the
@@ -286,7 +286,7 @@ public class FarmingConfig {
      * The actual per-action delay will be
      * {@code visitorsActionDelay + random(0, visitorsActionDelayRandom)}.
      */
-    public int visitorsActionDelayRandom = 0;
+    public int visitorsActionDelayRandom = 500;
 
     /**
      * How long (in milliseconds) to wait after sending {@code /tptoplot barn}
@@ -295,14 +295,14 @@ public class FarmingConfig {
      * An additional non-configurable random extra of up to 200 ms is always
      * added on top of this value.
      */
-    public int visitorsTeleportDelay = 4000;
+    public int visitorsTeleportDelay = 1300;
 
     /**
      * Delay in milliseconds simulating the player typing {@code /bazaar <item>}
      * in chat before the command is actually sent.  Use this to make the macro
      * look more human-like when searching the bazaar.
      */
-    public int bazaarSearchDelay = 1500;
+    public int bazaarSearchDelay = 900;
 
     /**
      * Visitor names to skip automatically.  Any visitor whose name appears in
@@ -317,7 +317,7 @@ public class FarmingConfig {
      * When {@code true}, the mod will automatically kill pests when they are
      * detected in the Garden by flying toward them and using a vacuum item.
      */
-    public boolean autoPestKillerEnabled = false;
+    public boolean autoPestKillerEnabled = true;
 
     /**
      * When {@code true} (and {@link #autoPestKillerEnabled} is also {@code true}),
@@ -333,14 +333,14 @@ public class FarmingConfig {
      * After the teleport command is sent, the mod always waits a fixed 500 ms
      * (plus up to 150 ms random) before scanning for pest entities.
      */
-    public int pestKillerTeleportDelay = 4000;
+    public int pestKillerTeleportDelay = 700;
 
     /**
      * Minimum delay (in milliseconds) between killing a pest and starting to
      * search for the next one.  A short pause here makes the behaviour look
      * more human-like and gives the server time to despawn the killed mob.
      */
-    public int pestKillerGoToNextPestDelay = 0;
+    public int pestKillerGoToNextPestDelay = 350;
 
     /**
      * Preferred hotbar slot (0–8) for the farming tool that is active while
@@ -467,6 +467,15 @@ public class FarmingConfig {
      * defaults.  When absent the built-in defaults apply.
      */
     public Map<String, CropCustomSettings> cropSettings = new HashMap<>();
+
+    /**
+     * Persisted positions of known permanent barn NPCs that share a name with
+     * a visitor type (e.g. Jacob, Anita).  Populated the first time the visitor
+     * routine opens one of these NPCs' menus and finds no "Accept Offer" button.
+     * Stored as {@code name → [x, y, z]} and loaded on startup so the NPC is
+     * skipped immediately on the very first scan of a new session.
+     */
+    public Map<String, double[]> permanentVisitorNpcPositions = new HashMap<>();
 
     /** Returns the custom settings for {@code crop}, or {@code null} if none are saved. */
     public CropCustomSettings getCropSettings(CropType crop) {

@@ -1378,6 +1378,11 @@ public class PestKillerManager {
                 if (now < pestKillWaitEnd) return;
 
                 List<PestEntityDetector.PestEntity> pests = pestEntityDetector.getDetectedPests();
+                // Compute scoreboard-empty status once; used both to short-circuit the scan
+                // timeout and to skip the vacuum shot when the plot is confirmed clean.
+                boolean scoreboardConfirmsEmpty = pestDetector != null
+                        && currentPlotName != null
+                        && !pestDetector.hasPlotPests(currentPlotName);
                 if (!pests.isEmpty()) {
                     currentPest = pickNearestPest(player, pests);
                     if (currentPest != null) {
@@ -1398,9 +1403,6 @@ public class PestKillerManager {
                     // an empty plot immediately (within one scoreboard update) instead of waiting
                     // for the full scan timeout.  The scoreboard is updated every game tick so
                     // this gives near-instant responsiveness once the server clears the plot.
-                    boolean scoreboardConfirmsEmpty = pestDetector != null
-                            && currentPlotName != null
-                            && !pestDetector.hasPlotPests(currentPlotName);
                     boolean timedOut = scoreboardConfirmsEmpty
                             || now - stateEnteredAt >= (atLeastOnePestKilledThisPlot
                                     ? SCAN_TIMEOUT_AFTER_KILL_MS : SCAN_TIMEOUT_MS);
@@ -1411,9 +1413,9 @@ public class PestKillerManager {
                     if (!timedOut) return;
                 }
                 // No pests found (or only un-targetable ghost entities) and timeout elapsed.
-                // Try a vacuum shot to locate any hidden pests via the particle trail (only one
-                // attempt per plot, regardless of whether the plot name is known).
-                if (!vacuumShotAttempted) {
+                // Skip the vacuum shot when the scoreboard already confirms the plot is empty –
+                // there are no hidden pests to locate, and the shot would waste up to 4 seconds.
+                if (!vacuumShotAttempted && !scoreboardConfirmsEmpty) {
                     LOGGER.info("[Just Farming-PestKiller] No pests at plot centre; "
                             + "firing vacuum shot to locate them.");
                     vacuumShotAttempted = true;
