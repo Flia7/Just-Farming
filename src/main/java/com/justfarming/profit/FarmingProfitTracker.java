@@ -191,7 +191,6 @@ public class FarmingProfitTracker {
     private List<ProfitEntry> displayPestEntries = List.of();
     private double displayFarmingProfit = 0.0;
     private double displayPestProfit = 0.0;
-    private double displayCombinedProfitPerHour = 0.0;
     private boolean displayIncludePest = false;
 
     // ── Number of farming/pest ticks tracked (for "is active" queries) ───────
@@ -540,7 +539,7 @@ public class FarmingProfitTracker {
 
     // ── Throttled display cache ───────────────────────────────────────────────
 
-    public void refreshDisplayCache(boolean includePest, CropType selectedCrop) {
+    public void refreshDisplayCache(boolean includePest) {
         long now = System.currentTimeMillis();
         if (lastDisplayUpdateMs > 0 && now - lastDisplayUpdateMs < DISPLAY_UPDATE_INTERVAL_MS) return;
         lastDisplayUpdateMs        = now;
@@ -549,7 +548,6 @@ public class FarmingProfitTracker {
         displayFarmingProfit       = getFarmingProfit();
         displayPestProfit          = getPestProfit();
         displayIncludePest         = includePest;
-        displayCombinedProfitPerHour = getProjectedProfitPerHour(selectedCrop);
     }
 
     public List<ProfitEntry> getDisplayFarmingEntries() { return displayFarmingEntries; }
@@ -559,8 +557,6 @@ public class FarmingProfitTracker {
     public double getDisplayFarmingProfit() { return displayFarmingProfit; }
 
     public double getDisplayPestProfit() { return displayPestProfit; }
-
-    public double getDisplayCombinedProfitPerHour() { return displayCombinedProfitPerHour; }
 
     public double getDisplayTotalProfit() {
         return displayFarmingProfit + (displayIncludePest ? displayPestProfit : 0.0);
@@ -741,7 +737,6 @@ public class FarmingProfitTracker {
         displayPestEntries    = List.of();
         displayFarmingProfit  = 0.0;
         displayPestProfit     = 0.0;
-        displayCombinedProfitPerHour = 0.0;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
