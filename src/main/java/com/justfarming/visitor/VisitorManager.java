@@ -962,6 +962,16 @@ public class VisitorManager {
             targetYaw   = player.getYaw();
             targetPitch = player.getPitch();
         }
+        // Merge persisted permanent NPC locations from config so previously discovered
+        // barn NPCs (e.g. Jacob farming-event NPC) are excluded immediately on first scan.
+        for (Map.Entry<String, double[]> entry : config.permanentVisitorNpcPositions.entrySet()) {
+            double[] arr = entry.getValue();
+            if (arr != null && arr.length >= 3 && !permanentNpcLocations.containsKey(entry.getKey())) {
+                permanentNpcLocations.put(entry.getKey(), new Vec3d(arr[0], arr[1], arr[2]));
+            } else if (arr == null || arr.length < 3) {
+                LOGGER.warn("[Just Farming-Visitors] Skipping malformed permanent NPC position entry for '{}'.", entry.getKey());
+            }
+        }
         // Wait 1 second before starting any movement.
         enterState(State.PRE_START_WAIT);
     }
@@ -1387,8 +1397,13 @@ public class VisitorManager {
                                 String name = currentVisitor.getCustomName() != null
                                         ? stripFormatting(currentVisitor.getCustomName().getString()) : "";
                                 if (STATIC_VISITOR_NAMES.contains(name)) {
-                                    permanentNpcLocations.put(name, new Vec3d(
-                                            currentVisitor.getX(), currentVisitor.getY(), currentVisitor.getZ()));
+                                    Vec3d npcPos = new Vec3d(
+                                            currentVisitor.getX(), currentVisitor.getY(), currentVisitor.getZ());
+                                    permanentNpcLocations.put(name, npcPos);
+                                    // Persist so future sessions skip this NPC immediately.
+                                    config.permanentVisitorNpcPositions.put(name,
+                                            new double[]{npcPos.x, npcPos.y, npcPos.z});
+                                    config.save();
                                     LOGGER.info("[Just Farming-Visitors] Saved permanent NPC location for '{}'. Will exclude on next scan.", name);
                                     completedVisitorIds.add(currentVisitor.getId());
                                 }
@@ -2056,7 +2071,10 @@ public class VisitorManager {
         double dz = target.z - eye.z;
         double distXZ = Math.sqrt(dx * dx + dz * dz);
         float baseTargetYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
-        targetPitch = (float) -Math.toDegrees(Math.atan2(dy, Math.max(distXZ, WALK_PITCH_MIN_DIST_XZ)));
+        // Keep pitch level while walking to avoid pointless vertical camera rotation.
+        // The precise look-at pitch is only needed when within interact range, where
+        // the NAVIGATING state calls lookAt() directly instead of walkToward().
+        // targetPitch is intentionally not updated here.
 
         // Current SkyBlock speed multiplier (accounts for Speed buffs at any level).
         double speedMult = getSpeedMultiplier(player);
@@ -2159,7 +2177,15 @@ public class VisitorManager {
         // ── Camera rotation target ────────────────────────────────────────────
         // Only update the target and speed here; all actual camera rotation happens
         // via onRenderTick() at render-frame rate (delta-based, frame-rate-independent).
-        targetYaw = chosenYaw;
+        // Apply a 1-degree hysteresis on yaw so tiny fluctuations in the direction
+        // toward the visitor (caused by both the player and visitor moving) do not
+        // produce continuous micro-rotation visible as pointless camera wobble.
+        float yawDelta = chosenYaw - targetYaw;
+        while (yawDelta >  180f) yawDelta -= 360f;
+        while (yawDelta < -180f) yawDelta += 360f;
+        if (Math.abs(yawDelta) > 1.0f) {
+            targetYaw = chosenYaw;
+        }
         currentCameraSpeed = SMOOTH_LOOK_DEGREES_PER_SECOND * (float) Math.max(1.0, speedMult);
 
         // ── Speed-aware pulsed walking near the target ────────────────────────
