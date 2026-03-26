@@ -138,13 +138,6 @@ public class FarmingConfig {
     public boolean profitTrackerEnabled = true;
 
     /**
-     * When {@code true}, the Pest Profit section is shown inside the Farming
-     * Profit HUD, tracking items and coins gained while the pest killer is
-     * active.  When {@code false}, only farming profit is shown.
-     */
-    public boolean pestProfitEnabled = true;
-
-    /**
      * Horizontal pixel position of the top-left corner of the Profit HUD
      * panel, measured from the left edge of the screen.
      */
