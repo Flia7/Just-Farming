@@ -169,6 +169,15 @@ public class MacroManager {
     private float rotationInitialDist = 0f;
 
     /**
+     * {@code true} once the camera has smoothly reached the target yaw/pitch for
+     * the current run.  While {@code true}, {@link #onRenderTick()} skips all
+     * further rotation corrections so natural player mouse movements during
+     * farming are not overridden.  Reset to {@code false} by {@link #start()} and
+     * {@link #stop()} so the initial alignment always runs when the macro starts.
+     */
+    private boolean rotationAligned = false;
+
+    /**
      * Counter used to skip camera tremor 5 out of every 6 render frames, reducing
      * the visible shake frequency by 6× without changing the per-tremor amplitude.
      */
@@ -435,6 +444,7 @@ public class MacroManager {
         mousematPhaseRandomExtra = 0;
         lastRotationTime = 0;
         rotationInitialDist = 0f;
+        rotationAligned = false;
         disableFlightStartTime = 0;
         if (config.unlockedMouseEnabled) {
             client.mouse.unlockCursor();
@@ -465,6 +475,7 @@ public class MacroManager {
         state = MacroState.IDLE;
         lastRotationTime = 0;
         rotationInitialDist = 0f;
+        rotationAligned = false;
         disableFlightStartTime = 0;
         releaseKeys();
         if (visitorManager != null && visitorManager.isActive()) {
@@ -572,6 +583,10 @@ public class MacroManager {
      */
     public void onRenderTick() {
         if (!running || state == MacroState.MOUSEMAT_CLICK || state == MacroState.PRE_START_WAIT) return;
+        // Once the camera has reached the target rotation, stop applying corrections.
+        // This preserves natural player mouse movements during farming and avoids the
+        // robotic snap-back that would otherwise occur on every minor camera drift.
+        if (rotationAligned) return;
         ClientPlayerEntity player = client.player;
         if (player == null) return;
 
@@ -594,7 +609,11 @@ public class MacroManager {
         float yawDiff   = normalizeAngleDiff(targetYaw   - currentYaw);
         float pitchDiff = normalizeAngleDiff(targetPitch - currentPitch);
 
-        if (Math.abs(yawDiff) < 0.1f && Math.abs(pitchDiff) < 0.1f) return;
+        if (Math.abs(yawDiff) < 0.1f && Math.abs(pitchDiff) < 0.1f) {
+            // Camera has reached the target – lock it so no further corrections run.
+            rotationAligned = true;
+            return;
+        }
 
         // Exponential ease-in: starts at base speed, accelerates as rotation progresses.
         float remaining = (float) Math.sqrt(yawDiff * yawDiff + pitchDiff * pitchDiff);
