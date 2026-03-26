@@ -1772,7 +1772,17 @@ public class VisitorManager {
 
         if (pendingVisitors.size() >= 2) {
             // Sort closest-first: trade with the nearest visitor first (V1, V2, V3, …).
+            // Entities with static names (Jacob, Anita, …) whose permanent NPC position is
+            // not yet saved are pushed to the end of the queue so we interact with all
+            // definitively-identified visitors before risking navigation to a barn NPC.
             pendingVisitors.sort((a, b) -> {
+                String na = a.getCustomName() != null ? stripFormatting(a.getCustomName().getString()) : "";
+                String nb = b.getCustomName() != null ? stripFormatting(b.getCustomName().getString()) : "";
+                boolean aUnknownStatic = STATIC_VISITOR_NAMES.contains(na) && !permanentNpcLocations.containsKey(na);
+                boolean bUnknownStatic = STATIC_VISITOR_NAMES.contains(nb) && !permanentNpcLocations.containsKey(nb);
+                if (aUnknownStatic != bUnknownStatic) {
+                    return aUnknownStatic ? 1 : -1; // push unknown-static to end
+                }
                 double da = Math.pow(a.getX() - px, 2) + Math.pow(a.getY() - py, 2) + Math.pow(a.getZ() - pz, 2);
                 double db = Math.pow(b.getX() - px, 2) + Math.pow(b.getY() - py, 2) + Math.pow(b.getZ() - pz, 2);
                 return Double.compare(da, db); // ascending: closest first
@@ -2396,6 +2406,7 @@ public class VisitorManager {
                                probeX + 1.0, player.getY() + 2.0, probeZ + 1.0);
         return client.world.getEntitiesByClass(LivingEntity.class, avoidBox,
                 e -> e != currentVisitor
+                        && !completedVisitorIds.contains(e.getId())
                         && !(e instanceof PlayerEntity)
                         && e.getCustomName() != null
                         && isKnownVisitorEntity(e))

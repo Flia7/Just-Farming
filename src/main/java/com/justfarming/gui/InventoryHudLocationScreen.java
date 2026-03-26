@@ -18,7 +18,7 @@ import net.minecraft.text.Text;
  * <p>Draggable HUDs:
  * <ul>
  *   <li><b>Inventory HUD</b> – 9×3 inventory grid; scroll to resize.</li>
- *   <li><b>Profit HUD</b>    – farming/pest profit panel.</li>
+ *   <li><b>Profit HUD</b>    – farming profit panel.</li>
  * </ul>
  *
  * <p>Opening this screen temporarily hides the Just Farming config GUI.
@@ -118,7 +118,7 @@ public class InventoryHudLocationScreen extends Screen {
 
         // ── Profit HUD (placeholder if no data yet) ────────────────────────────
         int profW = ProfitHudRenderer.getPanelWidth(invHudScale);
-        int profH = ProfitHudRenderer.getApproxHeight(config.pestProfitEnabled);
+        int profH = ProfitHudRenderer.getApproxHeight();
         var tracker = JustFarming.getProfitTracker();
         if (tracker != null && tracker.hasData()) {
             new ProfitHudRenderer(config).render(context, tracker, true);
@@ -246,7 +246,7 @@ public class InventoryHudLocationScreen extends Screen {
             }
             // Profit HUD drag
             int profW = ProfitHudRenderer.getPanelWidth(invHudScale);
-            int profH = ProfitHudRenderer.getApproxHeight(config.pestProfitEnabled);
+            int profH = ProfitHudRenderer.getApproxHeight();
             if (mx >= profitHudX && mx < profitHudX + profW
                     && my >= profitHudY && my < profitHudY + profH) {
                 draggingHud = DRAG_PROFIT;
@@ -282,7 +282,7 @@ public class InventoryHudLocationScreen extends Screen {
             int invW  = InventoryHudRenderer.getOverlayWidth(invHudScale);
             int invH  = InventoryHudRenderer.getOverlayHeight(invHudScale);
             int profW = ProfitHudRenderer.getPanelWidth(invHudScale);
-            int profH = ProfitHudRenderer.getApproxHeight(config.pestProfitEnabled);
+            int profH = ProfitHudRenderer.getApproxHeight();
 
             invHudX    = Math.max(0, Math.min(this.width  - invW,  dragStartInvX    + dx));
             invHudY    = Math.max(0, Math.min(this.height - invH,  dragStartInvY    + dy));
@@ -301,7 +301,7 @@ public class InventoryHudLocationScreen extends Screen {
         int invW  = InventoryHudRenderer.getOverlayWidth(invHudScale);
         int invH  = InventoryHudRenderer.getOverlayHeight(invHudScale);
         int profW = ProfitHudRenderer.getPanelWidth(invHudScale);
-        int profH = ProfitHudRenderer.getApproxHeight(config.pestProfitEnabled);
+        int profH = ProfitHudRenderer.getApproxHeight();
         boolean overInv    = mouseX >= invHudX    && mouseX < invHudX    + invW
                           && mouseY >= invHudY    && mouseY < invHudY    + invH;
         boolean overProfit = mouseX >= profitHudX && mouseX < profitHudX + profW

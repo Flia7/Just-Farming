@@ -142,7 +142,7 @@ public class ProfitHudRenderer {
         if (mc == null || mc.player == null) return;
 
         // Refresh the throttled display cache (no-op if updated <3s ago).
-        tracker.refreshDisplayCache(config.pestProfitEnabled);
+        tracker.refreshDisplayCache();
 
         TextRenderer tr = mc.textRenderer;
         // Anchor the profit panel directly below the inventory HUD (and paper-doll
@@ -153,7 +153,7 @@ public class ProfitHudRenderer {
         int y = config.inventoryOverlayY
                 + InventoryHudRenderer.getOverlayHeight(config.inventoryOverlayScale);
 
-        int height = computeHeight(tracker, inGarden);
+        int height = computeHeight(tracker);
         int pw = panelW();
 
         // Background panel.
@@ -207,40 +207,6 @@ public class ProfitHudRenderer {
         curY = drawItemsAndTotal(context, tr, x, curY,
                 tracker.getDisplayFarmingEntries(), tracker.getDisplayFarmingProfit(),
                 "Total Farming Profit");
-
-        // ── Pests sub-section (optional, garden-only) ──────────────────────────
-        if (config.pestProfitEnabled && inGarden) {
-            curY = drawSeparator(context, x, curY);
-            context.drawTextWithShadow(tr, "Pests", x + PAD_X, curY, COL_TITLE());
-            curY += LINE_H;
-            curY = drawItemsAndTotal(context, tr, x, curY,
-                    tracker.getDisplayPestEntries(), tracker.getDisplayPestProfit(),
-                    "Total Pest Profit");
-        }
-
-        // ── Stats sub-section ─────────────────────────────────────────────────
-        curY = drawSeparator(context, x, curY);
-        context.drawTextWithShadow(tr, "Stats", x + PAD_X, curY, COL_TITLE());
-        curY += LINE_H;
-
-        // Time Elapsed – always real-time so the clock ticks normally.
-        String timeElapsed = "Time Elapsed: " + formatElapsedTime(tracker.getSessionElapsedMs());
-        drawScaledText(context, tr, x + PAD_X, curY, timeElapsed, COL_ITEM());
-        curY += scaledLineH();
-
-        // Total Profit (farming + pests) at item scale – throttled to 3s.
-        double totalProfit = tracker.getDisplayTotalProfit();
-        String tpLabel = "Total Profit:";
-        String tpValue = "+" + formatCoins(totalProfit);
-        var matrices = context.getMatrices();
-        matrices.pushMatrix();
-        matrices.translate(x + PAD_X, curY);
-        matrices.scale(ITEM_SCALE, ITEM_SCALE);
-        int unscaledW = Math.round((panelW() - PAD_X * 2) / ITEM_SCALE);
-        int tpRightX = unscaledW - tr.getWidth(tpValue);
-        context.drawTextWithShadow(tr, tpLabel, 0, 0, COL_TITLE());
-        context.drawTextWithShadow(tr, tpValue, tpRightX, 0, COL_PROFIT());
-        matrices.popMatrix();
 
         // ── Bottom accent stripe ──────────────────────────────────────────────
         context.fill(x, y + height - 1, x + pw, y + height, COL_ACCENT());
@@ -368,7 +334,7 @@ public class ProfitHudRenderer {
 
     // ── Height calculation ────────────────────────────────────────────────────
 
-    private int computeHeight(FarmingProfitTracker tracker, boolean inGarden) {
+    private int computeHeight(FarmingProfitTracker tracker) {
         int h = PAD_Y * 2;
 
         // Crop title + BPS + optional fortune row
@@ -382,19 +348,6 @@ public class ProfitHudRenderer {
         h += separatorH();
         h += LINE_H;            // "Farming" label
         h += sectionItemsH(tracker.getDisplayFarmingEntries());
-
-        // Pests (optional, garden-only)
-        if (config.pestProfitEnabled && inGarden) {
-            h += separatorH();
-            h += LINE_H;        // "Pests" label
-            h += sectionItemsH(tracker.getDisplayPestEntries());
-        }
-
-        // Separator + Stats + time elapsed + total profit rows
-        h += separatorH();
-        h += LINE_H;            // "Stats" label
-        h += scaledLineH();     // Time Elapsed row
-        h += scaledLineH();     // Total Profit row
 
         return h;
     }
@@ -430,20 +383,12 @@ public class ProfitHudRenderer {
      * Returns an approximate panel height in pixels for the given configuration.
      * Used by the Edit HUD screen to determine drag bounds before tracker data is
      * available.  The value errs slightly tall to ensure the full panel is covered.
-     *
-     * @param pestProfitEnabled whether the pest-profit section is shown
      */
-    public static int getApproxHeight(boolean pestProfitEnabled) {
+    public static int getApproxHeight() {
         // crop title + BPS
         int h = PAD_Y * 2 + LINE_H + scaledLineH();
         // Farming section (separator + label + ~2 item rows + total)
         h += separatorH() + LINE_H + 3 * scaledLineH();
-        // Pests section (optional)
-        if (pestProfitEnabled) {
-            h += separatorH() + LINE_H + 2 * scaledLineH();
-        }
-        // Stats section (separator + label + time elapsed + total profit)
-        h += separatorH() + LINE_H + 2 * scaledLineH();
         return h;
     }
 
@@ -464,22 +409,6 @@ public class ProfitHudRenderer {
     static String formatBps(double bps) {
         if (bps <= 0) return "0.00";
         return String.format(Locale.US, "%.2f", bps);
-    }
-
-    /** Formats elapsed milliseconds as "Xh Ym Zs", "Ym Zs", or "Zs". */
-    static String formatElapsedTime(long ms) {
-        long totalSeconds = ms / 1000L;
-        long seconds = totalSeconds % 60L;
-        long totalMinutes = totalSeconds / 60L;
-        long minutes = totalMinutes % 60L;
-        long hours   = totalMinutes / 60L;
-        if (hours > 0) {
-            return hours + "h" + minutes + "m" + seconds + "s";
-        }
-        if (minutes > 0) {
-            return minutes + "m" + seconds + "s";
-        }
-        return seconds + "s";
     }
 
     /** Pixel height of one item row at {@link #ITEM_SCALE}. */

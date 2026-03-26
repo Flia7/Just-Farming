@@ -188,10 +188,7 @@ public class FarmingProfitTracker {
     public static final long DISPLAY_UPDATE_INTERVAL_MS = 1000L;
     private long lastDisplayUpdateMs = 0L;
     private List<ProfitEntry> displayFarmingEntries = List.of();
-    private List<ProfitEntry> displayPestEntries = List.of();
     private double displayFarmingProfit = 0.0;
-    private double displayPestProfit = 0.0;
-    private boolean displayIncludePest = false;
 
     // ── Number of farming/pest ticks tracked (for "is active" queries) ───────
     private boolean trackerHasData = false;
@@ -539,28 +536,17 @@ public class FarmingProfitTracker {
 
     // ── Throttled display cache ───────────────────────────────────────────────
 
-    public void refreshDisplayCache(boolean includePest) {
+    public void refreshDisplayCache() {
         long now = System.currentTimeMillis();
         if (lastDisplayUpdateMs > 0 && now - lastDisplayUpdateMs < DISPLAY_UPDATE_INTERVAL_MS) return;
         lastDisplayUpdateMs        = now;
         displayFarmingEntries      = toEntries(farmingItems);
-        displayPestEntries         = toEntries(pestItems);
         displayFarmingProfit       = getFarmingProfit();
-        displayPestProfit          = getPestProfit();
-        displayIncludePest         = includePest;
     }
 
     public List<ProfitEntry> getDisplayFarmingEntries() { return displayFarmingEntries; }
 
-    public List<ProfitEntry> getDisplayPestEntries() { return displayPestEntries; }
-
     public double getDisplayFarmingProfit() { return displayFarmingProfit; }
-
-    public double getDisplayPestProfit() { return displayPestProfit; }
-
-    public double getDisplayTotalProfit() {
-        return displayFarmingProfit + (displayIncludePest ? displayPestProfit : 0.0);
-    }
 
     public void onChatMessage(String rawMessage, PestKillerManager pestKillerManager, MacroManager macroManager) {
         if (rawMessage == null || rawMessage.isBlank()) return;
@@ -734,9 +720,7 @@ public class FarmingProfitTracker {
         // Invalidate display cache so the cleared state is shown immediately.
         lastDisplayUpdateMs = 0L;
         displayFarmingEntries = List.of();
-        displayPestEntries    = List.of();
         displayFarmingProfit  = 0.0;
-        displayPestProfit     = 0.0;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
