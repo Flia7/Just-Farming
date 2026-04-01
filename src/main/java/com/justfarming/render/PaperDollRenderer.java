@@ -11,7 +11,7 @@ import net.minecraft.client.network.ClientPlayerEntity;
  * {@link InventoryHudRenderer} overlay.
  *
  * <p>The player model occupies the full height of the panel (5/5), matching
- * the height of the inventory HUD.
+ * the height of the inventory HUD so both overlays align cleanly.
  *
  * <pre>
  *   ┌──────────────────────────────────────┐  ┌──────────────────┐
@@ -36,7 +36,7 @@ public class PaperDollRenderer {
 
     /**
      * Returns the total width (panel + gap) in screen pixels of the paper-doll panel
-     * at the given HUD scale.
+     * at the given HUD scale, used for HUD layout calculations.
      *
      * @param scale the current {@link FarmingConfig#inventoryOverlayScale}
      */
