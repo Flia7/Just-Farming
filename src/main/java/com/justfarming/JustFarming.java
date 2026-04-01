@@ -2,7 +2,6 @@ package com.justfarming;
 
 import com.justfarming.config.FarmingConfig;
 import com.justfarming.gui.FarmingConfigScreen;
-import com.justfarming.input.KeystrokesTracker;
 import com.justfarming.pest.PestDetector;
 import com.justfarming.pest.PestEntityDetector;
 import com.justfarming.pest.PestKillerManager;
@@ -10,7 +9,6 @@ import com.justfarming.profit.FarmingProfitTracker;
 import com.justfarming.render.InventoryHudRenderer;
 import com.justfarming.render.OverlayRenderer;
 import com.justfarming.render.PaperDollRenderer;
-import com.justfarming.render.ProfitHudRenderer;
 import com.justfarming.render.ScoreboardHudRenderer;
 import com.justfarming.visitor.VisitorManager;
 import net.fabricmc.api.ClientModInitializer;
@@ -61,7 +59,6 @@ public class JustFarming implements ClientModInitializer {
     private static InventoryHudRenderer inventoryHudRenderer;
     private static PaperDollRenderer paperDollRenderer;
     private static FarmingProfitTracker profitTracker;
-    private static ProfitHudRenderer profitHudRenderer;
     private static ScoreboardHudRenderer scoreboardHudRenderer;
     /** {@code true} when the farming macro was running before the pest killer started. */
     private static boolean pestKillerShouldResumeMacro = false;
@@ -97,7 +94,6 @@ public class JustFarming implements ClientModInitializer {
 
         // Create profit tracker and renderer
         profitTracker         = new FarmingProfitTracker();
-        profitHudRenderer     = new ProfitHudRenderer(config);
         scoreboardHudRenderer = new ScoreboardHudRenderer(config);
 
         // Register keybindings
@@ -309,8 +305,6 @@ public class JustFarming implements ClientModInitializer {
             // Update pest detection every tick
             pestDetector.update(client);
             pestEntityDetector.update(client);
-            // Update keystrokes tracker (key-transition detection + CPS window pruning)
-            KeystrokesTracker.getInstance().update(client);
             // Update profit tracker
             profitTracker.onTick(client, macroManager, pestKillerManager, visitorManager.isActive());
             // Refresh farming fortune from the tab list (throttled internally to every 2 s).
@@ -344,7 +338,6 @@ public class JustFarming implements ClientModInitializer {
                         config.inventoryOverlayX, config.inventoryOverlayY,
                         config.inventoryOverlayScale);
             }
-            profitHudRenderer.render(drawContext, profitTracker, inGarden);
             scoreboardHudRenderer.render(drawContext, getMacroStatusText());
         });
 

@@ -87,16 +87,14 @@ public class InventoryHudRenderer {
         renderAt(context, mc, player, config.inventoryOverlayX, config.inventoryOverlayY,
                 config.inventoryOverlayScale, dark);
 
-        // Bottom accent stripe – only when profit HUD is not rendered below.
-        if (!config.profitTrackerEnabled) {
-            float scale = Math.max(0.25f, config.inventoryOverlayScale);
-            int totalW = getOverlayWidth(scale);
-            int totalH = getOverlayHeight(scale);
-            int accentColor = dark ? ACCENT_COLOR_DARK : ACCENT_COLOR_LIGHT;
-            context.fill(config.inventoryOverlayX, config.inventoryOverlayY + totalH - 1,
-                         config.inventoryOverlayX + totalW, config.inventoryOverlayY + totalH,
-                         accentColor);
-        }
+        // Bottom accent stripe.
+        float scale = Math.max(0.25f, config.inventoryOverlayScale);
+        int totalW = getOverlayWidth(scale);
+        int totalH = getOverlayHeight(scale);
+        int accentColor = dark ? ACCENT_COLOR_DARK : ACCENT_COLOR_LIGHT;
+        context.fill(config.inventoryOverlayX, config.inventoryOverlayY + totalH - 1,
+                config.inventoryOverlayX + totalW, config.inventoryOverlayY + totalH,
+                accentColor);
     }
 
     /**
