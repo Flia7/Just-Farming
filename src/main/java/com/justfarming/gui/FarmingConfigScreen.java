@@ -396,7 +396,7 @@ public class FarmingConfigScreen extends Screen {
                         config.paperDollEnabled);
         this.addDrawableChild(paperDollButton);
         paperDollButton.setTooltip(Tooltip.of(Text.literal(
-                "Show a player model with WASD keystrokes and CPS counter\nnext to the Inventory HUD. Requires Inventory HUD to be on.")));
+                "Show a player model next to the Inventory HUD.\nRequires Inventory HUD to be on.")));
         y += bh + pad + gap;
 
         sectionHudDisplayY = y;

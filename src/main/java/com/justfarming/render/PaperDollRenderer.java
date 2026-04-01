@@ -11,8 +11,7 @@ import net.minecraft.client.network.ClientPlayerEntity;
  * {@link InventoryHudRenderer} overlay.
  *
  * <p>The player model occupies the full height of the panel (5/5), matching
- * the height of the inventory HUD.  Keystrokes are rendered separately inside
- * the {@link ProfitHudRenderer} header area.
+ * the height of the inventory HUD so both overlays align cleanly.
  *
  * <pre>
  *   ┌──────────────────────────────────────┐  ┌──────────────────┐
@@ -37,7 +36,7 @@ public class PaperDollRenderer {
 
     /**
      * Returns the total width (panel + gap) in screen pixels of the paper-doll panel
-     * at the given HUD scale, used by {@link ProfitHudRenderer} to compute its combined width.
+     * at the given HUD scale, used for HUD layout calculations.
      *
      * @param scale the current {@link FarmingConfig#inventoryOverlayScale}
      */
@@ -93,10 +92,8 @@ public class PaperDollRenderer {
         // Top accent stripe (1px) – matching the inventory HUD accent.
         context.fill(panelX, panelY, panelX + panelW, panelY + 1, accentColor);
 
-        // Bottom accent stripe – only when profit HUD is not rendered below.
-        if (!config.profitTrackerEnabled) {
-            context.fill(panelX, panelY + panelH - 1, panelX + panelW, panelY + panelH, accentColor);
-        }
+        // Bottom accent stripe.
+        context.fill(panelX, panelY + panelH - 1, panelX + panelW, panelY + panelH, accentColor);
 
         // ── Player model (full panel height) ──────────────────────────────────
         // Entity display size: 65% of 65% (≈ 42.25%) of the full panel height, minimum 4 px.
@@ -116,4 +113,3 @@ public class PaperDollRenderer {
                 player);
     }
 }
-
