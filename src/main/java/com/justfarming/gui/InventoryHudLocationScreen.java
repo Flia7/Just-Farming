@@ -114,11 +114,11 @@ public class InventoryHudLocationScreen extends Screen {
 
         // ── HUD labels on hover/drag ───────────────────────────────────────────
         drawHudLabel(context, mc, invHudX, invHudY, invW, invH,
-                "Inventory HUD  \u2022  Drag to move all",
+                "Inventory HUD",
                 mouseX, mouseY, DRAG_INV);
 
         // ── Hint text at the top ───────────────────────────────────────────────
-        String hint = "\u2022  Drag any HUD to move all    \u2022  Scroll over a HUD to resize  \u2022  Scale: "
+        String hint = "\u2022  Drag to move    \u2022  Scroll over the HUD to resize  \u2022  Scale: "
                 + String.format("%.1f", invHudScale);
         int hintW = mc.textRenderer.getWidth(hint);
         context.drawTextWithShadow(mc.textRenderer,
@@ -235,8 +235,6 @@ public class InventoryHudLocationScreen extends Screen {
             int invH  = InventoryHudRenderer.getOverlayHeight(invHudScale);
             invHudX    = Math.max(0, Math.min(this.width  - invW,  dragStartInvX    + dx));
             invHudY    = Math.max(0, Math.min(this.height - invH,  dragStartInvY    + dy));
-            profitHudX = dragStartProfitX + dx;
-            profitHudY = dragStartProfitY + dy;
             return true;
         }
         return super.mouseDragged(click, deltaX, deltaY);
