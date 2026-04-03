@@ -289,7 +289,7 @@ public class JustFarming implements ClientModInitializer {
                 if (isAnyMacroRoutineActive()) {
                     if (config.unlockedMouseEnabled) {
                         client.mouse.unlockCursor();
-                    } else if (client.currentScreen == null) {
+                    } else if (client.currentScreen == null || !client.mouse.isCursorLocked()) {
                         client.mouse.lockCursor();
                     }
                 }
