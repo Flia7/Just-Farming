@@ -2664,6 +2664,8 @@ public class VisitorManager {
                         || lower.contains("you'll receive")) {
                     inRequired = false;
                     inReward = true;
+                    // Header line only toggles section state; actual reward items are
+                    // expected on subsequent lore lines.
                     continue;
                 }
                 if (inRequired) {
@@ -2765,6 +2767,8 @@ public class VisitorManager {
         String clean = stripFormatting(line);
         String lower = clean.toLowerCase();
         if (lower.contains("xp") || lower.contains("farming fortune")) return "";
+        // Reward lore uses the same "amount + item name" formats as requirement lore
+        // in visitor menus, so reusing parseRequirementLine keeps parsing consistent.
         VisitorRequirement parsed = parseRequirementLine(clean);
         return parsed == null ? "" : normalizeItemName(parsed.itemName);
     }

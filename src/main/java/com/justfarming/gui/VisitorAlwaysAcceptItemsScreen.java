@@ -19,9 +19,10 @@ public class VisitorAlwaysAcceptItemsScreen extends Screen {
     // ── Visitor reward item list ───────────────────────────────────────────────
     // Based on Hypixel Garden visitors rewards and existing known visitor item names.
     private static final String[] ALL_ITEMS = {
-            "Atmospheric Filter", "Beady Eyes", "Brown Mushroom", "Carrot",
-            "Chirping Stereo", "Clipped Wings", "Cocoa Beans", "Coins",
+            "Atmospheric Filter", "Beady Eyes", "Beetle Beats", "Brown Mushroom", "Buzzin' Beats", "Carrot",
+            "Chirping Stereo", "Cicada Symphony", "Clipped Wings", "Cocoa Beans", "Coins",
             "Compacted Wild Rose", "Compost", "Cropie", "Dung",
+            "Dynamites", "Earthworm Ensemble",
             "Enchanted Baked Potato", "Enchanted Bread", "Enchanted Brown Mushroom",
             "Enchanted Brown Mushroom Block", "Enchanted Cactus",
             "Enchanted Cactus Green", "Enchanted Carrot", "Enchanted Cocoa Beans",
@@ -32,12 +33,14 @@ public class VisitorAlwaysAcceptItemsScreen extends Screen {
             "Enchanted Seeds", "Enchanted Sugar", "Enchanted Sugar Cane",
             "Enchanted Sunflower", "Enchanted Wheat", "Enchanted Wild Rose",
             "Fermento", "Hay Bale", "Helianthus", "Honey Jar",
-            "Jelly", "Melon", "Melon Slice", "Moonflower",
+            "Jelly", "Locust Lullaby", "Melon", "Melon Slice", "Mite March", "Moonflower",
             "Mutant Nether Wart", "Nether Wart", "Pest Vinyl",
-            "Plant Matter", "Polished Pumpkin", "Potato", "Pretty Fly",
+            "Mosquito Melody", "Not Just a Pest", "Plant Matter", "Polished Pumpkin", "Potato", "Pretty Fly",
             "Pumpkin", "Rat Pet", "Red Mushroom", "Seeds",
+            "Rodent Revolution",
             "Squeaky Mousemat", "Squeaky Toy", "Squash", "Sugar Cane",
-            "Sunflower", "Tasty Cheese", "Tool Exp Capsule", "Wheat",
+            "Slug Groove", "Slug Pet", "Slug Pet (Epic)", "Slug Pet (Legendary)", "Slow and Groovy",
+            "Sunflower", "Tasty Cheese", "Tool Exp Capsule", "Wheat", "Wings of Harmony",
             "Wild Rose", "Wriggling Larva"
     };
 
@@ -48,7 +51,7 @@ public class VisitorAlwaysAcceptItemsScreen extends Screen {
     private static final int SEARCH_HEIGHT = 20;
     private static final int BUTTON_HEIGHT = 22;
     private static final int PADDING       = 6;
-    /** Green tint applied behind selected item buttons. */
+    /** Mint/cyan tint applied behind selected item buttons. */
     private static final int COL_SELECTED_HIGHLIGHT = 0x3080FF80;
 
     private final Screen parent;
@@ -164,6 +167,7 @@ public class VisitorAlwaysAcceptItemsScreen extends Screen {
     private Text getButtonText(String item) {
         boolean selected = config.visitorAlwaysAcceptItems != null
                 && config.visitorAlwaysAcceptItems.contains(item);
+        // U+25CF is a filled-circle indicator mirroring the blacklist screen style.
         String suffix = selected ? "  \u25CF Selected" : "";
         return Text.literal(item + suffix);
     }
