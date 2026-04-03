@@ -131,6 +131,7 @@ public class FarmingConfigScreen extends Screen {
     private FlatBoolToggleWidget  visitorsBuyFromBazaarButton;
     private FlatBoolToggleWidget  visitorsInstaSellButton;
     private FlatButtonWidget              visitorsBlacklistButton;
+    private FlatButtonWidget              visitorsAlwaysAcceptItemsButton;
     private VisitorsDelaySlider           visitorsDelaySlider;
     private VisitorsRandomSlider          visitorsRandomSlider;
     private VisitorTeleportDelaySlider    visitorsTeleportDelaySlider;
@@ -608,6 +609,19 @@ public class FarmingConfigScreen extends Screen {
                 "Choose which visitors to automatically skip, regardless of their required items.")));
         y += bh + pad + gap;
 
+        visitorsAlwaysAcceptItemsButton = new FlatButtonWidget(widgetX, y, bw, bh,
+                        Text.translatable("gui.just-farming.visitors_always_accept_items_label"),
+                        btn -> {
+                            applyConfig();
+                            if (this.client != null)
+                                this.client.setScreen(new VisitorAlwaysAcceptItemsScreen(this, config));
+                        });
+        this.addDrawableChild(visitorsAlwaysAcceptItemsButton);
+        visitorsAlwaysAcceptItemsButton.setTooltip(Tooltip.of(Text.literal(
+                "Choose visitor reward items that should always be accepted.\n" +
+                "If any selected item appears in a visitor reward, max-price filtering is bypassed.")));
+        y += bh + pad + gap;
+
         sectionVisitorFiltersY = y;
         y += sLH;
 
@@ -691,6 +705,7 @@ public class FarmingConfigScreen extends Screen {
         visitorsBuyFromBazaarButton.visible = t2 && inContentBounds(visitorsBuyFromBazaarButton);
         visitorsInstaSellButton.visible     = t2 && inContentBounds(visitorsInstaSellButton);
         visitorsBlacklistButton.visible     = t2 && inContentBounds(visitorsBlacklistButton);
+        visitorsAlwaysAcceptItemsButton.visible = t2 && inContentBounds(visitorsAlwaysAcceptItemsButton);
         visitorsMinCountSlider.visible      = t2 && inContentBounds(visitorsMinCountSlider);
         visitorsMaxPriceSlider.visible      = t2 && inContentBounds(visitorsMaxPriceSlider);
 

@@ -2638,6 +2638,7 @@ public class VisitorManager {
             }
         }
 
+        boolean shouldBypassPriceLimit = false;
         if (acceptOfferStack == null) {
             LOGGER.info("[Just Farming-Visitors] Could not find 'Accept Offer' slot in visitor menu; "
                     + "skipping requirement parse.");
@@ -2645,24 +2646,40 @@ public class VisitorManager {
             LoreComponent lore = acceptOfferStack.getOrDefault(
                     DataComponentTypes.LORE, LoreComponent.DEFAULT);
             List<Text> lines = lore.lines();
+            Set<String> rewardItems = new HashSet<>();
             // Extract only the lines in the "Items Required" section of the
             // Accept Offer lore (everything between "Items Required" and the
             // "Reward"/"You will receive" header).
             boolean inRequired = false;
+            boolean inReward = false;
             for (Text line : lines) {
                 String stripped = stripFormatting(line.getString());
                 String lower    = stripped.toLowerCase();
                 if (lower.contains("items required") || lower.startsWith("required:")) {
                     inRequired = true;
+                    inReward = false;
                     continue;
                 }
                 if (lower.contains("reward") || lower.contains("you will receive")
                         || lower.contains("you'll receive")) {
                     inRequired = false;
+                    inReward = true;
+                    // Header line toggles section state; reward items appear on subsequent lines.
+                    continue;
                 }
                 if (inRequired) {
                     tryAddRequirement(stripped);
+                } else if (inReward) {
+                    String rewardItem = parseRewardItemName(stripped);
+                    if (!rewardItem.isEmpty()) {
+                        rewardItems.add(rewardItem);
+                    }
                 }
+            }
+
+            if (!rewardItems.isEmpty() && matchesAlwaysAcceptRewardItems(rewardItems)) {
+                LOGGER.info("[Just Farming-Visitors] Visitor reward contains a selected always-accept item; bypassing max price filter.");
+                shouldBypassPriceLimit = true;
             }
         }
 
@@ -2670,7 +2687,7 @@ public class VisitorManager {
             LOGGER.info("[Just Farming-Visitors] Visitor requires: {}", pendingRequirements);
             // Check max-visitor-price limit.
             // visitorsMaxPrice == 0 means "no limit" (feature disabled).
-            if (config.visitorsMaxPrice > 0) {
+            if (config.visitorsMaxPrice > 0 && !shouldBypassPriceLimit) {
                 double totalValue = VisitorNpcPrices.getTotalNpcValue(pendingRequirements);
                 if (totalValue > config.visitorsMaxPrice) {
                     LOGGER.info("[Just Farming-Visitors] Visitor NPC value ({} coins) exceeds max ({} coins); declining.",
@@ -2739,6 +2756,36 @@ public class VisitorManager {
     private static String stripFormatting(String text) {
         if (text == null) return "";
         return text.replaceAll("§.", "").trim();
+    }
+
+    /**
+     * Parse a visitor reward-lore line to an item name (or empty string if not an item line).
+     */
+    private static String parseRewardItemName(String line) {
+        if (line == null || line.isBlank()) return "";
+        String clean = stripFormatting(line);
+        String lower = clean.toLowerCase();
+        if (lower.contains("xp") || lower.contains("farming fortune")) return "";
+        // Reward lore uses the same "amount + item name" formats as requirement lore
+        // in visitor menus, so reusing parseRequirementLine keeps parsing consistent.
+        VisitorRequirement parsed = parseRequirementLine(clean);
+        return parsed == null ? "" : normalizeItemName(parsed.itemName);
+    }
+
+    private boolean matchesAlwaysAcceptRewardItems(Set<String> rewardItems) {
+        if (rewardItems == null || rewardItems.isEmpty()) return false;
+        if (config.visitorAlwaysAcceptItems == null || config.visitorAlwaysAcceptItems.isEmpty()) return false;
+        for (String selected : config.visitorAlwaysAcceptItems) {
+            String normalized = normalizeItemName(selected);
+            if (!normalized.isEmpty() && rewardItems.contains(normalized)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String normalizeItemName(String name) {
+        return stripFormatting(name).toLowerCase();
     }
 
     /**
