@@ -34,7 +34,9 @@ public class EntityMixin implements CameraOverriddenEntity {
         // When the macro is running in ungrab mode, the GLFW cursor is physically
         // free so mouse movement would normally spin the camera.  Suppress all look
         // direction changes so the view stays locked at the configured pitch/yaw.
-        if (mm.isRunning() && cfg != null && cfg.unlockedMouseEnabled && !mm.isFreelookActive()) {
+        if (cfg != null && cfg.unlockedMouseEnabled
+                && JustFarming.isAnyMacroRoutineActive()
+                && !mm.isFreelookActive()) {
             ci.cancel();
             return;
         }

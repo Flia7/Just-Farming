@@ -51,8 +51,7 @@ public class MinecraftClientMixin {
     @Inject(method = "setScreen", at = @At("HEAD"), cancellable = true)
     private void onSetScreen(Screen screen, CallbackInfo ci) {
         if (screen instanceof GameMenuScreen) {
-            MacroManager mm = JustFarming.getMacroManager();
-            if (mm != null && mm.isAnyMacroStateActive()) {
+            if (JustFarming.isAnyMacroRoutineActive()) {
                 ci.cancel();
             }
         }
@@ -72,8 +71,7 @@ public class MinecraftClientMixin {
      */
     @Inject(method = "onWindowFocusChanged", at = @At("HEAD"))
     private void justFarming$onWindowFocusChanged(boolean focused, CallbackInfo ci) {
-        MacroManager mm = JustFarming.getMacroManager();
-        if (mm == null || !mm.isAnyMacroStateActive()) return;
+        if (!JustFarming.isAnyMacroRoutineActive()) return;
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null) return;
         if (!focused) {

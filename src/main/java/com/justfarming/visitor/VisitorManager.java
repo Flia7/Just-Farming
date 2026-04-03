@@ -923,6 +923,9 @@ public class VisitorManager {
 
     public void start() {
         LOGGER.info("[Just Farming-Visitors] Starting visitor routine.");
+        if (config != null && config.unlockedMouseEnabled && client.currentScreen == null) {
+            client.mouse.unlockCursor();
+        }
         // Auto-swap to farming tool (same logic as MacroManager.start)
         ClientPlayerEntity player = client.player;
         if (player != null) {

@@ -987,6 +987,9 @@ public class PestKillerManager {
      */
     public void start(Collection<String> pestPlots) {
         LOGGER.info("[Just Farming-PestKiller] Starting pest killer routine.");
+        if (config != null && config.unlockedMouseEnabled && client.currentScreen == null) {
+            client.mouse.unlockCursor();
+        }
         currentPest = null;
         vacuumSlot = -1;
         preVacuumSlot = -1;
