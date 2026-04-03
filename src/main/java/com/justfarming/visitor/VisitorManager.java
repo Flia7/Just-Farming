@@ -2668,8 +2668,7 @@ public class VisitorManager {
                 }
                 if (inRequired) {
                     tryAddRequirement(stripped);
-                }
-                if (inReward) {
+                } else if (inReward) {
                     String rewardItem = parseRewardItemName(stripped);
                     if (!rewardItem.isEmpty()) {
                         rewardItems.add(rewardItem);
@@ -2677,7 +2676,7 @@ public class VisitorManager {
                 }
             }
 
-            if (!rewardItems.isEmpty() && matchesAlwaysAcceptRewardItem(rewardItems)) {
+            if (!rewardItems.isEmpty() && matchesAlwaysAcceptRewardItems(rewardItems)) {
                 LOGGER.info("[Just Farming-Visitors] Visitor reward contains a selected always-accept item; bypassing max price filter.");
                 bypassPriceLimitForSelectedReward = true;
             }
@@ -2770,7 +2769,7 @@ public class VisitorManager {
         return parsed == null ? "" : normalizeItemName(parsed.itemName);
     }
 
-    private boolean matchesAlwaysAcceptRewardItem(Set<String> rewardItems) {
+    private boolean matchesAlwaysAcceptRewardItems(Set<String> rewardItems) {
         if (rewardItems == null || rewardItems.isEmpty()) return false;
         if (config.visitorAlwaysAcceptItems == null || config.visitorAlwaysAcceptItems.isEmpty()) return false;
         for (String selected : config.visitorAlwaysAcceptItems) {
