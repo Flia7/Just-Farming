@@ -2638,7 +2638,7 @@ public class VisitorManager {
             }
         }
 
-        boolean bypassPriceLimitForSelectedReward = false;
+        boolean shouldBypassPriceLimit = false;
         if (acceptOfferStack == null) {
             LOGGER.info("[Just Farming-Visitors] Could not find 'Accept Offer' slot in visitor menu; "
                     + "skipping requirement parse.");
@@ -2664,8 +2664,7 @@ public class VisitorManager {
                         || lower.contains("you'll receive")) {
                     inRequired = false;
                     inReward = true;
-                    // Header line only toggles section state; actual reward items are
-                    // expected on subsequent lore lines.
+                    // Header line toggles section state; reward items appear on subsequent lines.
                     continue;
                 }
                 if (inRequired) {
@@ -2680,7 +2679,7 @@ public class VisitorManager {
 
             if (!rewardItems.isEmpty() && matchesAlwaysAcceptRewardItems(rewardItems)) {
                 LOGGER.info("[Just Farming-Visitors] Visitor reward contains a selected always-accept item; bypassing max price filter.");
-                bypassPriceLimitForSelectedReward = true;
+                shouldBypassPriceLimit = true;
             }
         }
 
@@ -2688,7 +2687,7 @@ public class VisitorManager {
             LOGGER.info("[Just Farming-Visitors] Visitor requires: {}", pendingRequirements);
             // Check max-visitor-price limit.
             // visitorsMaxPrice == 0 means "no limit" (feature disabled).
-            if (config.visitorsMaxPrice > 0 && !bypassPriceLimitForSelectedReward) {
+            if (config.visitorsMaxPrice > 0 && !shouldBypassPriceLimit) {
                 double totalValue = VisitorNpcPrices.getTotalNpcValue(pendingRequirements);
                 if (totalValue > config.visitorsMaxPrice) {
                     LOGGER.info("[Just Farming-Visitors] Visitor NPC value ({} coins) exceeds max ({} coins); declining.",
