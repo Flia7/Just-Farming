@@ -118,13 +118,13 @@ public class VisitorManager {
     /** Pause after {@code /warp garden} to allow the command to register (ms). */
     private static final long WARP_COMMAND_WAIT_MS = 3000;
 
-    // ── Cookie Buff title timing (ticks) ────────────────────────────────────
-    /** Fade-in duration (ticks) for the Booster Cookie inactive screen title. */
-    private static final int COOKIE_TITLE_FADE_IN_TICKS  = 10;
-    /** Stay duration (ticks) for the Booster Cookie inactive screen title. */
-    private static final int COOKIE_TITLE_STAY_TICKS     = 80;
-    /** Fade-out duration (ticks) for the Booster Cookie inactive screen title. */
-    private static final int COOKIE_TITLE_FADE_OUT_TICKS = 20;
+    // ── Warning title timing (ticks) ────────────────────────────────────────
+    /** Fade-in duration (ticks) for visitor failsafe warning screen titles. */
+    private static final int WARNING_TITLE_FADE_IN_TICKS  = 10;
+    /** Stay duration (ticks) for visitor failsafe warning screen titles. */
+    private static final int WARNING_TITLE_STAY_TICKS     = 80;
+    /** Fade-out duration (ticks) for visitor failsafe warning screen titles. */
+    private static final int WARNING_TITLE_FADE_OUT_TICKS = 20;
 
     /**
      * Minimum pause (ms) after the bazaar GUI closes before the player starts
@@ -1042,14 +1042,7 @@ public class VisitorManager {
             player.sendMessage(
                     net.minecraft.text.Text.literal("§c[Just Farming] Booster Cookie inactive – visitor's macro disabled."),
                     false);
-            if (client.inGameHud != null) {
-                client.inGameHud.setTitleTicks(COOKIE_TITLE_FADE_IN_TICKS,
-                        COOKIE_TITLE_STAY_TICKS, COOKIE_TITLE_FADE_OUT_TICKS);
-                client.inGameHud.setTitle(
-                        net.minecraft.text.Text.literal("§c§l⚠ Booster Cookie Inactive"));
-                client.inGameHud.setSubtitle(
-                        net.minecraft.text.Text.literal("§eVisitor's Macro Disabled"));
-            }
+            showVisitorDisabledTitle("§c§l⚠ Booster Cookie Inactive");
             returnToFarm();
             return;
         }
@@ -1060,14 +1053,7 @@ public class VisitorManager {
             player.sendMessage(
                     net.minecraft.text.Text.literal("§c[Bazaar] You cannot afford this!"),
                     false);
-            if (client.inGameHud != null) {
-                client.inGameHud.setTitleTicks(COOKIE_TITLE_FADE_IN_TICKS,
-                        COOKIE_TITLE_STAY_TICKS, COOKIE_TITLE_FADE_OUT_TICKS);
-                client.inGameHud.setTitle(
-                        net.minecraft.text.Text.literal("§c§l⚠ Not Enough Coins"));
-                client.inGameHud.setSubtitle(
-                        net.minecraft.text.Text.literal("§eVisitor's Macro Disabled"));
-            }
+            showVisitorDisabledTitle("§c§l⚠ Not Enough Coins");
             returnToFarm();
             return;
         }
@@ -2834,6 +2820,16 @@ public class VisitorManager {
         returnWarpDelay = base + extra;
         returnWarpSentAt = 0;
         enterState(State.RETURNING_TO_FARM);
+    }
+
+    /** Shows a warning title and a shared "visitor macro disabled" subtitle. */
+    private void showVisitorDisabledTitle(String titleText) {
+        if (client.inGameHud == null) return;
+        client.inGameHud.setTitleTicks(WARNING_TITLE_FADE_IN_TICKS,
+                WARNING_TITLE_STAY_TICKS, WARNING_TITLE_FADE_OUT_TICKS);
+        client.inGameHud.setTitle(net.minecraft.text.Text.literal(titleText));
+        client.inGameHud.setSubtitle(
+                net.minecraft.text.Text.literal("§eVisitor's Macro Disabled"));
     }
 
     /**
