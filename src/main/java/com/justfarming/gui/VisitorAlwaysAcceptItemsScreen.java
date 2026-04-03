@@ -39,7 +39,9 @@ public class VisitorAlwaysAcceptItemsScreen extends Screen {
             "Pumpkin", "Rat Pet", "Red Mushroom", "Seeds",
             "Rodent Revolution",
             "Squeaky Mousemat", "Squeaky Toy", "Squash", "Sugar Cane",
-            "Slug Groove", "Slug Pet", "Slug Pet (Epic)", "Slug Pet (Legendary)", "Slow and Groovy",
+            "Slug Groove",
+            // Keep rarity variants because visitor reward text can include them explicitly.
+            "Slug Pet", "Slug Pet (Epic)", "Slug Pet (Legendary)", "Slow and Groovy",
             "Sunflower", "Tasty Cheese", "Tool Exp Capsule", "Wheat", "Wings of Harmony",
             "Wild Rose", "Wriggling Larva"
     };
@@ -51,6 +53,7 @@ public class VisitorAlwaysAcceptItemsScreen extends Screen {
     private static final int SEARCH_HEIGHT = 20;
     private static final int BUTTON_HEIGHT = 22;
     private static final int PADDING       = 6;
+    private static final String SELECTED_INDICATOR = "\u25CF";
     /** Mint/cyan tint applied behind selected item buttons. */
     private static final int COL_SELECTED_HIGHLIGHT = 0x3080FF80;
 
@@ -61,7 +64,7 @@ public class VisitorAlwaysAcceptItemsScreen extends Screen {
     private FlatButtonWidget[] filteredButtons = new FlatButtonWidget[0];
     private String searchQuery = "";
     private int scrollOffset = 0;
-    private int maxVisibleRows = ALL_ITEMS.length;
+    private int maxVisibleRows = 1;
     private String[] filteredItems = ALL_ITEMS;
 
     public VisitorAlwaysAcceptItemsScreen(Screen parent, FarmingConfig config) {
@@ -167,8 +170,7 @@ public class VisitorAlwaysAcceptItemsScreen extends Screen {
     private Text getButtonText(String item) {
         boolean selected = config.visitorAlwaysAcceptItems != null
                 && config.visitorAlwaysAcceptItems.contains(item);
-        // U+25CF is a filled-circle indicator mirroring the blacklist screen style.
-        String suffix = selected ? "  \u25CF Selected" : "";
+        String suffix = selected ? "  " + SELECTED_INDICATOR + " Selected" : "";
         return Text.literal(item + suffix);
     }
 
