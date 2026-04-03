@@ -1429,8 +1429,8 @@ public class PestKillerManager {
                 // No pests found (or only un-targetable ghost entities) and timeout elapsed.
                 // Skip the vacuum shot when the scoreboard already confirms the plot is empty –
                 // there are no hidden pests to locate, and the shot would waste up to 4 seconds.
-                boolean shouldAttemptVacuumShot = !scoreboardConfirmsEmpty
-                        && (!vacuumShotAttempted || scoreboardConfirmsPests);
+                boolean shouldAttemptVacuumShot = shouldRetryVacuumShot(
+                        scoreboardConfirmsEmpty, scoreboardConfirmsPests, vacuumShotAttempted);
                 if (shouldAttemptVacuumShot) {
                     LOGGER.info("[Just Farming-PestKiller] No pests at plot centre; "
                             + "firing vacuum shot to locate them.");
@@ -2327,13 +2327,13 @@ public class PestKillerManager {
         Set<String> candidates = new LinkedHashSet<>();
         if (pestDetector != null) {
             for (String plot : pestDetector.getPestPlots()) {
-                if (plot == null || plot.isBlank()) continue;
+                if (!isValidPlotName(plot)) continue;
                 if (currentPlotName != null && currentPlotName.equals(plot)) continue;
                 candidates.add(plot);
             }
         }
         for (String plot : remainingPlots) {
-            if (plot == null || plot.isBlank()) continue;
+            if (!isValidPlotName(plot)) continue;
             if (currentPlotName != null && currentPlotName.equals(plot)) continue;
             candidates.add(plot);
         }
@@ -2357,7 +2357,7 @@ public class PestKillerManager {
         String closest = null;
         double minDistSq = Double.MAX_VALUE;
         for (String plot : candidates) {
-            if (plot == null || plot.isBlank()) continue;
+            if (!isValidPlotName(plot)) continue;
             double cx = GardenPlot.getCentreX(plot);
             double cz = GardenPlot.getCentreZ(plot);
             if (Double.isNaN(cx) || Double.isNaN(cz)) {
@@ -2381,13 +2381,30 @@ public class PestKillerManager {
     private String pollPrecomputedOrClosestPlot() {
         if (precomputedNextPlot != null) {
             String candidate = precomputedNextPlot;
-            precomputedNextPlot = null;
             if (getCandidateNextPlots().contains(candidate)) {
+                precomputedNextPlot = null;
                 remainingPlots.remove(candidate);
                 return candidate;
             }
+            precomputedNextPlot = null;
         }
         return pollClosestPlot();
+    }
+
+    /**
+     * Whether the scanner should fire another vacuum shot while no direct pest
+     * entity is currently targetable.
+     */
+    private static boolean shouldRetryVacuumShot(boolean scoreboardConfirmsEmpty,
+                                                 boolean scoreboardConfirmsPests,
+                                                 boolean vacuumShotAttempted) {
+        return !scoreboardConfirmsEmpty
+                && (!vacuumShotAttempted || scoreboardConfirmsPests);
+    }
+
+    /** Returns true when the plot name is non-null and non-blank. */
+    private static boolean isValidPlotName(String plot) {
+        return plot != null && !plot.isBlank();
     }
 
     /**
