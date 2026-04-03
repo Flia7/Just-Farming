@@ -569,6 +569,13 @@ public class VisitorManager {
      * so the visitor routine is stopped cleanly on the game thread.
      */
     private volatile boolean cookieBuffDetectedFlag = false;
+    /**
+     * Set to {@code true} by {@link #notifyBazaarInsufficientCoins()} when the
+     * server sends "[Bazaar] You cannot afford this!" during a visitor bazaar
+     * purchase. Checked at the start of every {@link #onTick()} so the visitor
+     * routine is stopped cleanly on the game thread.
+     */
+    private volatile boolean bazaarInsufficientCoinsDetectedFlag = false;
 
     private final MinecraftClient client;
     private FarmingConfig config;
@@ -861,6 +868,7 @@ public class VisitorManager {
         skipCurrentVisitorDueToPrice = false;
         skipCurrentVisitorDueToBlacklist = false;
         cookieBuffDetectedFlag = false;
+        bazaarInsufficientCoinsDetectedFlag = false;
         returnWarpDelay = 0;
         returnWarpSentAt = 0;
         warpToGardenSentAt = 0;
@@ -900,6 +908,19 @@ public class VisitorManager {
         cookieBuffDetectedFlag = true;
     }
 
+    /**
+     * Called from the chat-message handler (possibly off the game thread) when
+     * the server sends "[Bazaar] You cannot afford this!" during a visitor
+     * bazaar purchase.
+     *
+     * <p>Sets a flag that is checked on the next game tick so the routine is
+     * stopped cleanly on the game thread (releases keys, warps back to garden,
+     * shows a screen title warning the player).
+     */
+    public void notifyBazaarInsufficientCoins() {
+        bazaarInsufficientCoinsDetectedFlag = true;
+    }
+
     public void start() {
         LOGGER.info("[Just Farming-Visitors] Starting visitor routine.");
         // Auto-swap to farming tool (same logic as MacroManager.start)
@@ -932,6 +953,7 @@ public class VisitorManager {
         skipCurrentVisitorDueToPrice = false;
         skipCurrentVisitorDueToBlacklist = false;
         cookieBuffDetectedFlag = false;
+        bazaarInsufficientCoinsDetectedFlag = false;
         walkJitter        = 0f;
         walkJitterNextUpdate = 0;
         navAimAsideBlocks = 0f;
@@ -1025,6 +1047,24 @@ public class VisitorManager {
                         COOKIE_TITLE_STAY_TICKS, COOKIE_TITLE_FADE_OUT_TICKS);
                 client.inGameHud.setTitle(
                         net.minecraft.text.Text.literal("§c§l⚠ Booster Cookie Inactive"));
+                client.inGameHud.setSubtitle(
+                        net.minecraft.text.Text.literal("§eVisitor's Macro Disabled"));
+            }
+            returnToFarm();
+            return;
+        }
+        if (bazaarInsufficientCoinsDetectedFlag) {
+            bazaarInsufficientCoinsDetectedFlag = false;
+            LOGGER.warn("[Just Farming-Visitors] Bazaar insufficient coins detected – stopping visitor routine.");
+            releaseMovementKeys();
+            player.sendMessage(
+                    net.minecraft.text.Text.literal("§c[Bazaar] You cannot afford this!"),
+                    false);
+            if (client.inGameHud != null) {
+                client.inGameHud.setTitleTicks(COOKIE_TITLE_FADE_IN_TICKS,
+                        COOKIE_TITLE_STAY_TICKS, COOKIE_TITLE_FADE_OUT_TICKS);
+                client.inGameHud.setTitle(
+                        net.minecraft.text.Text.literal("§c§l⚠ Not Enough Coins"));
                 client.inGameHud.setSubtitle(
                         net.minecraft.text.Text.literal("§eVisitor's Macro Disabled"));
             }
