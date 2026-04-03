@@ -1429,7 +1429,9 @@ public class PestKillerManager {
                 // No pests found (or only un-targetable ghost entities) and timeout elapsed.
                 // Skip the vacuum shot when the scoreboard already confirms the plot is empty –
                 // there are no hidden pests to locate, and the shot would waste up to 4 seconds.
-                if ((!vacuumShotAttempted || scoreboardConfirmsPests) && !scoreboardConfirmsEmpty) {
+                boolean shouldAttemptVacuumShot = !scoreboardConfirmsEmpty
+                        && (!vacuumShotAttempted || scoreboardConfirmsPests);
+                if (shouldAttemptVacuumShot) {
                     LOGGER.info("[Just Farming-PestKiller] No pests at plot centre; "
                             + "firing vacuum shot to locate them.");
                     vacuumShotAttempted = true;
@@ -2293,9 +2295,7 @@ public class PestKillerManager {
         if (candidates == null || candidates.isEmpty()) return null;
         ClientPlayerEntity player = client.player;
         if (player == null) {
-            String first = candidates.iterator().next();
-            remainingPlots.remove(first);
-            return first;
+            return candidates.iterator().next();
         }
 
         double px = player.getX();
