@@ -462,6 +462,16 @@ public class JustFarming implements ClientModInitializer {
     }
 
     /**
+     * Returns {@code true} when any automation routine is active:
+     * farming macro, visitor routine, or pest-killer routine.
+     */
+    public static boolean isAnyMacroRoutineActive() {
+        return (macroManager != null && macroManager.isAnyMacroStateActive())
+                || (visitorManager != null && visitorManager.isActive())
+                || (pestKillerManager != null && pestKillerManager.isActive());
+    }
+
+    /**
      * Returns a short human-readable string describing the current macro state,
      * used as the scoreboard status line replacing the Hypixel date/server entry.
      *

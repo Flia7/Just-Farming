@@ -22,7 +22,7 @@ import java.util.regex.Pattern;
  * <p>Layout:
  * <pre>
  *  ┌──────────────────────────┐
- *  │  ★ JUST FARMING ★        │  ← header (gold/green gradient feel)
+ *  │    JUST FARMING          │  ← header
  *  ├──────────────────────────┤
  *  │  &lt;scoreboard lines&gt;      │  ← vanilla sidebar entries, coloured
  *  └──────────────────────────┘
@@ -39,14 +39,12 @@ public class ScoreboardHudRenderer {
     private static final int COL_BG_DARK     = 0xA8080C1A;
     private static final int COL_ACCENT_DARK = 0xFF00C8FF;
     private static final int COL_HEADER_DARK = 0xFF00C8FF;
-    private static final int COL_STAR_DARK   = 0xFFFFD700;
     private static final int COL_TEXT_DARK   = 0xFFEAF2FF;
 
     // Light mode
     private static final int COL_BG_LIGHT     = 0xD0EEF4F8;
     private static final int COL_ACCENT_LIGHT = 0xFF1A6040;
     private static final int COL_HEADER_LIGHT = 0xFF1A6040;
-    private static final int COL_STAR_LIGHT   = 0xFF9060A0;
     private static final int COL_TEXT_LIGHT   = 0xFF0F1E3C;
 
     // ── Layout ────────────────────────────────────────────────────────────────
@@ -105,7 +103,7 @@ public class ScoreboardHudRenderer {
 
         // ── Determine panel dimensions ────────────────────────────────────────
         // Header text
-        String headerText = "★ JUST FARMING ★";
+        String headerText = "JUST FARMING";
         int headerW = tr.getWidth(headerText);
 
         // Build display lines; replace the date+server-ID entries (and any lines
@@ -160,7 +158,6 @@ public class ScoreboardHudRenderer {
         boolean dark = config.darkMode;
         int colBg     = dark ? COL_BG_DARK     : COL_BG_LIGHT;
         int colAccent = dark ? COL_ACCENT_DARK : COL_ACCENT_LIGHT;
-        int colStar   = dark ? COL_STAR_DARK   : COL_STAR_LIGHT;
         int colHeader = dark ? COL_HEADER_DARK : COL_HEADER_LIGHT;
         int colText   = dark ? COL_TEXT_DARK   : COL_TEXT_LIGHT;
 
@@ -170,9 +167,9 @@ public class ScoreboardHudRenderer {
         int curY = panelY + PAD_Y;
 
         // ── Header ────────────────────────────────────────────────────────────
-        // Draw the two stars in gold and the "JUST FARMING" text in green
+        // Draw the centered title text.
         int headerX = panelX + PAD_X;
-        drawHeaderLine(context, tr, headerX, curY, panelW - PAD_X * 2, colStar, colHeader);
+        drawHeaderLine(context, tr, headerX, curY, panelW - PAD_X * 2, colHeader);
         curY += HEADER_H;
 
         // Accent line (full width minus padding)
@@ -195,20 +192,14 @@ public class ScoreboardHudRenderer {
     }
 
     /**
-     * Draws the "★ JUST FARMING ★" header with star decorations in gold and
-     * the centre text in the accent green, all centred in the available width.
+     * Draws the "JUST FARMING" header centered in the available width.
      */
     private void drawHeaderLine(DrawContext ctx, TextRenderer tr,
                                 int x, int y, int availW,
-                                int colStar, int colHeader) {
-        String leftStar  = "★ ";
-        String title     = "JUST FARMING";
-        String rightStar = " ★";
-        int totalW = tr.getWidth(leftStar) + tr.getWidth(title) + tr.getWidth(rightStar);
-        int startX = x + Math.max(0, (availW - totalW) / 2);
-        ctx.drawTextWithShadow(tr, leftStar,  startX,                                  y, colStar);
-        ctx.drawTextWithShadow(tr, title,     startX + tr.getWidth(leftStar),          y, colHeader);
-        ctx.drawTextWithShadow(tr, rightStar, startX + tr.getWidth(leftStar + title),  y, colStar);
+                                int colHeader) {
+        String title = "JUST FARMING";
+        int startX = x + Math.max(0, (availW - tr.getWidth(title)) / 2);
+        ctx.drawTextWithShadow(tr, title, startX, y, colHeader);
     }
 
     /**
