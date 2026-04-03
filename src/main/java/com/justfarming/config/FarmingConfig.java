@@ -303,6 +303,13 @@ public class FarmingConfig {
      */
     public List<String> visitorBlacklist = new ArrayList<>();
 
+    /**
+     * Reward-item names that should always be accepted when offered by a visitor.
+     * If a visitor's reward contains any item from this list, the visitor is
+     * accepted even when the request exceeds {@link #visitorsMaxPrice}.
+     */
+    public List<String> visitorAlwaysAcceptItems = new ArrayList<>();
+
     // --- Pest Killer Settings ---
 
     /**
