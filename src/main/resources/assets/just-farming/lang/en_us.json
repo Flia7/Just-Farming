@@ -30,6 +30,8 @@
   "gui.just-farming.visitors_buy_bazaar_label": "Auto-Buy from Bazaar:",
   "gui.just-farming.visitors_insta_sell_label": "Insta-Sell Inventory:",
   "gui.just-farming.visitors_blacklist_label": "Blacklist Visitors...",
+  "gui.just-farming.visitors_always_accept_items_label": "Items to Always Accept...",
+  "gui.just-farming.visitors_always_accept_items_title": "Items to Always Accept",
   "gui.just-farming.pest_killer_enabled_label": "Pest Killer:",
   "gui.just-farming.pest_killer_warp_to_plot_label": "Enable Warping to Plot:",
   "message.just-farming.mouse_unlock_enabled": "§e[Just Farming] Mouse unlock enabled.",
