@@ -409,6 +409,12 @@ public class PestKillerManager {
      * and consumed one-by-one as each plot is cleared.
      */
     private final LinkedList<String> remainingPlots = new LinkedList<>();
+    /**
+     * Continuously refreshed "best next plot" candidate computed while the
+     * current plot is still being cleared, so transition to the next plot can
+     * happen instantly once the current plot is done.
+     */
+    private String precomputedNextPlot = null;
 
     // Target pest
     private PestEntityDetector.PestEntity currentPest = null;
@@ -926,6 +932,7 @@ public class PestKillerManager {
         pestAimOffsetUpdateTime = 0;
         closeApproachNeeded = false;
         skipReturnWarp = false;
+        precomputedNextPlot = null;
         resetAotvState();
         resetPlotState();
     }
@@ -950,6 +957,7 @@ public class PestKillerManager {
         pestAimOffsetTarget = Vec3d.ZERO;
         pestAimOffsetUpdateTime = 0;
         closeApproachNeeded = false;
+        precomputedNextPlot = null;
         resetAotvState();
         resetPlotState();
         enterState(State.IDLE);
@@ -1000,6 +1008,7 @@ public class PestKillerManager {
         resetPlotState();
 
         remainingPlots.clear();
+        precomputedNextPlot = null;
         if (pestPlots != null) {
             // Collect valid plot names.
             java.util.List<String> sorted = new java.util.ArrayList<>();
@@ -1379,6 +1388,7 @@ public class PestKillerManager {
 
             case SCANNING -> {
                 if (now < pestKillWaitEnd) return;
+                updatePrecomputedNextPlot(player);
 
                 List<PestEntityDetector.PestEntity> pests = pestEntityDetector.getDetectedPests();
                 // Compute scoreboard-empty status once; used both to short-circuit the scan
@@ -1430,7 +1440,12 @@ public class PestKillerManager {
                 } else if (!remainingPlots.isEmpty()) {
                     // Pests on this plot have been cleared; move on to the next
                     // infested plot rather than returning to the farm immediately.
-                    teleportToNextPlot(pollClosestPlot());
+                    String nextPlot = pollPrecomputedOrClosestPlot();
+                    if (nextPlot != null) {
+                        teleportToNextPlot(nextPlot);
+                    } else {
+                        returnToFarm();
+                    }
                 } else {
                     LOGGER.info("[Just Farming-PestKiller] No pests found after scanning all plots; "
                             + "returning to farm.");
@@ -1463,7 +1478,12 @@ public class PestKillerManager {
                         vacuumParticleTracker.stopTracking();
                         // Try next plot or return.
                         if (!remainingPlots.isEmpty()) {
-                            teleportToNextPlot(pollClosestPlot());
+                            String nextPlot = pollPrecomputedOrClosestPlot();
+                            if (nextPlot != null) {
+                                teleportToNextPlot(nextPlot);
+                            } else {
+                                returnToFarm();
+                            }
                         } else {
                             returnToFarm();
                         }
@@ -1513,7 +1533,12 @@ public class PestKillerManager {
                     } else {
                         LOGGER.info("[Just Farming-PestKiller] No particle trail; trying next plot.");
                         if (!remainingPlots.isEmpty()) {
-                            teleportToNextPlot(pollClosestPlot());
+                            String nextPlot = pollPrecomputedOrClosestPlot();
+                            if (nextPlot != null) {
+                                teleportToNextPlot(nextPlot);
+                            } else {
+                                returnToFarm();
+                            }
                         } else {
                             returnToFarm();
                         }
@@ -1565,7 +1590,12 @@ public class PestKillerManager {
                     vacuumParticleTracker.stopTracking();
                     releaseMovementKeys();
                     if (!remainingPlots.isEmpty()) {
-                        teleportToNextPlot(pollClosestPlot());
+                        String nextPlot = pollPrecomputedOrClosestPlot();
+                        if (nextPlot != null) {
+                            teleportToNextPlot(nextPlot);
+                        } else {
+                            returnToFarm();
+                        }
                     } else {
                         returnToFarm();
                     }
@@ -1576,6 +1606,7 @@ public class PestKillerManager {
             }
 
             case FLYING_TO_PEST -> {
+                updatePrecomputedNextPlot(player);
                 List<PestEntityDetector.PestEntity> pests = pestEntityDetector.getDetectedPests();
                 // Re-pick the nearest pest every tick in case the previous one was killed
                 currentPest = pickNearestPest(player, pests);
@@ -1631,6 +1662,7 @@ public class PestKillerManager {
             }
 
             case KILLING_PEST -> {
+                updatePrecomputedNextPlot(player);
                 List<PestEntityDetector.PestEntity> pests = pestEntityDetector.getDetectedPests();
                 // Keep targeting the nearest pest
                 currentPest = pickNearestPest(player, pests);
@@ -1914,6 +1946,7 @@ public class PestKillerManager {
     private void resetPlotState() {
         currentPlotName = null;
         plotCentreTarget = null;
+        precomputedNextPlot = null;
         particleWaypoint = null;
         vacuumShotFired = false;
         vacuumShotAttempted = false;
@@ -2274,6 +2307,55 @@ public class PestKillerManager {
         }
         if (closest != null) remainingPlots.remove(closest);
         return closest;
+    }
+
+    /**
+     * Continuously recomputes the nearest remaining infested plot from the
+     * player's current XZ position.  Called every tick while pest combat is
+     * active so the next-plot choice is already prepared before the final kill.
+     */
+    private void updatePrecomputedNextPlot(ClientPlayerEntity player) {
+        if (player == null || remainingPlots.isEmpty()) {
+            precomputedNextPlot = null;
+            return;
+        }
+
+        double px = player.getX();
+        double pz = player.getZ();
+        String closest = null;
+        double minDistSq = Double.MAX_VALUE;
+        for (String plot : remainingPlots) {
+            if (plot == null || plot.isBlank()) continue;
+            double cx = GardenPlot.getCentreX(plot);
+            double cz = GardenPlot.getCentreZ(plot);
+            if (Double.isNaN(cx) || Double.isNaN(cz)) {
+                continue;
+            }
+            double dx = px - cx;
+            double dz = pz - cz;
+            double distSq = dx * dx + dz * dz;
+            if (distSq < minDistSq) {
+                minDistSq = distSq;
+                closest = plot;
+            }
+        }
+        precomputedNextPlot = closest;
+    }
+
+    /**
+     * Consumes the continuously precomputed next-plot candidate when valid,
+     * falling back to a fresh nearest-plot query if needed.
+     */
+    private String pollPrecomputedOrClosestPlot() {
+        if (precomputedNextPlot != null) {
+            String candidate = precomputedNextPlot;
+            if (remainingPlots.remove(candidate)) {
+                precomputedNextPlot = null;
+                return candidate;
+            }
+            precomputedNextPlot = null;
+        }
+        return pollClosestPlot();
     }
 
     /**
