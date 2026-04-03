@@ -1440,7 +1440,7 @@ public class PestKillerManager {
                 } else if (!remainingPlots.isEmpty()) {
                     // Pests on this plot have been cleared; move on to the next
                     // infested plot rather than returning to the farm immediately.
-                    String nextPlot = pollPrecomputedOrClosestPlot(player);
+                    String nextPlot = pollPrecomputedOrClosestPlot();
                     if (nextPlot != null) {
                         teleportToNextPlot(nextPlot);
                     } else {
@@ -1478,7 +1478,7 @@ public class PestKillerManager {
                         vacuumParticleTracker.stopTracking();
                         // Try next plot or return.
                         if (!remainingPlots.isEmpty()) {
-                            String nextPlot = pollPrecomputedOrClosestPlot(player);
+                            String nextPlot = pollPrecomputedOrClosestPlot();
                             if (nextPlot != null) {
                                 teleportToNextPlot(nextPlot);
                             } else {
@@ -1533,7 +1533,7 @@ public class PestKillerManager {
                     } else {
                         LOGGER.info("[Just Farming-PestKiller] No particle trail; trying next plot.");
                         if (!remainingPlots.isEmpty()) {
-                            String nextPlot = pollPrecomputedOrClosestPlot(player);
+                            String nextPlot = pollPrecomputedOrClosestPlot();
                             if (nextPlot != null) {
                                 teleportToNextPlot(nextPlot);
                             } else {
@@ -1590,7 +1590,7 @@ public class PestKillerManager {
                     vacuumParticleTracker.stopTracking();
                     releaseMovementKeys();
                     if (!remainingPlots.isEmpty()) {
-                        String nextPlot = pollPrecomputedOrClosestPlot(player);
+                        String nextPlot = pollPrecomputedOrClosestPlot();
                         if (nextPlot != null) {
                             teleportToNextPlot(nextPlot);
                         } else {
@@ -2329,7 +2329,6 @@ public class PestKillerManager {
             double cx = GardenPlot.getCentreX(plot);
             double cz = GardenPlot.getCentreZ(plot);
             if (Double.isNaN(cx) || Double.isNaN(cz)) {
-                if (closest == null) closest = plot; // fallback for unknown centres
                 continue;
             }
             double dx = px - cx;
@@ -2347,12 +2346,14 @@ public class PestKillerManager {
      * Consumes the continuously precomputed next-plot candidate when valid,
      * falling back to a fresh nearest-plot query if needed.
      */
-    private String pollPrecomputedOrClosestPlot(ClientPlayerEntity player) {
-        updatePrecomputedNextPlot(player);
+    private String pollPrecomputedOrClosestPlot() {
         if (precomputedNextPlot != null) {
             String candidate = precomputedNextPlot;
+            if (remainingPlots.remove(candidate)) {
+                precomputedNextPlot = null;
+                return candidate;
+            }
             precomputedNextPlot = null;
-            if (remainingPlots.remove(candidate)) return candidate;
         }
         return pollClosestPlot();
     }
