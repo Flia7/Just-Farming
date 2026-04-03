@@ -390,6 +390,11 @@ public class JustFarming implements ClientModInitializer {
                 visitorManager.notifyCookieBuffInactive();
                 LOGGER.warn("[Just Farming] Booster Cookie inactive message detected – notifying visitor manager.");
             }
+            if (text.contains("[Bazaar] You cannot afford this!")
+                    && visitorManager.isActive()) {
+                visitorManager.notifyBazaarInsufficientCoins();
+                LOGGER.warn("[Just Farming] Bazaar insufficient coins message detected – notifying visitor manager.");
+            }
             // When the server confirms a /setspawn command, save the player's current
             // position as the spawn highlight block (without sending any command ourselves).
             if (text.contains("Your spawn location has been set")) {
