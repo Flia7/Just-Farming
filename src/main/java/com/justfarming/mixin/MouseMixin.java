@@ -53,9 +53,8 @@ public class MouseMixin {
      */
     @Inject(method = "lockCursor", at = @At("HEAD"), cancellable = true)
     private void onLockCursor(CallbackInfo ci) {
-        MacroManager mm = JustFarming.getMacroManager();
         FarmingConfig cfg = JustFarming.getConfig();
-        if (mm != null && cfg != null && cfg.unlockedMouseEnabled && mm.isAnyMacroStateActive()) {
+        if (cfg != null && cfg.unlockedMouseEnabled && JustFarming.isAnyMacroRoutineActive()) {
             ci.cancel();
         }
     }
@@ -82,8 +81,7 @@ public class MouseMixin {
     @Inject(method = "isCursorLocked", at = @At("RETURN"), cancellable = true)
     private void onIsCursorLocked(CallbackInfoReturnable<Boolean> cir) {
         if (cir.getReturnValue()) return; // already locked — nothing to do
-        MacroManager mm = JustFarming.getMacroManager();
-        if (mm != null && mm.isAnyMacroStateActive()) {
+        if (JustFarming.isAnyMacroRoutineActive()) {
             cir.setReturnValue(true);
         }
     }
