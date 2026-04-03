@@ -17,33 +17,41 @@ import java.util.List;
 public class VisitorAlwaysAcceptItemsScreen extends Screen {
 
     // ── Visitor reward item list ───────────────────────────────────────────────
-    // Based on Hypixel Garden visitors rewards and existing known visitor item names.
+    // User-provided reward list (kept exactly as requested).
     private static final String[] ALL_ITEMS = {
-            "Atmospheric Filter", "Beady Eyes", "Beetle Beats", "Brown Mushroom", "Buzzin' Beats", "Carrot",
-            "Chirping Stereo", "Cicada Symphony", "Clipped Wings", "Cocoa Beans", "Coins",
-            "Compacted Wild Rose", "Compost", "Cropie", "Dung",
-            "Dynamites", "Earthworm Ensemble",
-            "Enchanted Baked Potato", "Enchanted Bread", "Enchanted Brown Mushroom",
-            "Enchanted Brown Mushroom Block", "Enchanted Cactus",
-            "Enchanted Cactus Green", "Enchanted Carrot", "Enchanted Cocoa Beans",
-            "Enchanted Cookie", "Enchanted Golden Carrot", "Enchanted Hay Bale",
-            "Enchanted Melon", "Enchanted Melon Block", "Enchanted Melon Slice",
-            "Enchanted Moonflower", "Enchanted Nether Wart", "Enchanted Potato",
-            "Enchanted Pumpkin", "Enchanted Red Mushroom", "Enchanted Red Mushroom Block",
-            "Enchanted Seeds", "Enchanted Sugar", "Enchanted Sugar Cane",
-            "Enchanted Sunflower", "Enchanted Wheat", "Enchanted Wild Rose",
-            "Fermento", "Hay Bale", "Helianthus", "Honey Jar",
-            "Jelly", "Locust Lullaby", "Melon", "Melon Slice", "Mite March", "Moonflower",
-            "Mutant Nether Wart", "Nether Wart", "Pest Vinyl",
-            "Mosquito Melody", "Not Just a Pest", "Plant Matter", "Polished Pumpkin", "Potato", "Pretty Fly",
-            "Pumpkin", "Rat Pet", "Red Mushroom", "Seeds",
-            "Rodent Revolution",
-            "Squeaky Mousemat", "Squeaky Toy", "Squash", "Sugar Cane",
-            "Slug Groove",
-            // Keep rarity variants because visitor reward text can include them explicitly.
-            "Slug Pet", "Slug Pet (Epic)", "Slug Pet (Legendary)", "Slow and Groovy",
-            "Sunflower", "Tasty Cheese", "Tool Exp Capsule", "Wheat", "Wings of Harmony",
-            "Wild Rose", "Wriggling Larva"
+            "Overgrown Grass",
+            "Green Bandana",
+            "Music Rune I",
+            "Space Helmet",
+            "Fairy Soul",
+            "Copper Dye",
+            "Flowering Bouquet",
+            "Fruit Bowl",
+            "Turbo-Cacti I",
+            "Turbo-Cane I",
+            "Turbo-Carrot I",
+            "Turbo-Mushrooms I",
+            "Turbo-Potato I",
+            "Turbo-Warts I",
+            "Turbo-Wheat I",
+            "Turbo-Cocoa I",
+            "Turbo-Melon I",
+            "Turbo-Pumpkin I",
+            "Cultivating I",
+            "Replenish I",
+            "Delicate V",
+            "Dedication IV",
+            "Jungle Key",
+            "Pet Cake",
+            "Fine Flour",
+            "Arachne Fragment",
+            "Dead Bush",
+            "Mysterious Crop",
+            "Velvet Top Hat",
+            "Cashmere Jacket",
+            "Satin Trousers",
+            "Oxford Shoes",
+            "Harvest Harbinger Potion"
     };
 
     // ── Layout/style constants (mirrors VisitorBlacklistScreen) ──────────────
