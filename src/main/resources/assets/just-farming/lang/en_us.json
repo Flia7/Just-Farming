@@ -4,6 +4,7 @@
   "key.just-farming.open_gui": "Open Just Farming GUI",
   "key.just-farming.freelook": "Toggle Freelook",
   "key.just-farming.alternate_direction": "Alternate Just Farming Direction",
+  "key.just-farming.toggle_mouse_unlock": "Toggle Mouse Unlock",
   "key.category.just-farming.categories": "Just Farming",
   "gui.just-farming.title": "Just Farming Config",
   "gui.just-farming.crop_label": "Selected Crop:",

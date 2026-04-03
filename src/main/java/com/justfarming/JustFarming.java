@@ -68,6 +68,7 @@ public class JustFarming implements ClientModInitializer {
     private static KeyBinding openGuiKey;
     private static KeyBinding freelookKey;
     private static KeyBinding alternateDirectionKey;
+    private static KeyBinding toggleMouseUnlockKey;
     private static final KeyBinding.Category KEY_CATEGORY = KeyBinding.Category.create(Identifier.of("just-farming", "categories"));
 
     @Override
@@ -122,6 +123,13 @@ public class JustFarming implements ClientModInitializer {
                 "key.just-farming.alternate_direction",
                 InputUtil.Type.KEYSYM,
                 GLFW.GLFW_KEY_N,
+                KEY_CATEGORY
+        ));
+
+        toggleMouseUnlockKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.just-farming.toggle_mouse_unlock",
+                InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_U,
                 KEY_CATEGORY
         ));
 
@@ -273,6 +281,26 @@ public class JustFarming implements ClientModInitializer {
             // Process alternate-direction keybind: instantly swap movement direction
             while (alternateDirectionKey.wasPressed()) {
                 macroManager.triggerInstantAlternate();
+            }
+
+            // Process mouse-unlock toggle keybind
+            while (toggleMouseUnlockKey.wasPressed()) {
+                config.unlockedMouseEnabled = !config.unlockedMouseEnabled;
+                if (isAnyMacroRoutineActive()) {
+                    if (config.unlockedMouseEnabled) {
+                        client.mouse.unlockCursor();
+                    } else if (client.currentScreen == null) {
+                        client.mouse.lockCursor();
+                    }
+                }
+                config.save();
+                if (client.player != null) {
+                    client.player.sendMessage(
+                            net.minecraft.text.Text.literal(config.unlockedMouseEnabled
+                                    ? "§e[Just Farming] Mouse unlock enabled."
+                                    : "§e[Just Farming] Mouse unlock disabled."),
+                            true);
+                }
             }
 
             // Run macro tick
@@ -428,7 +456,7 @@ public class JustFarming implements ClientModInitializer {
             LOGGER.info("[Just Farming] Disconnected – all macros stopped.");
         });
 
-        LOGGER.info("[Just Farming] Ready. Toggle macro: R | Open GUI: I | Freelook: L | Alternate direction: N | Commands: /just rewarp, /just rewarp clear, /just visitor, /just pest, /just farm, /just setspawn clear (spawn set automatically from /setspawn server confirmation)");
+        LOGGER.info("[Just Farming] Ready. Toggle macro: R | Open GUI: I | Freelook: L | Alternate direction: N | Toggle mouse unlock: U | Commands: /just rewarp, /just rewarp clear, /just visitor, /just pest, /just farm, /just setspawn clear (spawn set automatically from /setspawn server confirmation)");
     }
 
     /** Returns the shared config instance. */
