@@ -22,6 +22,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
+import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
@@ -289,16 +290,16 @@ public class JustFarming implements ClientModInitializer {
                 if (isAnyMacroRoutineActive()) {
                     if (config.unlockedMouseEnabled) {
                         client.mouse.unlockCursor();
-                    } else if (client.currentScreen == null && !client.mouse.isCursorLocked()) {
+                    } else if (client.currentScreen == null) {
                         client.mouse.lockCursor();
                     }
                 }
                 config.save();
                 if (client.player != null) {
                     client.player.sendMessage(
-                            net.minecraft.text.Text.literal(config.unlockedMouseEnabled
-                                    ? "§e[Just Farming] Mouse unlock enabled."
-                                    : "§e[Just Farming] Mouse unlock disabled."),
+                            Text.translatable(config.unlockedMouseEnabled
+                                    ? "message.just-farming.mouse_unlock_enabled"
+                                    : "message.just-farming.mouse_unlock_disabled"),
                             true);
                 }
             }

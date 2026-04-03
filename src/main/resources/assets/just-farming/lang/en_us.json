@@ -32,6 +32,8 @@
   "gui.just-farming.visitors_blacklist_label": "Blacklist Visitors...",
   "gui.just-farming.pest_killer_enabled_label": "Pest Killer:",
   "gui.just-farming.pest_killer_warp_to_plot_label": "Enable Warping to Plot:",
+  "message.just-farming.mouse_unlock_enabled": "§e[Just Farming] Mouse unlock enabled.",
+  "message.just-farming.mouse_unlock_disabled": "§e[Just Farming] Mouse unlock disabled.",
   "crop.just-farming.wheat": "Wheat",
   "crop.just-farming.carrot": "Carrot",
   "crop.just-farming.potato": "Potato",
