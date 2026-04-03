@@ -2295,7 +2295,9 @@ public class PestKillerManager {
         if (candidates == null || candidates.isEmpty()) return null;
         ClientPlayerEntity player = client.player;
         if (player == null) {
-            return candidates.iterator().next();
+            String first = candidates.iterator().next();
+            remainingPlots.remove(first);
+            return first;
         }
 
         double px = player.getX();
@@ -2379,16 +2381,22 @@ public class PestKillerManager {
      * falling back to a fresh nearest-plot query if needed.
      */
     private String pollPrecomputedOrClosestPlot() {
+        Set<String> candidates = getCandidateNextPlots();
+        if (candidates.isEmpty()) {
+            precomputedNextPlot = null;
+            return null;
+        }
+
         if (precomputedNextPlot != null) {
             String candidate = precomputedNextPlot;
-            if (getCandidateNextPlots().contains(candidate)) {
+            if (candidates.contains(candidate)) {
                 precomputedNextPlot = null;
                 remainingPlots.remove(candidate);
                 return candidate;
             }
             precomputedNextPlot = null;
         }
-        return pollClosestPlot();
+        return pollClosestPlot(candidates);
     }
 
     /**
