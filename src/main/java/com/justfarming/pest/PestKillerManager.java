@@ -14,7 +14,6 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Collection;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -410,12 +409,6 @@ public class PestKillerManager {
      * and consumed one-by-one as each plot is cleared.
      */
     private final LinkedList<String> remainingPlots = new LinkedList<>();
-    /**
-     * Continuously refreshed "best next plot" candidate computed while the
-     * current plot is still being cleared, so transition to the next plot can
-     * happen instantly once the current plot is done.
-     */
-    private String precomputedNextPlot = null;
 
     // Target pest
     private PestEntityDetector.PestEntity currentPest = null;
@@ -933,7 +926,6 @@ public class PestKillerManager {
         pestAimOffsetUpdateTime = 0;
         closeApproachNeeded = false;
         skipReturnWarp = false;
-        precomputedNextPlot = null;
         resetAotvState();
         resetPlotState();
     }
@@ -958,7 +950,6 @@ public class PestKillerManager {
         pestAimOffsetTarget = Vec3d.ZERO;
         pestAimOffsetUpdateTime = 0;
         closeApproachNeeded = false;
-        precomputedNextPlot = null;
         resetAotvState();
         resetPlotState();
         enterState(State.IDLE);
@@ -1009,7 +1000,6 @@ public class PestKillerManager {
         resetPlotState();
 
         remainingPlots.clear();
-        precomputedNextPlot = null;
         if (pestPlots != null) {
             // Collect valid plot names.
             java.util.List<String> sorted = new java.util.ArrayList<>();
@@ -1389,14 +1379,13 @@ public class PestKillerManager {
 
             case SCANNING -> {
                 if (now < pestKillWaitEnd) return;
-                updatePrecomputedNextPlot(player);
 
                 List<PestEntityDetector.PestEntity> pests = pestEntityDetector.getDetectedPests();
-                // Compute scoreboard status once; used to avoid leaving a plot until
-                // it is actually clean, and to choose the next destination from live data.
-                boolean scoreboardAvailable = pestDetector != null && currentPlotName != null;
-                boolean scoreboardConfirmsPests = scoreboardAvailable && pestDetector.hasPlotPests(currentPlotName);
-                boolean scoreboardConfirmsEmpty = scoreboardAvailable && !scoreboardConfirmsPests;
+                // Compute scoreboard-empty status once; used both to short-circuit the scan
+                // timeout and to skip the vacuum shot when the plot is confirmed clean.
+                boolean scoreboardConfirmsEmpty = pestDetector != null
+                        && currentPlotName != null
+                        && !pestDetector.hasPlotPests(currentPlotName);
                 if (!pests.isEmpty()) {
                     currentPest = pickNearestPest(player, pests);
                     if (currentPest != null) {
@@ -1429,9 +1418,7 @@ public class PestKillerManager {
                 // No pests found (or only un-targetable ghost entities) and timeout elapsed.
                 // Skip the vacuum shot when the scoreboard already confirms the plot is empty –
                 // there are no hidden pests to locate, and the shot would waste up to 4 seconds.
-                boolean shouldAttemptVacuumShot = shouldRetryVacuumShot(
-                        scoreboardConfirmsEmpty, scoreboardConfirmsPests, vacuumShotAttempted);
-                if (shouldAttemptVacuumShot) {
+                if (!vacuumShotAttempted && !scoreboardConfirmsEmpty) {
                     LOGGER.info("[Just Farming-PestKiller] No pests at plot centre; "
                             + "firing vacuum shot to locate them.");
                     vacuumShotAttempted = true;
@@ -1440,15 +1427,14 @@ public class PestKillerManager {
                     vacuumParticleTracker.reset();
                     vacuumParticleTracker.startTracking(player.getEyePos());
                     enterState(State.VACUUM_SHOT);
-                } else {
+                } else if (!remainingPlots.isEmpty()) {
                     // Pests on this plot have been cleared; move on to the next
                     // infested plot rather than returning to the farm immediately.
-                    String nextPlot = pollPrecomputedOrClosestPlot();
-                    if (nextPlot != null) {
-                        teleportToNextPlot(nextPlot);
-                    } else {
-                        returnToFarm();
-                    }
+                    teleportToNextPlot(pollClosestPlot());
+                } else {
+                    LOGGER.info("[Just Farming-PestKiller] No pests found after scanning all plots; "
+                            + "returning to farm.");
+                    returnToFarm();
                 }
             }
 
@@ -1475,18 +1461,11 @@ public class PestKillerManager {
                     if (vacuumSlot < 0) {
                         LOGGER.warn("[Just Farming-PestKiller] No vacuum in hotbar; skipping vacuum shot.");
                         vacuumParticleTracker.stopTracking();
-                        // Keep trying this plot while scoreboard still reports pests.
-                        if (currentPlotStillHasPests()) {
-                            LOGGER.info("[Just Farming-PestKiller] Scoreboard still reports pests on plot {}; "
-                                    + "re-scanning current plot.", currentPlotName);
-                            enterState(State.SCANNING);
+                        // Try next plot or return.
+                        if (!remainingPlots.isEmpty()) {
+                            teleportToNextPlot(pollClosestPlot());
                         } else {
-                            String nextPlot = pollPrecomputedOrClosestPlot();
-                            if (nextPlot != null) {
-                                teleportToNextPlot(nextPlot);
-                            } else {
-                                returnToFarm();
-                            }
+                            returnToFarm();
                         }
                         return;
                     }
@@ -1533,17 +1512,10 @@ public class PestKillerManager {
                         enterState(State.FOLLOWING_PARTICLES);
                     } else {
                         LOGGER.info("[Just Farming-PestKiller] No particle trail; trying next plot.");
-                        if (currentPlotStillHasPests()) {
-                            LOGGER.info("[Just Farming-PestKiller] Scoreboard still reports pests on plot {}; "
-                                    + "re-scanning current plot.", currentPlotName);
-                            enterState(State.SCANNING);
+                        if (!remainingPlots.isEmpty()) {
+                            teleportToNextPlot(pollClosestPlot());
                         } else {
-                            String nextPlot = pollPrecomputedOrClosestPlot();
-                            if (nextPlot != null) {
-                                teleportToNextPlot(nextPlot);
-                            } else {
-                                returnToFarm();
-                            }
+                            returnToFarm();
                         }
                     }
                 }
@@ -1592,17 +1564,10 @@ public class PestKillerManager {
                     LOGGER.info("[Just Farming-PestKiller] Particle-trail follow timed out.");
                     vacuumParticleTracker.stopTracking();
                     releaseMovementKeys();
-                    if (currentPlotStillHasPests()) {
-                        LOGGER.info("[Just Farming-PestKiller] Scoreboard still reports pests on plot {}; "
-                                + "re-scanning current plot.", currentPlotName);
-                        enterState(State.SCANNING);
+                    if (!remainingPlots.isEmpty()) {
+                        teleportToNextPlot(pollClosestPlot());
                     } else {
-                        String nextPlot = pollPrecomputedOrClosestPlot();
-                        if (nextPlot != null) {
-                            teleportToNextPlot(nextPlot);
-                        } else {
-                            returnToFarm();
-                        }
+                        returnToFarm();
                     }
                     return;
                 }
@@ -1611,7 +1576,6 @@ public class PestKillerManager {
             }
 
             case FLYING_TO_PEST -> {
-                updatePrecomputedNextPlot(player);
                 List<PestEntityDetector.PestEntity> pests = pestEntityDetector.getDetectedPests();
                 // Re-pick the nearest pest every tick in case the previous one was killed
                 currentPest = pickNearestPest(player, pests);
@@ -1667,7 +1631,6 @@ public class PestKillerManager {
             }
 
             case KILLING_PEST -> {
-                updatePrecomputedNextPlot(player);
                 List<PestEntityDetector.PestEntity> pests = pestEntityDetector.getDetectedPests();
                 // Keep targeting the nearest pest
                 currentPest = pickNearestPest(player, pests);
@@ -1951,7 +1914,6 @@ public class PestKillerManager {
     private void resetPlotState() {
         currentPlotName = null;
         plotCentreTarget = null;
-        precomputedNextPlot = null;
         particleWaypoint = null;
         vacuumShotFired = false;
         vacuumShotAttempted = false;
@@ -2289,28 +2251,15 @@ public class PestKillerManager {
      * time between plots.
      */
     private String pollClosestPlot() {
-        return pollClosestPlot(getCandidateNextPlots());
-    }
-
-    /**
-     * Removes and returns the closest plot from {@code candidates} based on the
-     * player's current XZ position. Falls back to the first candidate when no
-     * valid plot centre is known.
-     */
-    private String pollClosestPlot(Set<String> candidates) {
-        if (candidates == null || candidates.isEmpty()) return null;
+        if (remainingPlots.isEmpty()) return null;
         ClientPlayerEntity player = client.player;
-        if (player == null) {
-            String first = candidates.iterator().next();
-            remainingPlots.remove(first);
-            return first;
-        }
+        if (player == null) return remainingPlots.poll();
 
         double px = player.getX();
         double pz = player.getZ();
         String closest = null;
         double minDist = Double.MAX_VALUE;
-        for (String plot : candidates) {
+        for (String plot : remainingPlots) {
             double cx = GardenPlot.getCentreX(plot);
             double cz = GardenPlot.getCentreZ(plot);
             if (Double.isNaN(cx) || Double.isNaN(cz)) {
@@ -2325,110 +2274,6 @@ public class PestKillerManager {
         }
         if (closest != null) remainingPlots.remove(closest);
         return closest;
-    }
-
-    /**
-     * Returns the current set of valid next-plot candidates, preferring live
-     * pest-detector data and falling back to the startup queue.
-     */
-    private Set<String> getCandidateNextPlots() {
-        Set<String> candidates = new LinkedHashSet<>();
-        if (pestDetector != null) {
-            for (String plot : pestDetector.getPestPlots()) {
-                if (!isValidPlotName(plot)) continue;
-                if (currentPlotName != null && currentPlotName.equals(plot)) continue;
-                candidates.add(plot);
-            }
-        }
-        for (String plot : remainingPlots) {
-            if (!isValidPlotName(plot)) continue;
-            if (currentPlotName != null && currentPlotName.equals(plot)) continue;
-            candidates.add(plot);
-        }
-        return candidates;
-    }
-
-    /**
-     * Continuously recomputes the nearest remaining infested plot from the
-     * player's current XZ position.  Called every tick while pest combat is
-     * active so the next-plot choice is already prepared before the final kill.
-     */
-    private void updatePrecomputedNextPlot(ClientPlayerEntity player) {
-        Set<String> candidates = getCandidateNextPlots();
-        if (player == null || candidates.isEmpty()) {
-            precomputedNextPlot = null;
-            return;
-        }
-
-        double px = player.getX();
-        double pz = player.getZ();
-        String closest = null;
-        double minDistSq = Double.MAX_VALUE;
-        for (String plot : candidates) {
-            if (!isValidPlotName(plot)) continue;
-            double cx = GardenPlot.getCentreX(plot);
-            double cz = GardenPlot.getCentreZ(plot);
-            if (Double.isNaN(cx) || Double.isNaN(cz)) {
-                continue;
-            }
-            double dx = px - cx;
-            double dz = pz - cz;
-            double distSq = dx * dx + dz * dz;
-            if (distSq < minDistSq) {
-                minDistSq = distSq;
-                closest = plot;
-            }
-        }
-        precomputedNextPlot = closest;
-    }
-
-    /**
-     * Consumes the continuously precomputed next-plot candidate when valid,
-     * falling back to a fresh nearest-plot query if needed.
-     */
-    private String pollPrecomputedOrClosestPlot() {
-        Set<String> candidates = getCandidateNextPlots();
-        if (candidates.isEmpty()) {
-            precomputedNextPlot = null;
-            return null;
-        }
-
-        if (precomputedNextPlot != null) {
-            String candidate = precomputedNextPlot;
-            if (candidates.contains(candidate)) {
-                precomputedNextPlot = null;
-                remainingPlots.remove(candidate);
-                return candidate;
-            }
-            precomputedNextPlot = null;
-        }
-        return pollClosestPlot(candidates);
-    }
-
-    /**
-     * Returns {@code true} when live pest-detector data still reports pests on
-     * the currently targeted plot.
-     */
-    private boolean currentPlotStillHasPests() {
-        return pestDetector != null
-                && currentPlotName != null
-                && pestDetector.hasPlotPests(currentPlotName);
-    }
-
-    /**
-     * Whether the scanner should fire another vacuum shot while no direct pest
-     * entity is currently targetable.
-     */
-    private static boolean shouldRetryVacuumShot(boolean scoreboardConfirmsEmpty,
-                                                 boolean scoreboardConfirmsPests,
-                                                 boolean vacuumShotAttempted) {
-        return !scoreboardConfirmsEmpty
-                && (!vacuumShotAttempted || scoreboardConfirmsPests);
-    }
-
-    /** Returns true when the plot name is non-null and non-blank. */
-    private static boolean isValidPlotName(String plot) {
-        return plot != null && !plot.isBlank();
     }
 
     /**
