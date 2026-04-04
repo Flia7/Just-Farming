@@ -1381,8 +1381,8 @@ public class PestKillerManager {
                 if (now < pestKillWaitEnd) return;
 
                 List<PestEntityDetector.PestEntity> pests = pestEntityDetector.getDetectedPests();
-                // Compute scoreboard-empty status once; used both to short-circuit the scan
-                // timeout and to skip the vacuum shot when the plot is confirmed clean.
+                // Compute scoreboard-empty status once; used to skip the vacuum
+                // shot when the plot is confirmed clean.
                 boolean scoreboardConfirmsEmpty = pestDetector != null
                         && currentPlotName != null
                         && !pestDetector.hasPlotPests(currentPlotName);
@@ -1430,7 +1430,12 @@ public class PestKillerManager {
                 } else if (!remainingPlots.isEmpty()) {
                     // Pests on this plot have been cleared; move on to the next
                     // infested plot rather than returning to the farm immediately.
-                    teleportToNextPlot(pollClosestPlot());
+                    String nextPlot = pollClosestPlot();
+                    if (nextPlot != null) {
+                        teleportToNextPlot(nextPlot);
+                    } else {
+                        returnToFarm();
+                    }
                 } else {
                     LOGGER.info("[Just Farming-PestKiller] No pests found after scanning all plots; "
                             + "returning to farm.");
@@ -1461,9 +1466,15 @@ public class PestKillerManager {
                     if (vacuumSlot < 0) {
                         LOGGER.warn("[Just Farming-PestKiller] No vacuum in hotbar; skipping vacuum shot.");
                         vacuumParticleTracker.stopTracking();
-                        // Try next plot or return.
+                        // If plots remain in queue, teleport to the closest one;
+                        // otherwise return to farm.
                         if (!remainingPlots.isEmpty()) {
-                            teleportToNextPlot(pollClosestPlot());
+                            String nextPlot = pollClosestPlot();
+                            if (nextPlot != null) {
+                                teleportToNextPlot(nextPlot);
+                            } else {
+                                returnToFarm();
+                            }
                         } else {
                             returnToFarm();
                         }
@@ -1513,7 +1524,12 @@ public class PestKillerManager {
                     } else {
                         LOGGER.info("[Just Farming-PestKiller] No particle trail; trying next plot.");
                         if (!remainingPlots.isEmpty()) {
-                            teleportToNextPlot(pollClosestPlot());
+                            String nextPlot = pollClosestPlot();
+                            if (nextPlot != null) {
+                                teleportToNextPlot(nextPlot);
+                            } else {
+                                returnToFarm();
+                            }
                         } else {
                             returnToFarm();
                         }
@@ -1565,7 +1581,12 @@ public class PestKillerManager {
                     vacuumParticleTracker.stopTracking();
                     releaseMovementKeys();
                     if (!remainingPlots.isEmpty()) {
-                        teleportToNextPlot(pollClosestPlot());
+                        String nextPlot = pollClosestPlot();
+                        if (nextPlot != null) {
+                            teleportToNextPlot(nextPlot);
+                        } else {
+                            returnToFarm();
+                        }
                     } else {
                         returnToFarm();
                     }
