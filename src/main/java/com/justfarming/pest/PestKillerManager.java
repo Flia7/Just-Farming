@@ -1475,16 +1475,18 @@ public class PestKillerManager {
                     if (vacuumSlot < 0) {
                         LOGGER.warn("[Just Farming-PestKiller] No vacuum in hotbar; skipping vacuum shot.");
                         vacuumParticleTracker.stopTracking();
-                        // Try next plot or return.
-                        if (!remainingPlots.isEmpty()) {
+                        // Keep trying this plot while scoreboard still reports pests.
+                        if (currentPlotStillHasPests()) {
+                            LOGGER.info("[Just Farming-PestKiller] Scoreboard still reports pests on plot {}; "
+                                    + "re-scanning current plot.", currentPlotName);
+                            enterState(State.SCANNING);
+                        } else {
                             String nextPlot = pollPrecomputedOrClosestPlot();
                             if (nextPlot != null) {
                                 teleportToNextPlot(nextPlot);
                             } else {
                                 returnToFarm();
                             }
-                        } else {
-                            returnToFarm();
                         }
                         return;
                     }
@@ -1531,15 +1533,17 @@ public class PestKillerManager {
                         enterState(State.FOLLOWING_PARTICLES);
                     } else {
                         LOGGER.info("[Just Farming-PestKiller] No particle trail; trying next plot.");
-                        if (!remainingPlots.isEmpty()) {
+                        if (currentPlotStillHasPests()) {
+                            LOGGER.info("[Just Farming-PestKiller] Scoreboard still reports pests on plot {}; "
+                                    + "re-scanning current plot.", currentPlotName);
+                            enterState(State.SCANNING);
+                        } else {
                             String nextPlot = pollPrecomputedOrClosestPlot();
                             if (nextPlot != null) {
                                 teleportToNextPlot(nextPlot);
                             } else {
                                 returnToFarm();
                             }
-                        } else {
-                            returnToFarm();
                         }
                     }
                 }
@@ -1588,15 +1592,17 @@ public class PestKillerManager {
                     LOGGER.info("[Just Farming-PestKiller] Particle-trail follow timed out.");
                     vacuumParticleTracker.stopTracking();
                     releaseMovementKeys();
-                    if (!remainingPlots.isEmpty()) {
+                    if (currentPlotStillHasPests()) {
+                        LOGGER.info("[Just Farming-PestKiller] Scoreboard still reports pests on plot {}; "
+                                + "re-scanning current plot.", currentPlotName);
+                        enterState(State.SCANNING);
+                    } else {
                         String nextPlot = pollPrecomputedOrClosestPlot();
                         if (nextPlot != null) {
                             teleportToNextPlot(nextPlot);
                         } else {
                             returnToFarm();
                         }
-                    } else {
-                        returnToFarm();
                     }
                     return;
                 }
@@ -2397,6 +2403,16 @@ public class PestKillerManager {
             precomputedNextPlot = null;
         }
         return pollClosestPlot(candidates);
+    }
+
+    /**
+     * Returns {@code true} when live pest-detector data still reports pests on
+     * the currently targeted plot.
+     */
+    private boolean currentPlotStillHasPests() {
+        return pestDetector != null
+                && currentPlotName != null
+                && pestDetector.hasPlotPests(currentPlotName);
     }
 
     /**
