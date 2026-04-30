@@ -114,4 +114,4 @@ Output: `build/libs/just-farming-<version>.jar`
 
 ## License
 
-MIT
+GPL-3.0
